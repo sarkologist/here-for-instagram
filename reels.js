@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const { go, el, icon, reelsPage } = Sinsta;
+  const { go, el, icon, onTop, reelsPage } = Sinsta;
 
   const KEY = 'sinsta-reels';
   const MIN_COLS = 1;
@@ -424,7 +424,7 @@
     pi = index;
     playerOpen = true;
     document.documentElement.classList.add('sinsta-viewing');
-    document.body.append(player);
+    onTop(player);
     window.addEventListener('keydown', onPlayerKey, true);
     show(preview || null);
   }

@@ -231,6 +231,16 @@ const Sinsta = (() => {
     return node;
   }
 
+  // Show a full-window overlay in the browser's top layer, so it covers
+  // whatever Instagram stacks with z-index (in narrow or zoomed windows,
+  // parts of its hidden feed otherwise show through).
+  function onTop(node) {
+    document.body.append(node);
+    if (!node.showPopover || node.matches(':popover-open')) return;
+    node.popover = 'manual';
+    node.showPopover();
+  }
+
   function icon(paths) {
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
@@ -938,7 +948,7 @@ const Sinsta = (() => {
     setMuted(muted);
     for (const video of document.querySelectorAll('main video')) video.pause();
     document.documentElement.classList.add('sinsta-viewing');
-    document.body.append(root);
+    onTop(root);
     window.addEventListener('keydown', onKey, true);
     lastTick = performance.now();
     raf = requestAnimationFrame(tick);
@@ -960,5 +970,5 @@ const Sinsta = (() => {
     if (onClose) onClose();
   }
 
-  return { api, go, el, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
+  return { api, go, el, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
 })();

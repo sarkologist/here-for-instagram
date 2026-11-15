@@ -332,6 +332,19 @@ html.sinsta-viewing {
   user-select: none;
 }
 
+/* Undo the browser's popover styles (see onTop in stories.js). */
+#sinsta-viewer,
+#sinsta-reel-player {
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+}
+
 #sinsta-viewer a,
 #sinsta-viewer a:visited {
   color: #fff;
