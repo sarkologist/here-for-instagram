@@ -234,7 +234,27 @@ const Sinsta = (() => {
   // Show a full-window overlay in the browser's top layer, so it covers
   // whatever Instagram stacks with z-index (in narrow or zoomed windows,
   // parts of its hidden feed otherwise show through).
+  // Instagram writes inline styles onto elements added to the page, such as
+  // pointer-events:none, which lets clicks fall through our overlays. Ours
+  // only ever set custom properties inline, so drop anything else.
+  const styleWrites = []; // TEMP: what was written, for layerReport
+  const guarded = new WeakSet();
+  function guardStyle(node) {
+    if (guarded.has(node)) return;
+    guarded.add(node);
+    const clean = () => {
+      const foreign = [...node.style].filter((p) => !p.startsWith('--'));
+      if (!foreign.length) return;
+      styleWrites.push(`${node.id}: ${foreign.map((p) => `${p}:${node.style.getPropertyValue(p)}`).join('; ')}`);
+      if (styleWrites.length > 20) styleWrites.shift();
+      for (const p of foreign) node.style.removeProperty(p);
+    };
+    new MutationObserver(clean).observe(node, { attributes: true, attributeFilter: ['style'] });
+    clean();
+  }
+
   function onTop(node) {
+    guardStyle(node);
     document.body.append(node);
     if (!node.showPopover || node.matches(':popover-open')) return;
     node.popover = 'manual';
@@ -363,6 +383,7 @@ const Sinsta = (() => {
       p.remove();
     }
     info.clipTests = tests;
+    info.styleWrites = styleWrites;
     Object.assign(info, extra);
     const text = JSON.stringify(info, null, 1);
     let box = overlay.querySelector('.sinsta-debug');
@@ -1006,5 +1027,5 @@ const Sinsta = (() => {
     if (onClose) onClose();
   }
 
-  return { api, go, el, icon, onTop, layerReport, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
+  return { api, go, el, icon, onTop, guardStyle, layerReport, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
 })();

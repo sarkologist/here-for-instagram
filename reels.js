@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const { go, el, icon, onTop, layerReport, reelsPage } = Sinsta;
+  const { go, el, icon, onTop, guardStyle, layerReport, reelsPage } = Sinsta;
   // TEMP: counts how many times this script has run in the page, for
   // layerReport (a reloaded extension can leave an old copy's elements).
   const html = document.documentElement;
@@ -498,7 +498,7 @@
         const r = slider.getBoundingClientRect();
         const atSlider = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
           .slice(0, 8).map((n) => nodeName(n) + (n.id ? '#' + n.id : ''));
-        layerReport(player, stage, { atSlider, sliderPresses });
+        layerReport(player, stage, { atSlider, sliderPresses, grid: [root.getAttribute('style'), getComputedStyle(root).bottom] });
       },
     };
     const act = actions[e.key];
@@ -585,9 +585,11 @@
       closePlayer();
       if (controls.isConnected) controls.remove();
     } else if (!controls.isConnected && document.body) {
+      guardStyle(controls);
       document.body.append(controls);
     }
     if (active && !root.isConnected && document.body) {
+      guardStyle(root);
       document.body.append(root);
       measuredAt = 0;
       measure();
