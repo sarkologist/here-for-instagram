@@ -293,6 +293,20 @@ const Sinsta = (() => {
       dvh: probe('position:absolute;top:0;height:100dvh'),
       overlay: [desc(overlay), rect(overlay)],
       topLayer: overlay.matches(':popover-open'),
+      overlayState: (() => {
+        const st = getComputedStyle(overlay);
+        const chain = [];
+        for (let e = overlay.parentElement; e; e = e.parentElement) chain.push(desc(e));
+        return {
+          parents: chain,
+          copies: document.querySelectorAll('#' + overlay.id).length,
+          attrs: [...overlay.attributes].map((a) => a.name),
+          css: ['display', 'visibility', 'pointer-events', 'opacity', 'z-index', 'position'].map((p) => `${p}:${st.getPropertyValue(p)}`).join('; '),
+          inert: overlay.inert,
+          inertAncestor: !!(overlay.parentElement && overlay.parentElement.closest('[inert]')),
+          runs: document.documentElement.dataset.sinstaRuns,
+        };
+      })(),
       stage: rect(stage),
       html: rect(document.documentElement),
       body: rect(document.body),
@@ -338,7 +352,8 @@ const Sinsta = (() => {
       tests.igFixed = clipY(igFixed, r.left + r.width / 2);
     }
     const parents = [['probeInBody', document.body], ['probeInHtml', document.documentElement],
-      ['probeInIgRoot', [...document.body.children].find((c) => c.tagName === 'DIV' && !ours(c))], ['probeInIgFixed', igFixed]];
+      ['probeInIgRoot', [...document.body.children].find((c) => c.tagName === 'DIV' && !ours(c))], ['probeInIgFixed', igFixed],
+      ['probeInOverlay', overlay]];
     for (const [name, parent] of parents) {
       if (!parent) continue;
       const p = el('div');

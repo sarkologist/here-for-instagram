@@ -9,6 +9,10 @@
   'use strict';
 
   const { go, el, icon, onTop, layerReport, reelsPage } = Sinsta;
+  // TEMP: counts how many times this script has run in the page, for
+  // layerReport (a reloaded extension can leave an old copy's elements).
+  const html = document.documentElement;
+  html.dataset.sinstaRuns = (Number(html.dataset.sinstaRuns) || 0) + 1;
 
   const KEY = 'sinsta-reels';
   const MIN_COLS = 1;
@@ -490,7 +494,12 @@
       m: toggleMute,
       M: toggleMute,
       Escape: closePlayer,
-      l: () => layerReport(player, stage, { sliderPresses }), // TEMP
+      l: () => { // TEMP
+        const r = slider.getBoundingClientRect();
+        const atSlider = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+          .slice(0, 8).map((n) => nodeName(n) + (n.id ? '#' + n.id : ''));
+        layerReport(player, stage, { atSlider, sliderPresses });
+      },
     };
     const act = actions[e.key];
     if (!act) return;
@@ -552,7 +561,9 @@
     measuredAt = Date.now();
     let left = 0;
     let bottom = 0;
-    const link = [...document.querySelectorAll('a[href="/reels/"]')].find((a) => !root.contains(a));
+    // Skip links in Instagram's own (hidden) page, which keep their layout.
+    const link = [...document.querySelectorAll('a[href="/reels/"]')]
+      .find((a) => !root.contains(a) && !a.closest('main') && getComputedStyle(a).visibility === 'visible');
     for (let e = link; e && e !== document.body; e = e.parentElement) {
       const r = e.getBoundingClientRect();
       if (r.width && r.height > window.innerHeight / 2 && r.width < window.innerWidth / 2) left = Math.max(left, r.right);
