@@ -75,7 +75,9 @@
     toggle.setAttribute('aria-pressed', String(prefs.grid));
     toggle.title = prefs.grid ? 'Back to Instagram\'s player' : 'Show reels as a grid';
     stepper.hidden = !prefs.grid;
-    count.textContent = prefs.columns;
+    // Setting text always replaces the node, which would wake the
+    // MutationObserver and run this again every frame.
+    if (count.textContent !== String(prefs.columns)) count.textContent = prefs.columns;
     count.title = `${prefs.columns} column${prefs.columns === 1 ? '' : 's'}`;
     fewer.disabled = prefs.columns <= MIN_COLS;
     more.disabled = prefs.columns >= MAX_COLS;
