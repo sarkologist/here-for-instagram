@@ -29,7 +29,7 @@
   const SOUND_OFF = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 9.5l5 5M21.5 9.5l-5 5'];
   const SOUND_ON = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 8.5a5 5 0 0 1 0 7'];
 
-  let prefs = { grid: true, columns: 4, muted: false };
+  let prefs = { grid: true, columns: 4, muted: false, volume: 1 };
 
   // Feed state survives leaving /reels/ (the script lives across Instagram's
   // in-page navigation), so coming back finds the same grid at the same place.
@@ -258,8 +258,10 @@
   const avatar = el('img', { className: 'sr-avatar', alt: '' });
   const userLink = el('a', { className: 'sr-user' });
   const muteBtn = button('sr-btn', 'Sound (M)', SOUND_ON);
+  const slider = el('input', { type: 'range', min: 0, max: 1, step: 0.05, title: 'Volume' });
+  const volumeBox = el('div', { className: 'sr-volume' }, muteBtn, slider);
   const openBtn = button('sr-btn', 'Open in Instagram to like, comment or share', OPEN);
-  const head = el('div', { className: 'sr-head' }, avatar, userLink, el('span', { className: 'sr-gap' }), muteBtn, openBtn);
+  const head = el('div', { className: 'sr-head' }, avatar, userLink, el('span', { className: 'sr-gap' }), volumeBox, openBtn);
   const caption = el('div', { className: 'sr-caption' });
   const likesText = el('div', { className: 'sr-meta' });
   const foot = el('div', { className: 'sr-foot' }, caption, likesText);
@@ -275,8 +277,10 @@
   nextBtn.addEventListener('click', () => step(1));
   muteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    setMuted(!prefs.muted);
+    toggleMute();
   });
+  slider.addEventListener('input', () => setVolume(Number(slider.value)));
+  slider.addEventListener('click', (e) => e.stopPropagation());
   openBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     const href = `/reel/${items[pi].code}/`;
@@ -292,7 +296,7 @@
     go(href);
   });
   stage.addEventListener('click', (e) => {
-    if (e.target.closest('a, button') || !video) return;
+    if (e.target.closest('a, button, input') || !video) return;
     if (video.paused) video.play().catch(() => {});
     else video.pause();
   });
@@ -301,6 +305,12 @@
   });
   player.addEventListener('wheel', (e) => {
     e.preventDefault();
+    // Over the volume control, scrolling sets the volume instead.
+    if (volumeBox.contains(e.target)) {
+      const v = prefs.muted ? 0 : prefs.volume;
+      setVolume(Math.round((v - Math.sign(e.deltaY) * 0.05) * 20) / 20);
+      return;
+    }
     const now = Date.now();
     const gap = now - wheelLast;
     wheelLast = now;
@@ -318,9 +328,31 @@
 
   function setMuted(m) {
     prefs.muted = m;
+    // Unmuting at zero volume would still be silent.
+    if (!m && prefs.volume === 0) prefs.volume = 0.5;
     save();
-    if (video) video.muted = m;
-    muteBtn.replaceChildren(icon(m ? SOUND_OFF : SOUND_ON));
+    syncSound();
+  }
+
+  function toggleMute() {
+    setMuted(!prefs.muted);
+  }
+
+  function setVolume(v) {
+    v = Math.max(0, Math.min(1, v));
+    prefs.muted = v === 0;
+    if (v > 0) prefs.volume = v;
+    save();
+    syncSound();
+  }
+
+  function syncSound() {
+    if (video) {
+      video.muted = prefs.muted;
+      video.volume = prefs.volume;
+    }
+    muteBtn.replaceChildren(icon(prefs.muted ? SOUND_OFF : SOUND_ON));
+    slider.value = prefs.muted ? 0 : prefs.volume;
   }
 
   function makeVideo(item) {
@@ -329,22 +361,26 @@
     return v;
   }
 
-  function show() {
+  // `handoff`: a video already playing this reel (the cover's hover
+  // preview), which carries on from where it is.
+  function show(handoff) {
     const item = items[pi];
     if (video) unload(video);
-    video = preload && preload.index === pi ? preload.video : makeVideo(item);
+    video = handoff || (preload && preload.index === pi ? preload.video : makeVideo(item));
     if (preload && preload.index !== pi) unload(preload.video);
     preload = null;
     video.className = 'sr-video';
-    video.muted = prefs.muted;
+    video.autoplay = false;
+    syncSound();
     video.addEventListener('timeupdate', onTime);
     stage.prepend(video);
-    bar.style.width = '0';
+    bar.style.width = video.duration ? `${(video.currentTime / video.duration) * 100}%` : '0';
     const playing = video.play();
     // Sound needs a recent click or key press; without one, play muted.
     if (playing) playing.catch(() => {
       if (!video || video.muted) return;
-      setMuted(true);
+      prefs.muted = true;
+      syncSound();
       video.play().catch(() => {});
     });
 
@@ -380,14 +416,15 @@
 
   function openPlayer(index) {
     if (!items[index]) return;
+    const preview = previewTile === grid.children[index] && previewTile.querySelector('video');
+    if (preview) preview.remove();
     stopPreview();
     pi = index;
     playerOpen = true;
-    setMuted(prefs.muted);
     document.documentElement.classList.add('sinsta-viewing');
     document.body.append(player);
     window.addEventListener('keydown', onPlayerKey, true);
-    show();
+    show(preview || null);
   }
 
   function closePlayer() {
@@ -418,8 +455,8 @@
       ArrowLeft: () => step(-1),
       k: () => step(-1),
       ' ': () => video && (video.paused ? video.play().catch(() => {}) : video.pause()),
-      m: () => setMuted(!prefs.muted),
-      M: () => setMuted(!prefs.muted),
+      m: toggleMute,
+      M: toggleMute,
       Escape: closePlayer,
     };
     const act = actions[e.key];

@@ -50,7 +50,7 @@ Stickers work as on Instagram: @mentions, hashtags and locations open their page
 Reels shows Instagram's Reels feed as a grid of covers, like the app's grids, instead of one reel at a time. More load as you scroll. Hovering a cover plays it silently.
 
 - **Columns:** the − / + buttons in the top-right corner (or the `-` and `+` keys) set 1 to 8 columns. Covers never get taller than the window, so few columns leave margins on wide screens.
-- **Player:** clicking a cover plays the grid in order from there, with sound. `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous reel, `Space` pauses, `M` toggles sound, `Esc` closes and lands the grid on the reel you stopped at. The arrow button in the header opens the reel on Instagram to like, comment or share. Ctrl/⌘-click a cover to open it in a new tab instead.
+- **Player:** clicking a cover plays the grid in order from there, with sound, carrying on from where its hover preview got to. `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous reel, `Space` pauses, `M` toggles sound, the slider beside the sound button (or scrolling over it) sets the volume, `Esc` closes and lands the grid on the reel you stopped at. The arrow button in the header opens the reel on Instagram to like, comment or share. Ctrl/⌘-click a cover to open it in a new tab instead.
 - **Grid** in the corner switches back to Instagram's own player and back; the choice and the column count are remembered. Leaving Reels and coming back keeps the grid where it was until the page reloads.
 - The player doesn't report views to Instagram, so watching here doesn't tune the feed the way Instagram's player does.
 

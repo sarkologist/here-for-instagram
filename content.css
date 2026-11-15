@@ -897,6 +897,19 @@ html[data-sinsta-reels-grid] main {
   flex: 1;
 }
 
+.sr-volume {
+  display: flex;
+  align-items: center;
+}
+
+.sr-volume input {
+  width: 72px;
+  height: 16px;
+  margin: 0 4px 0 0;
+  accent-color: #fff;
+  cursor: pointer;
+}
+
 .sr-caption {
   display: -webkit-box;
   -webkit-box-orient: vertical;
