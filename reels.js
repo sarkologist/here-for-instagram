@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const { go, el, icon, onTop, reelsPage } = Sinsta;
+  const { go, el, icon, onTop, layerReport, reelsPage } = Sinsta;
 
   const KEY = 'sinsta-reels';
   const MIN_COLS = 1;
@@ -328,6 +328,34 @@
     step(Math.sign(wheelSum));
   }, { passive: false });
 
+  // TEMP: what happens to presses over the volume slider, for layerReport.
+  // Listens on the window so it also sees presses that miss the slider.
+  const sliderPresses = [];
+  const nodeName = (n) => (n && n.tagName ? n.tagName.toLowerCase() + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ')[0] : '') : String(n));
+  for (const type of ['pointerdown', 'mousedown', 'click']) {
+    window.addEventListener(type, (e) => {
+      if (!playerOpen) return;
+      const r = slider.getBoundingClientRect();
+      if (e.clientX < r.left - 4 || e.clientX > r.right + 4 || e.clientY < r.top - 8 || e.clientY > r.bottom + 8) return;
+      const entry = {
+        type,
+        x: Math.round(e.clientX - r.left),
+        of: Math.round(r.width),
+        target: nodeName(e.target),
+        hit: nodeName(document.elementFromPoint(e.clientX, e.clientY)),
+        before: slider.value,
+        vol: video && +video.volume.toFixed(2),
+      };
+      sliderPresses.push(entry);
+      if (sliderPresses.length > 15) sliderPresses.shift();
+      setTimeout(() => {
+        entry.prevented = e.defaultPrevented;
+        entry.after = slider.value;
+        entry.volAfter = video && +video.volume.toFixed(2);
+      }, 50);
+    }, true);
+  }
+
   function setMuted(m) {
     prefs.muted = m;
     // Unmuting at zero volume would still be silent.
@@ -354,7 +382,9 @@
       video.volume = prefs.volume;
     }
     muteBtn.replaceChildren(icon(prefs.muted ? SOUND_OFF : SOUND_ON));
-    slider.value = prefs.muted ? 0 : prefs.volume;
+    // Writing the value during a press on the slider can cancel it in Firefox.
+    const v = String(prefs.muted ? 0 : prefs.volume);
+    if (slider.value !== v) slider.value = v;
   }
 
   function makeVideo(item) {
@@ -460,6 +490,7 @@
       m: toggleMute,
       M: toggleMute,
       Escape: closePlayer,
+      l: () => layerReport(player, stage, { sliderPresses }), // TEMP
     };
     const act = actions[e.key];
     if (!act) return;

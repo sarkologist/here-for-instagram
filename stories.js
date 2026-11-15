@@ -241,6 +241,124 @@ const Sinsta = (() => {
     node.showPopover();
   }
 
+  // TEMP: measures why the bottom of full-window overlays gets cut off in
+  // some Firefox setups. Bound to L in the story viewer and the reels player;
+  // the report is copied and shown in a text box on the overlay.
+  function layerReport(overlay, stage, extra) {
+    const rect = (n) => {
+      if (!n) return null;
+      const b = n.getBoundingClientRect();
+      return [b.top, b.bottom, b.height].map(Math.round);
+    };
+    const props = ['position', 'height', 'overflow', 'transform', 'filter', 'contain', 'will-change', 'clip-path', 'zoom'];
+    const css = (n) => {
+      const st = getComputedStyle(n);
+      return props.map((p) => `${p}:${st.getPropertyValue(p)}`).join('; ');
+    };
+    const probe = (style) => {
+      const d = el('div');
+      d.style.cssText = `${style};visibility:hidden;pointer-events:none`;
+      document.body.append(d);
+      const h = Math.round(d.getBoundingClientRect().height);
+      d.remove();
+      return h;
+    };
+    const desc = (n) => n.tagName.toLowerCase() + (n.id ? `#${n.id}` : '')
+      + (typeof n.className === 'string' && n.className.trim() ? `.${n.className.trim().split(/\s+/).slice(0, 2).join('.')}` : '');
+    const round = (n) => Math.round(n * 100) / 100;
+    const vv = window.visualViewport;
+    let fullScreen = null;
+    try { fullScreen = window.fullScreen; } catch (_) { /* not Firefox */ }
+    const ours = (n) => n.closest('[id^="sinsta"]');
+    // An Instagram element that is fixed to the window (its sidebar), which
+    // is drawn in full even when ours are cut off.
+    const igFixed = [...document.querySelectorAll('a[href="/reels/"], a[href="/explore/"]')]
+      .filter((a) => !ours(a))
+      .map((a) => {
+        for (let e = a; e && e !== document.body; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') return e;
+        return null;
+      })
+      .find(Boolean);
+    const info = {
+      inner: [innerWidth, innerHeight],
+      client: document.documentElement.clientHeight,
+      vv: vv && [vv.width, vv.height, vv.offsetTop, vv.pageTop, vv.scale].map(round),
+      outer: [outerWidth, outerHeight, screenY],
+      screen: [screen.width, screen.height, screen.availHeight],
+      fullScreen,
+      dpr: round(devicePixelRatio),
+      scroll: [Math.round(scrollY), document.documentElement.scrollHeight],
+      fixed: probe('position:fixed;inset:0'),
+      vh: probe('position:absolute;top:0;height:100vh'),
+      dvh: probe('position:absolute;top:0;height:100dvh'),
+      overlay: [desc(overlay), rect(overlay)],
+      topLayer: overlay.matches(':popover-open'),
+      stage: rect(stage),
+      html: rect(document.documentElement),
+      body: rect(document.body),
+      htmlCss: css(document.documentElement),
+      bodyCss: css(document.body),
+      igFixed: igFixed ? [desc(igFixed), rect(igFixed), css(igFixed)] : null,
+      atBottom: document.elementsFromPoint(innerWidth / 2, innerHeight - 20).slice(0, 5).map(desc),
+      atStageBottom: document.elementsFromPoint(innerWidth / 2, stage.getBoundingClientRect().bottom - 10).slice(0, 3).map(desc),
+      ua: navigator.userAgent,
+    };
+    // Where hit-testing stops finding a layer (it follows the same clip as
+    // drawing), and whether some workarounds move that line.
+    const clipY = (n, x = innerWidth / 2) => {
+      const hits = (_, y) => document.elementsFromPoint(x, y).some((h) => n.contains(h));
+      if (hits(n, innerHeight - 2)) return innerHeight;
+      let lo = 0;
+      let hi = innerHeight - 2;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (hits(n, mid)) lo = mid; else hi = mid;
+      }
+      return lo;
+    };
+    const tests = { base: clipY(overlay) };
+    document.documentElement.classList.remove('sinsta-viewing');
+    tests.noOverflowHidden = clipY(overlay);
+    document.documentElement.classList.add('sinsta-viewing');
+    const saved = overlay.style.cssText;
+    overlay.style.cssText += ';transform:translateZ(0)';
+    tests.ownLayer = clipY(overlay);
+    overlay.style.cssText = saved;
+    if (overlay.matches(':popover-open')) {
+      overlay.hidePopover();
+      overlay.removeAttribute('popover');
+      tests.notTopLayer = clipY(overlay);
+      overlay.popover = 'manual';
+      overlay.showPopover();
+    }
+    const grid = document.getElementById('sinsta-reels');
+    if (grid) tests.reelsGrid = clipY(grid);
+    if (igFixed) {
+      const r = igFixed.getBoundingClientRect();
+      tests.igFixed = clipY(igFixed, r.left + r.width / 2);
+    }
+    const parents = [['probeInBody', document.body], ['probeInHtml', document.documentElement],
+      ['probeInIgRoot', [...document.body.children].find((c) => c.tagName === 'DIV' && !ours(c))], ['probeInIgFixed', igFixed]];
+    for (const [name, parent] of parents) {
+      if (!parent) continue;
+      const p = el('div');
+      p.style.cssText = 'position:fixed;inset:0;z-index:2147483647';
+      parent.append(p);
+      tests[name] = clipY(p);
+      p.remove();
+    }
+    info.clipTests = tests;
+    Object.assign(info, extra);
+    const text = JSON.stringify(info, null, 1);
+    let box = overlay.querySelector('.sinsta-debug');
+    if (box) box.remove();
+    box = el('textarea', { className: 'sinsta-debug', value: text, readOnly: true });
+    box.style.cssText = 'position:absolute;top:16px;left:16px;z-index:5;width:420px;height:60vh;font:11px/1.3 monospace;color:#000;background:#fff';
+    overlay.append(box);
+    box.select();
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+
   function icon(paths) {
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
@@ -391,108 +509,11 @@ const Sinsta = (() => {
     action();
   }
 
-  // TEMP: measures why the bottom of the viewer gets cut off in Firefox.
-  // Press L in the viewer; the result is copied and shown in a text box.
-  let debugBox = null;
+  // TEMP: bottom-strip diagnostics (see layerReport).
   function debugInfo() {
     spacePaused = true;
     syncPause();
-    const rect = (n) => {
-      if (!n) return null;
-      const b = n.getBoundingClientRect();
-      return [b.top, b.bottom, b.height].map(Math.round);
-    };
-    const props = ['position', 'height', 'overflow', 'transform', 'filter', 'contain', 'will-change', 'clip-path', 'zoom'];
-    const css = (n) => {
-      const s = getComputedStyle(n);
-      return props.map((p) => `${p}:${s.getPropertyValue(p)}`).join('; ');
-    };
-    const probe = (style) => {
-      const d = el('div');
-      d.style.cssText = `${style};visibility:hidden;pointer-events:none`;
-      document.body.append(d);
-      const h = Math.round(d.getBoundingClientRect().height);
-      d.remove();
-      return h;
-    };
-    const desc = (n) => n.tagName.toLowerCase() + (n.id ? `#${n.id}` : '')
-      + (typeof n.className === 'string' && n.className.trim() ? `.${n.className.trim().split(/\s+/).slice(0, 2).join('.')}` : '');
-    const round = (n) => Math.round(n * 100) / 100;
-    const vv = window.visualViewport;
-    let fullScreen = null;
-    try { fullScreen = window.fullScreen; } catch (_) { /* not Firefox */ }
-    const info = {
-      inner: [innerWidth, innerHeight],
-      client: document.documentElement.clientHeight,
-      vv: vv && [vv.width, vv.height, vv.offsetTop, vv.pageTop, vv.scale].map(round),
-      outer: [outerWidth, outerHeight, screenY],
-      screen: [screen.width, screen.height, screen.availHeight],
-      fullScreen,
-      dpr: round(devicePixelRatio),
-      scroll: [Math.round(scrollY), document.documentElement.scrollHeight],
-      fixed: probe('position:fixed;inset:0'),
-      vh: probe('position:absolute;top:0;height:100vh'),
-      dvh: probe('position:absolute;top:0;height:100dvh'),
-      viewer: rect(root),
-      stage: rect(stage),
-      html: rect(document.documentElement),
-      body: rect(document.body),
-      htmlCss: css(document.documentElement),
-      bodyCss: css(document.body),
-      parent: desc(root.parentElement),
-      atBottom: document.elementsFromPoint(innerWidth / 2, innerHeight - 20).slice(0, 5).map(desc),
-      atStageBottom: document.elementsFromPoint(innerWidth / 2, stage.getBoundingClientRect().bottom - 10).slice(0, 3).map(desc),
-      ua: navigator.userAgent,
-    };
-    // Where hit-testing stops finding the viewer (it follows the same clip as
-    // drawing), and whether some workarounds move that line.
-    const hits = (n, y) => document.elementsFromPoint(innerWidth / 2, y).some((h) => n.contains(h));
-    const clipY = (n = root) => {
-      if (hits(n, innerHeight - 2)) return innerHeight;
-      let lo = 0;
-      let hi = innerHeight - 2;
-      while (hi - lo > 1) {
-        const mid = (lo + hi) >> 1;
-        if (hits(n, mid)) lo = mid; else hi = mid;
-      }
-      return lo;
-    };
-    const tests = { base: clipY() };
-    document.documentElement.classList.remove('sinsta-viewing');
-    tests.noOverflowHidden = clipY();
-    document.documentElement.classList.add('sinsta-viewing');
-    const saved = root.style.cssText;
-    root.style.cssText += ';transform:translateZ(0)';
-    tests.ownLayer = clipY();
-    root.style.cssText = saved;
-    if (root.showPopover) {
-      try {
-        root.setAttribute('popover', 'manual');
-        root.style.cssText += ';width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;padding:0';
-        root.showPopover();
-        tests.topLayer = clipY();
-        root.hidePopover();
-      } catch (err) {
-        tests.topLayer = String(err);
-      }
-      root.removeAttribute('popover');
-      root.style.cssText = saved;
-    }
-    for (const [name, parent] of [['probeInBody', document.body], ['probeInHtml', document.documentElement]]) {
-      const p = el('div');
-      p.style.cssText = 'position:fixed;inset:0;z-index:2147483647';
-      parent.append(p);
-      tests[name] = clipY(p);
-      p.remove();
-    }
-    info.clipTests = tests;
-    const text = JSON.stringify(info, null, 1);
-    if (debugBox) debugBox.remove();
-    debugBox = el('textarea', { value: text, readOnly: true });
-    debugBox.style.cssText = 'position:absolute;top:16px;left:16px;z-index:1;width:420px;height:60vh;font:11px/1.3 monospace;color:#000;background:#fff';
-    root.append(debugBox);
-    debugBox.select();
-    navigator.clipboard.writeText(text).catch(() => {});
+    layerReport(root, stage);
   }
 
   // ---- Data ---------------------------------------------------------------
@@ -970,5 +991,5 @@ const Sinsta = (() => {
     if (onClose) onClose();
   }
 
-  return { api, go, el, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
+  return { api, go, el, icon, onTop, layerReport, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
 })();
