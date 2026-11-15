@@ -459,14 +459,17 @@
     playerOpen = true;
     document.documentElement.classList.add('sinsta-viewing');
     onTop(player);
-    window.addEventListener('keydown', onPlayerKey, true);
     show(preview || null);
   }
 
+  // TEMP: why the player closed, for layerReport.
+  const closes = [];
+
   function closePlayer() {
     if (!playerOpen) return;
+    closes.push({ at: new Date().toISOString().slice(11, 19), url: location.pathname, stack: (new Error().stack || '').split('\n').slice(1, 6).map((l) => l.replace(/moz-extension:\/\/[^/]+\//, '').trim()) });
+    if (closes.length > 5) closes.shift();
     playerOpen = false;
-    window.removeEventListener('keydown', onPlayerKey, true);
     if (video) unload(video);
     if (preload) unload(preload.video);
     video = null;
@@ -480,6 +483,12 @@
       t.focus({ preventScroll: true });
     }
   }
+
+  // Registered once, at document start, so it runs before Instagram's own
+  // key handlers, which could otherwise swallow the keys.
+  window.addEventListener('keydown', (e) => {
+    if (playerOpen) onPlayerKey(e);
+  }, true);
 
   function onPlayerKey(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -498,7 +507,7 @@
         const r = slider.getBoundingClientRect();
         const atSlider = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
           .slice(0, 8).map((n) => nodeName(n) + (n.id ? '#' + n.id : ''));
-        layerReport(player, stage, { atSlider, sliderPresses, grid: [root.getAttribute('style'), getComputedStyle(root).bottom] });
+        layerReport(player, stage, { atSlider, sliderPresses, closes, url: location.pathname, grid: [root.getAttribute('style'), getComputedStyle(root).bottom] });
       },
     };
     const act = actions[e.key];

@@ -265,6 +265,18 @@ const Sinsta = (() => {
   // some Firefox setups. Bound to L in the story viewer and the reels player;
   // the report is copied and shown in a text box on the overlay.
   function layerReport(overlay, stage, extra) {
+    try {
+      layerReportInner(overlay, stage, extra);
+    } catch (err) {
+      let box = overlay.querySelector('.sinsta-debug');
+      if (box) box.remove();
+      box = el('textarea', { className: 'sinsta-debug', value: `layerReport failed: ${err && err.stack || err}\n${JSON.stringify(extra)}`, readOnly: true });
+      box.style.cssText = 'position:absolute;top:16px;left:16px;z-index:5;width:420px;height:60vh;font:11px/1.3 monospace;color:#000;background:#fff';
+      overlay.append(box);
+    }
+  }
+
+  function layerReportInner(overlay, stage, extra) {
     const rect = (n) => {
       if (!n) return null;
       const b = n.getBoundingClientRect();
@@ -527,6 +539,12 @@ const Sinsta = (() => {
     holding = false;
     syncPause();
   }
+
+  // Registered once, at document start, so it runs before Instagram's own
+  // key handlers, which could otherwise swallow the keys.
+  window.addEventListener('keydown', (e) => {
+    if (open) onKey(e);
+  }, true);
 
   function onKey(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1006,7 +1024,6 @@ const Sinsta = (() => {
     for (const video of document.querySelectorAll('main video')) video.pause();
     document.documentElement.classList.add('sinsta-viewing');
     onTop(root);
-    window.addEventListener('keydown', onKey, true);
     lastTick = performance.now();
     raf = requestAnimationFrame(tick);
     show();
@@ -1017,7 +1034,6 @@ const Sinsta = (() => {
     open = false;
     token++;
     cancelAnimationFrame(raf);
-    window.removeEventListener('keydown', onKey, true);
     for (const node of preloaded.values()) unload(node);
     preloaded.clear();
     current = null;
