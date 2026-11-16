@@ -8,11 +8,7 @@
 (() => {
   'use strict';
 
-  const { go, el, icon, onTop, guardStyle, layerReport, reelsPage } = Sinsta;
-  // TEMP: counts how many times this script has run in the page, for
-  // layerReport (a reloaded extension can leave an old copy's elements).
-  const html = document.documentElement;
-  html.dataset.sinstaRuns = (Number(html.dataset.sinstaRuns) || 0) + 1;
+  const { go, el, shadowVideo, hostOf, icon, onTop, reelsPage } = Sinsta;
 
   const KEY = 'sinsta-reels';
   const MIN_COLS = 1;
@@ -154,12 +150,13 @@
   // Hovering a cover plays it silently, as the app's grids do.
   let previewTile = null;
   let previewTimer = 0;
+  const previews = new WeakMap(); // .sr-preview host -> its video
 
   function stopPreview() {
     clearTimeout(previewTimer);
     if (!previewTile) return;
-    const v = previewTile.querySelector('video');
-    if (v) unload(v);
+    const host = previewTile.querySelector('.sr-preview');
+    if (host) unload(previews.get(host));
     previewTile = null;
   }
 
@@ -171,10 +168,12 @@
     previewTile = a;
     previewTimer = setTimeout(() => {
       const item = items[Number(a.dataset.index)];
-      const v = el('video', { muted: true, loop: true, autoplay: true, playsInline: true, src: item.video });
-      v.className = 'sr-preview';
-      v.addEventListener('playing', () => v.classList.add('sr-on'), { once: true });
-      a.append(v);
+      const v = shadowVideo({ muted: true, loop: true, autoplay: true, playsInline: true, src: item.video }, 'cover');
+      const host = hostOf(v);
+      host.className = 'sr-preview';
+      previews.set(host, v);
+      v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
+      a.append(host);
     }, PREVIEW_MS);
   });
   grid.addEventListener('pointerleave', stopPreview);
@@ -183,7 +182,7 @@
     v.pause();
     v.removeAttribute('src');
     v.load();
-    v.remove();
+    hostOf(v).remove();
   }
 
   // ---- Loading ------------------------------------------------------------
@@ -332,34 +331,6 @@
     step(Math.sign(wheelSum));
   }, { passive: false });
 
-  // TEMP: what happens to presses over the volume slider, for layerReport.
-  // Listens on the window so it also sees presses that miss the slider.
-  const sliderPresses = [];
-  const nodeName = (n) => (n && n.tagName ? n.tagName.toLowerCase() + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ')[0] : '') : String(n));
-  for (const type of ['pointerdown', 'mousedown', 'click']) {
-    window.addEventListener(type, (e) => {
-      if (!playerOpen) return;
-      const r = slider.getBoundingClientRect();
-      if (e.clientX < r.left - 4 || e.clientX > r.right + 4 || e.clientY < r.top - 8 || e.clientY > r.bottom + 8) return;
-      const entry = {
-        type,
-        x: Math.round(e.clientX - r.left),
-        of: Math.round(r.width),
-        target: nodeName(e.target),
-        hit: nodeName(document.elementFromPoint(e.clientX, e.clientY)),
-        before: slider.value,
-        vol: video && +video.volume.toFixed(2),
-      };
-      sliderPresses.push(entry);
-      if (sliderPresses.length > 15) sliderPresses.shift();
-      setTimeout(() => {
-        entry.prevented = e.defaultPrevented;
-        entry.after = slider.value;
-        entry.volAfter = video && +video.volume.toFixed(2);
-      }, 50);
-    }, true);
-  }
-
   function setMuted(m) {
     prefs.muted = m;
     // Unmuting at zero volume would still be silent.
@@ -392,7 +363,7 @@
   }
 
   function makeVideo(item) {
-    const v = el('video', { loop: true, playsInline: true, preload: 'auto', src: item.video });
+    const v = shadowVideo({ loop: true, playsInline: true, preload: 'auto', src: item.video }, 'contain');
     if (item.thumbs.length) v.poster = item.thumbs[0].url;
     return v;
   }
@@ -405,11 +376,12 @@
     video = handoff || (preload && preload.index === pi ? preload.video : makeVideo(item));
     if (preload && preload.index !== pi) unload(preload.video);
     preload = null;
-    video.className = 'sr-video';
+    hostOf(video).className = 'sr-video';
+    video.style.objectFit = 'contain';
     video.autoplay = false;
     syncSound();
     video.addEventListener('timeupdate', onTime);
-    stage.prepend(video);
+    stage.prepend(hostOf(video));
     bar.style.width = video.duration ? `${(video.currentTime / video.duration) * 100}%` : '0';
     const playing = video.play();
     // Sound needs a recent click or key press; without one, play muted.
@@ -452,8 +424,9 @@
 
   function openPlayer(index) {
     if (!items[index]) return;
-    const preview = previewTile === grid.children[index] && previewTile.querySelector('video');
-    if (preview) preview.remove();
+    const host = previewTile === grid.children[index] && previewTile.querySelector('.sr-preview');
+    const preview = host && previews.get(host);
+    if (host) host.remove();
     stopPreview();
     pi = index;
     playerOpen = true;
@@ -462,13 +435,8 @@
     show(preview || null);
   }
 
-  // TEMP: why the player closed, for layerReport.
-  const closes = [];
-
   function closePlayer() {
     if (!playerOpen) return;
-    closes.push({ at: new Date().toISOString().slice(11, 19), url: location.pathname, stack: (new Error().stack || '').split('\n').slice(1, 6).map((l) => l.replace(/moz-extension:\/\/[^/]+\//, '').trim()) });
-    if (closes.length > 5) closes.shift();
     playerOpen = false;
     if (video) unload(video);
     if (preload) unload(preload.video);
@@ -503,12 +471,6 @@
       m: toggleMute,
       M: toggleMute,
       Escape: closePlayer,
-      l: () => { // TEMP
-        const r = slider.getBoundingClientRect();
-        const atSlider = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
-          .slice(0, 8).map((n) => nodeName(n) + (n.id ? '#' + n.id : ''));
-        layerReport(player, stage, { atSlider, sliderPresses, closes, url: location.pathname, grid: [root.getAttribute('style'), getComputedStyle(root).bottom] });
-      },
     };
     const act = actions[e.key];
     if (!act) return;
@@ -594,11 +556,9 @@
       closePlayer();
       if (controls.isConnected) controls.remove();
     } else if (!controls.isConnected && document.body) {
-      guardStyle(controls);
       document.body.append(controls);
     }
     if (active && !root.isConnected && document.body) {
-      guardStyle(root);
       document.body.append(root);
       measuredAt = 0;
       measure();

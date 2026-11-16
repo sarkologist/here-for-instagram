@@ -231,180 +231,27 @@ const Sinsta = (() => {
     return node;
   }
 
+  // A video inside a closed shadow root, so scripts that scan the page's videos
+  // don't find it (one extension paired ours with Instagram's hidden player,
+  // clipped its bottom and re-routed its clicks). Returns the video; style and
+  // place its host, from hostOf().
+  function shadowVideo(props, fit) {
+    const host = el('div');
+    const v = el('video', props);
+    Object.assign(v.style, { display: 'block', width: '100%', height: '100%', objectFit: fit });
+    host.attachShadow({ mode: 'closed' }).append(v);
+    return v;
+  }
+  const hostOf = (v) => v.getRootNode().host;
+
   // Show a full-window overlay in the browser's top layer, so it covers
   // whatever Instagram stacks with z-index (in narrow or zoomed windows,
   // parts of its hidden feed otherwise show through).
-  // Instagram writes inline styles onto elements added to the page, such as
-  // pointer-events:none, which lets clicks fall through our overlays. Ours
-  // only ever set custom properties inline, so drop anything else.
-  const styleWrites = []; // TEMP: what was written, for layerReport
-  const guarded = new WeakSet();
-  function guardStyle(node) {
-    if (guarded.has(node)) return;
-    guarded.add(node);
-    const clean = () => {
-      const foreign = [...node.style].filter((p) => !p.startsWith('--'));
-      if (!foreign.length) return;
-      styleWrites.push(`${node.id}: ${foreign.map((p) => `${p}:${node.style.getPropertyValue(p)}`).join('; ')}`);
-      if (styleWrites.length > 20) styleWrites.shift();
-      for (const p of foreign) node.style.removeProperty(p);
-    };
-    new MutationObserver(clean).observe(node, { attributes: true, attributeFilter: ['style'] });
-    clean();
-  }
-
   function onTop(node) {
-    guardStyle(node);
     document.body.append(node);
     if (!node.showPopover || node.matches(':popover-open')) return;
     node.popover = 'manual';
     node.showPopover();
-  }
-
-  // TEMP: measures why the bottom of full-window overlays gets cut off in
-  // some Firefox setups. Bound to L in the story viewer and the reels player;
-  // the report is copied and shown in a text box on the overlay.
-  function layerReport(overlay, stage, extra) {
-    try {
-      layerReportInner(overlay, stage, extra);
-    } catch (err) {
-      let box = overlay.querySelector('.sinsta-debug');
-      if (box) box.remove();
-      box = el('textarea', { className: 'sinsta-debug', value: `layerReport failed: ${err && err.stack || err}\n${JSON.stringify(extra)}`, readOnly: true });
-      box.style.cssText = 'position:absolute;top:16px;left:16px;z-index:5;width:420px;height:60vh;font:11px/1.3 monospace;color:#000;background:#fff';
-      overlay.append(box);
-    }
-  }
-
-  function layerReportInner(overlay, stage, extra) {
-    const rect = (n) => {
-      if (!n) return null;
-      const b = n.getBoundingClientRect();
-      return [b.top, b.bottom, b.height].map(Math.round);
-    };
-    const props = ['position', 'height', 'overflow', 'transform', 'filter', 'contain', 'will-change', 'clip-path', 'zoom'];
-    const css = (n) => {
-      const st = getComputedStyle(n);
-      return props.map((p) => `${p}:${st.getPropertyValue(p)}`).join('; ');
-    };
-    const probe = (style) => {
-      const d = el('div');
-      d.style.cssText = `${style};visibility:hidden;pointer-events:none`;
-      document.body.append(d);
-      const h = Math.round(d.getBoundingClientRect().height);
-      d.remove();
-      return h;
-    };
-    const desc = (n) => n.tagName.toLowerCase() + (n.id ? `#${n.id}` : '')
-      + (typeof n.className === 'string' && n.className.trim() ? `.${n.className.trim().split(/\s+/).slice(0, 2).join('.')}` : '');
-    const round = (n) => Math.round(n * 100) / 100;
-    const vv = window.visualViewport;
-    let fullScreen = null;
-    try { fullScreen = window.fullScreen; } catch (_) { /* not Firefox */ }
-    const ours = (n) => n.closest('[id^="sinsta"]');
-    // An Instagram element that is fixed to the window (its sidebar), which
-    // is drawn in full even when ours are cut off.
-    const igFixed = [...document.querySelectorAll('a[href="/reels/"], a[href="/explore/"]')]
-      .filter((a) => !ours(a))
-      .map((a) => {
-        for (let e = a; e && e !== document.body; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') return e;
-        return null;
-      })
-      .find(Boolean);
-    const info = {
-      inner: [innerWidth, innerHeight],
-      client: document.documentElement.clientHeight,
-      vv: vv && [vv.width, vv.height, vv.offsetTop, vv.pageTop, vv.scale].map(round),
-      outer: [outerWidth, outerHeight, screenY],
-      screen: [screen.width, screen.height, screen.availHeight],
-      fullScreen,
-      dpr: round(devicePixelRatio),
-      scroll: [Math.round(scrollY), document.documentElement.scrollHeight],
-      fixed: probe('position:fixed;inset:0'),
-      vh: probe('position:absolute;top:0;height:100vh'),
-      dvh: probe('position:absolute;top:0;height:100dvh'),
-      overlay: [desc(overlay), rect(overlay)],
-      topLayer: overlay.matches(':popover-open'),
-      overlayState: (() => {
-        const st = getComputedStyle(overlay);
-        const chain = [];
-        for (let e = overlay.parentElement; e; e = e.parentElement) chain.push(desc(e));
-        return {
-          parents: chain,
-          copies: document.querySelectorAll('#' + overlay.id).length,
-          attrs: [...overlay.attributes].map((a) => a.name),
-          css: ['display', 'visibility', 'pointer-events', 'opacity', 'z-index', 'position'].map((p) => `${p}:${st.getPropertyValue(p)}`).join('; '),
-          inert: overlay.inert,
-          inertAncestor: !!(overlay.parentElement && overlay.parentElement.closest('[inert]')),
-          runs: document.documentElement.dataset.sinstaRuns,
-        };
-      })(),
-      stage: rect(stage),
-      html: rect(document.documentElement),
-      body: rect(document.body),
-      htmlCss: css(document.documentElement),
-      bodyCss: css(document.body),
-      igFixed: igFixed ? [desc(igFixed), rect(igFixed), css(igFixed)] : null,
-      atBottom: document.elementsFromPoint(innerWidth / 2, innerHeight - 20).slice(0, 5).map(desc),
-      atStageBottom: document.elementsFromPoint(innerWidth / 2, stage.getBoundingClientRect().bottom - 10).slice(0, 3).map(desc),
-      ua: navigator.userAgent,
-    };
-    // Where hit-testing stops finding a layer (it follows the same clip as
-    // drawing), and whether some workarounds move that line.
-    const clipY = (n, x = innerWidth / 2) => {
-      const hits = (_, y) => document.elementsFromPoint(x, y).some((h) => n.contains(h));
-      if (hits(n, innerHeight - 2)) return innerHeight;
-      let lo = 0;
-      let hi = innerHeight - 2;
-      while (hi - lo > 1) {
-        const mid = (lo + hi) >> 1;
-        if (hits(n, mid)) lo = mid; else hi = mid;
-      }
-      return lo;
-    };
-    const tests = { base: clipY(overlay) };
-    document.documentElement.classList.remove('sinsta-viewing');
-    tests.noOverflowHidden = clipY(overlay);
-    document.documentElement.classList.add('sinsta-viewing');
-    const saved = overlay.style.cssText;
-    overlay.style.cssText += ';transform:translateZ(0)';
-    tests.ownLayer = clipY(overlay);
-    overlay.style.cssText = saved;
-    if (overlay.matches(':popover-open')) {
-      overlay.hidePopover();
-      overlay.removeAttribute('popover');
-      tests.notTopLayer = clipY(overlay);
-      overlay.popover = 'manual';
-      overlay.showPopover();
-    }
-    const grid = document.getElementById('sinsta-reels');
-    if (grid) tests.reelsGrid = clipY(grid);
-    if (igFixed) {
-      const r = igFixed.getBoundingClientRect();
-      tests.igFixed = clipY(igFixed, r.left + r.width / 2);
-    }
-    const parents = [['probeInBody', document.body], ['probeInHtml', document.documentElement],
-      ['probeInIgRoot', [...document.body.children].find((c) => c.tagName === 'DIV' && !ours(c))], ['probeInIgFixed', igFixed],
-      ['probeInOverlay', overlay]];
-    for (const [name, parent] of parents) {
-      if (!parent) continue;
-      const p = el('div');
-      p.style.cssText = 'position:fixed;inset:0;z-index:2147483647';
-      parent.append(p);
-      tests[name] = clipY(p);
-      p.remove();
-    }
-    info.clipTests = tests;
-    info.styleWrites = styleWrites;
-    Object.assign(info, extra);
-    const text = JSON.stringify(info, null, 1);
-    let box = overlay.querySelector('.sinsta-debug');
-    if (box) box.remove();
-    box = el('textarea', { className: 'sinsta-debug', value: text, readOnly: true });
-    box.style.cssText = 'position:absolute;top:16px;left:16px;z-index:5;width:420px;height:60vh;font:11px/1.3 monospace;color:#000;background:#fff';
-    overlay.append(box);
-    box.select();
-    navigator.clipboard.writeText(text).catch(() => {});
   }
 
   function icon(paths) {
@@ -554,20 +401,12 @@ const Sinsta = (() => {
       ArrowLeft: () => (e.shiftKey ? jump(-1) : step(-1)),
       ' ': () => { spacePaused = !spacePaused; syncPause(); },
       m: () => setMuted(!muted),
-      l: () => debugInfo(), // TEMP: bottom-strip diagnostics
     };
     const action = actions[e.key];
     if (!action) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     action();
-  }
-
-  // TEMP: bottom-strip diagnostics (see layerReport).
-  function debugInfo() {
-    spacePaused = true;
-    syncPause();
-    layerReport(root, stage);
   }
 
   // ---- Data ---------------------------------------------------------------
@@ -1043,5 +882,5 @@ const Sinsta = (() => {
     if (onClose) onClose();
   }
 
-  return { api, go, el, icon, onTop, guardStyle, layerReport, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
+  return { api, go, el, shadowVideo, hostOf, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
 })();
