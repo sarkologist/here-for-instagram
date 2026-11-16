@@ -318,6 +318,15 @@ html.sinsta-viewing {
   overflow: hidden !important;
 }
 
+/* Instagram's videos under our overlays take no space. Extensions that add
+   controls to them (such as the Instagram downloader) otherwise treat our
+   overlays as layers covering the video: they clip the overlays' bottom and
+   make them click-through. */
+html.sinsta-viewing main video,
+html[data-sinsta-reels-grid] main video {
+  display: none !important;
+}
+
 #sinsta-viewer {
   position: fixed;
   inset: 0;
