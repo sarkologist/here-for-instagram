@@ -59,10 +59,10 @@ It collects no data (`data_collection_permissions.required = ["none"]`), so no p
 ## Listing metadata
 
 - **Category:** Social & Communication.
-- **Tags:** instagram, chronological feed, following feed, hide seen posts, stories, reels, no algorithm, social media.
+- **Tags:** social media, content blocker. AMO only offers a fixed list, which has no Instagram tag.
+- **Homepage:** https://github.com/sarkologist/here-for-instagram. **Support website:** its Issues page.
 - **Firefox for Android:** leave it unticked. The extension has only been used on desktop.
 - **License:** Mozilla Public License 2.0, matching `LICENSE`.
-- **Homepage and support:** your choice. Whatever you enter is shown publicly, so prefer a repo's Issues page or a dedicated address over a personal email.
 
 ## Screenshots
 
