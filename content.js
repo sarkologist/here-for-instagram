@@ -699,6 +699,9 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
   // look in both its wide and icon-only layouts.
   const BOOKMARK = ['M19 21l-7-5-7 5V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1z'];
   let savedItem = null;
+  let savedSig = '';
+  let watchedProfile = null;
+  const profileWatch = new MutationObserver(() => schedule());
 
   // ---- App-only notifications ---------------------------------------------
 
@@ -950,10 +953,20 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
     const user = link && (link.getAttribute('href').match(/^\/([^/]+)\/$/) || [])[1];
     if (!user) return;
     const href = `/${user}/saved/`;
-    if (savedItem && savedItem.isConnected && savedItem.previousElementSibling === profile) {
+    // The copy keeps the classes Profile had when it was made, but Instagram
+    // changes them, for instance when the sidebar widens on hover and shows
+    // its labels. So copy again whenever they change.
+    const sig = [...profile.querySelectorAll('*')].map((e) => e.getAttribute('class') || '').join('|');
+    if (watchedProfile !== profile) {
+      profileWatch.disconnect();
+      profileWatch.observe(profile, { attributes: true, attributeFilter: ['class'], subtree: true });
+      watchedProfile = profile;
+    }
+    if (savedItem && savedItem.isConnected && savedItem.previousElementSibling === profile && savedSig === sig) {
       savedItem.querySelector('a').setAttribute('aria-current', String(location.pathname === href));
       return;
     }
+    savedSig = sig;
     if (savedItem) savedItem.remove();
     savedItem = mark(profile.cloneNode(true));
     savedItem.dataset.sinstaSaved = '';

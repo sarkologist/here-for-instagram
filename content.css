@@ -1426,3 +1426,11 @@ html[data-sinsta-reels-grid] main {
   opacity: 0.4;
   cursor: progress;
 }
+
+/* Saved in the main menu is a copy of Profile; drop the ring Instagram
+   draws round the profile picture (a border on a pseudo-element, which an
+   inline style can't reach). */
+[data-sinsta-saved] a *::before,
+[data-sinsta-saved] a *::after {
+  border-color: transparent !important;
+}

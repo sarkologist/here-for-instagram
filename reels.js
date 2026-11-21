@@ -863,16 +863,41 @@
     return prefs.grid && onReels();
   }
 
+  // The Reels link in Instagram's sidebar. Links in Instagram's own (hidden)
+  // page are skipped, though they keep their layout.
+  function navLink() {
+    return [...document.querySelectorAll('a[href="/reels/"]')]
+      .find((a) => !root.contains(a) && !a.closest('main') && getComputedStyle(a).visibility === 'visible');
+  }
+
+  // Where the grid goes. Instagram's sidebar widens over the page on hover,
+  // from a fixed layer (z-index 10) inside the app's own stacking context
+  // (z-index 0). In <body> the grid would cover the whole app, widened
+  // sidebar included; in that context, at z-index 1, it stays under the
+  // sidebar and over the page.
+  function gridHost() {
+    let layer = navLink();
+    while (layer && layer !== document.body) {
+      const cs = getComputedStyle(layer);
+      if (cs.position === 'fixed' && cs.zIndex !== 'auto') break;
+      layer = layer.parentElement;
+    }
+    for (let e = layer && layer.parentElement; e && e !== document.body; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      if (cs.position !== 'static' && cs.zIndex !== 'auto') return e;
+    }
+    return document.body;
+  }
+
   // Instagram's sidebar is fixed on the left (or, in narrow windows, a bar
-  // along the bottom); the grid fills the rest.
+  // along the bottom); the grid fills the rest, from the sidebar's narrow
+  // width (it widens over the grid on hover).
   function measure() {
     if (Date.now() - measuredAt < 1000) return;
     measuredAt = Date.now();
     let left = 0;
     let bottom = 0;
-    // Skip links in Instagram's own (hidden) page, which keep their layout.
-    const link = [...document.querySelectorAll('a[href="/reels/"]')]
-      .find((a) => !root.contains(a) && !a.closest('main') && getComputedStyle(a).visibility === 'visible');
+    const link = navLink();
     for (let e = link; e && e !== document.body; e = e.parentElement) {
       const r = e.getBoundingClientRect();
       if (r.width && r.height > window.innerHeight / 2 && r.width < window.innerWidth / 2) left = Math.max(left, r.right);
@@ -903,7 +928,7 @@
       document.body.append(controls);
     }
     if (active && !root.isConnected && document.body) {
-      document.body.append(root);
+      gridHost().append(root);
       measuredAt = 0;
       measure();
       syncSizes();

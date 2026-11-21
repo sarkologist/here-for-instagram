@@ -83,6 +83,11 @@ Captions, in order:
 
 ## Release notes
 
+### 1.0.1
+
+- Fixed: on Reels, the grid covered Instagram's sidebar when it widened on hover.
+- Fixed: Saved in the main menu showed no label, and a ring round its icon, in Instagram's new sidebar.
+
 ### 1.0.0
 
 First public release.
