@@ -85,7 +85,7 @@ Captions, in order:
 
 ### 1.0.1
 
-- Fixed: on Reels, the grid covered Instagram's sidebar when it widened on hover.
+- Fixed: on Reels, Instagram's sidebar now widens over the grid on hover, instead of being covered by it, and the grid no longer resizes when it does.
 - Fixed: Saved in the main menu showed no label, and a ring round its icon, in Instagram's new sidebar.
 
 ### 1.0.0

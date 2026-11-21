@@ -890,14 +890,39 @@
   }
 
   // Instagram's sidebar is fixed on the left (or, in narrow windows, a bar
-  // along the bottom); the grid fills the rest, from the sidebar's narrow
-  // width (it widens over the grid on hover).
+  // along the bottom); the grid fills the rest. The sidebar widens over the
+  // grid while the pointer is on it, so its width then isn't the room it
+  // takes: keep the last measurement (or, before the first, take the width
+  // it has narrow, twice the centre of its icons, which stay put), and
+  // measure again once the pointer has left and it has narrowed.
+  let measured = false;
+  let leaveWatched = null;
   function measure() {
     if (Date.now() - measuredAt < 1000) return;
+    const link = navLink();
+    let layer = link;
+    while (layer && layer !== document.body && getComputedStyle(layer).position !== 'fixed') layer = layer.parentElement;
+    if (layer && layer !== document.body && layer.matches(':hover') && layer.getBoundingClientRect().height > window.innerHeight / 2) {
+      if (leaveWatched !== layer) {
+        leaveWatched = layer;
+        // It takes about 100 ms to narrow again; measure once it has.
+        layer.addEventListener('mouseleave', () => {
+          leaveWatched = null;
+          measuredAt = Date.now() - 700; // and nothing measures before then
+          setTimeout(measure, 320);
+        }, { once: true });
+      }
+      const icon = !measured && link.querySelector('svg');
+      if (icon) {
+        const r = icon.getBoundingClientRect();
+        root.style.setProperty('--sr-left', `${Math.round(r.left + r.right)}px`);
+      }
+      return;
+    }
     measuredAt = Date.now();
+    measured = true;
     let left = 0;
     let bottom = 0;
-    const link = navLink();
     for (let e = link; e && e !== document.body; e = e.parentElement) {
       const r = e.getBoundingClientRect();
       if (r.width && r.height > window.innerHeight / 2 && r.width < window.innerWidth / 2) left = Math.max(left, r.right);
