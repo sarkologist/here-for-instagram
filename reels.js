@@ -9,7 +9,7 @@
   'use strict';
 
   const {
-    go, el, shadowVideo, hostOf, icon, onTop, reelsPage, reelByCode, download, fileName, day, ago, downloadButton,
+    go, el, shadowVideo, hostOf, icon, onTop, reelsPage, reelByCode, ago,
     likeMedia, likeComment, comments, replies, addComment,
   } = Sinsta;
 
@@ -290,11 +290,7 @@
   const muteBtn = button('sr-btn', 'Sound (M)', SOUND_ON);
   const slider = el('input', { type: 'range', min: 0, max: 1, step: 0.05, title: 'Volume' });
   const volumeBox = el('div', { className: 'sr-volume' }, muteBtn, slider);
-  const saveBtn = downloadButton('sr-btn', 'Download (D)', () => {
-    const it = items[pi];
-    return !!it && download(it.file, fileName([it.username, day(it.takenAt), it.code], it.file));
-  });
-  const head = el('div', { className: 'sr-head' }, avatar, userLink, el('span', { className: 'sr-gap' }), volumeBox, saveBtn);
+  const head = el('div', { className: 'sr-head' }, avatar, userLink, el('span', { className: 'sr-gap' }), volumeBox);
   const caption = el('div', { className: 'sr-caption' });
   const foot = el('div', { className: 'sr-foot' }, caption);
   stage.append(head, foot, progress);
@@ -803,8 +799,6 @@
       ' ': () => video && (video.paused ? video.play().catch(() => {}) : video.pause()),
       m: toggleMute,
       M: toggleMute,
-      d: () => saveBtn.click(),
-      D: () => saveBtn.click(),
       l: toggleLike,
       L: toggleLike,
       c: toggleComments,

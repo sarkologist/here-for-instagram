@@ -15,7 +15,6 @@ const Sinsta = (() => {
   const DOC_BADGE = '26853171684350625'; // usePolarisNotificationsNavItemQuery
   const DOC_FEED = '29639616438977013'; // PolarisFeedRootPaginationCachedQuery_subscribe
   const DOC_CLIPS = '29386172244354956'; // PolarisClipsTabDesktopPaginationQuery
-  const DOC_PROFILE = '40158838120366999'; // the query a profile page loads its header with
   const DOC_LIKE = '27182485238052618'; // usePolarisLikeMediaXIGLikeMutation
   const DOC_UNLIKE = '27345296031770102'; // usePolarisLikeMediaXIGUnlikeMutation
   const DOC_COMMENT = '30184188691181526'; // usePolarisCommentSubmitMutation
@@ -36,15 +35,6 @@ const Sinsta = (() => {
   const CLIPS_FLAGS = {
     __relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider: false,
     __relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider: false,
-    __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
-  };
-  const PROFILE_FLAGS = {
-    __relay_internal__pv__PolarisCannesGuardianExperienceEnabledrelayprovider: true,
-    __relay_internal__pv__PolarisCASB976ProfileEnabledrelayprovider: false,
-    __relay_internal__pv__PolarisProfileInformTreatmentBannerEnabledrelayprovider: false,
-    __relay_internal__pv__PolarisWebSchoolsEnabledrelayprovider: false,
-    __relay_internal__pv__PolarisProfileRingsGradientEnabledrelayprovider: true,
-    __relay_internal__pv__PolarisRepostsConsumptionEnabledrelayprovider: true,
     __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
   };
   const IMAGE_MS = 5000;
@@ -213,7 +203,6 @@ const Sinsta = (() => {
       thumbs: (portrait.length ? portrait : cands).sort((a, b) => b.width - a.width),
       video: video.url,
       takenAt: m.taken_at,
-      file: bestFile(m),
     };
   }
 
@@ -424,7 +413,7 @@ const Sinsta = (() => {
     return svg;
   }
 
-  // ---- Downloads ----------------------------------------------------------
+  // ---- Account ids --------------------------------------------------------
 
   const userIds = new Map(); // username -> user id, as far as known
 
@@ -443,101 +432,6 @@ const Sinsta = (() => {
     } catch (_) {
       return null;
     }
-  }
-
-  // The URL of the largest rendition of a post, carousel slide, reel or
-  // story: its video if it is one, else its image.
-  function bestFile(m) {
-    const largest = (list) => (list || []).reduce((a, b) => (!a || b.width * b.height > a.width * a.height ? b : a), null);
-    const file = (m.media_type === 2 && largest(m.video_versions)) || largest(m.image_versions2 && m.image_versions2.candidates);
-    return file ? file.url : null;
-  }
-
-  // "user_2026-11-19_code_2.jpg": the parts that are present, and the
-  // extension of the file at `url`.
-  function fileName(parts, url) {
-    const ext = (new URL(url).pathname.match(/\.(\w{2,5})$/) || [])[1] || 'jpg';
-    return `${parts.filter(Boolean).join('_').replace(/[^\w.-]+/g, '-')}.${ext}`;
-  }
-
-  // A unix time as a local date, 2026-11-19.
-  function day(t) {
-    if (!t) return '';
-    const d = new Date(t * 1000);
-    const two = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
-  }
-
-  // Saves a file through Firefox's download manager (see background.js), so
-  // it lands where Firefox saves downloads, without loading it into the page.
-  async function download(url, name) {
-    if (!url) return false;
-    try {
-      return (await browser.runtime.sendMessage({ type: 'download', url, filename: name })) === true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  // A post or reel by its shortcode: slide `index` of a carousel, or every
-  // slide when `index` is negative. Resolves to whether everything was saved.
-  async function downloadPost(code, index) {
-    const m = await mediaByCode(code);
-    if (!m) return false;
-    const slides = m.carousel_media && m.carousel_media.length ? m.carousel_media : [m];
-    const picked = index < 0 ? slides.map((_, i) => i) : [Math.min(index, slides.length - 1)];
-    const user = m.user && m.user.username;
-    let ok = true;
-    for (const i of picked) {
-      const url = bestFile(slides[i]);
-      const n = slides.length > 1 ? String(i + 1) : '';
-      if (!url || !(await download(url, fileName([user, day(m.taken_at), code, n], url)))) ok = false;
-    }
-    return ok;
-  }
-
-  // A profile picture at the largest size Instagram keeps, as its profile
-  // page loads it. Falls back to the REST endpoint, then to the small one.
-  async function downloadProfilePic(username) {
-    const id = await lookUpId(username);
-    if (!id) return false;
-    const res = await gql(DOC_PROFILE, { enable_integrity_filters: true, id, ...PROFILE_FLAGS }, true);
-    let user = res && res.data && res.data.user;
-    if (!user || !user.hd_profile_pic_url_info) {
-      const info = await api(`/api/v1/users/${id}/info/`);
-      user = (info && info.user) || user;
-    }
-    if (!user) return false;
-    const url = (user.hd_profile_pic_url_info && user.hd_profile_pic_url_info.url) || user.profile_pic_url;
-    return download(url, fileName([username, 'profile'], url));
-  }
-
-  const DOWNLOAD = ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'];
-
-  // A download button. `run` resolves to whether it worked; while it runs the
-  // button is dimmed, and a failure turns it red with a tooltip for a moment.
-  function downloadButton(className, title, run) {
-    const b = el('button', { type: 'button', className, title }, icon(DOWNLOAD));
-    b.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (b.dataset.busy) return;
-      b.dataset.busy = '';
-      let ok = false;
-      try {
-        ok = await run(e);
-      } catch (_) {}
-      delete b.dataset.busy;
-      if (ok) return;
-      const before = b.title;
-      b.dataset.failed = '';
-      b.title = 'Download failed';
-      setTimeout(() => {
-        delete b.dataset.failed;
-        if (b.title === 'Download failed') b.title = before;
-      }, 3000);
-    });
-    return b;
   }
 
   // ---- Viewer state -------------------------------------------------------
@@ -578,11 +472,6 @@ const Sinsta = (() => {
   const userLink = el('a', { className: 'sv-user' });
   const timeText = el('span', { className: 'sv-time' });
   const muteBtn = el('button', { className: 'sv-btn', type: 'button', title: 'Sound (M)' });
-  const saveBtn = downloadButton('sv-btn', 'Download (D)', () => {
-    const reel = list[ri];
-    const item = reel && (media.get(reel.id) || [])[ii];
-    return !!item && download(item.file, fileName([reel.username, day(item.takenAt), 'story', item.pk], item.file));
-  });
   const note = el('div', { className: 'sv-note' });
   const stickerBox = el('div', { className: 'sv-stickers' });
   const bubbleText = el('span');
@@ -603,7 +492,7 @@ const Sinsta = (() => {
     el('div', { className: 'sv-dim' }),
     el('div', { className: 'sv-top' },
       bars,
-      el('div', { className: 'sv-head' }, avatar, userLink, timeText, el('span', { className: 'sv-gap' }), muteBtn, saveBtn),
+      el('div', { className: 'sv-head' }, avatar, userLink, timeText, el('span', { className: 'sv-gap' }), muteBtn),
       sub),
     note,
     toast,
@@ -699,7 +588,6 @@ const Sinsta = (() => {
       ArrowLeft: () => (e.shiftKey ? jump(-1) : step(-1)),
       ' ': () => { spacePaused = !spacePaused; syncPause(); },
       m: () => setMuted(!muted),
-      d: () => saveBtn.click(),
       l: toggleLike,
     };
     const action = actions[e.key];
@@ -826,7 +714,6 @@ const Sinsta = (() => {
       takenAt: it.taken_at,
       type: video ? 'video' : 'image',
       src: video ? video.url : image.url,
-      file: bestFile(it),
       liked: !!it.has_liked,
       canReply: !!it.can_reply,
       poster: image ? image.url : '',
@@ -1584,7 +1471,7 @@ const Sinsta = (() => {
 
   return {
     api, go, el, shadowVideo, hostOf, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, reelByCode,
-    mark, userIds, lookUpId, download, fileName, day, ago, downloadPost, downloadProfilePic, downloadButton,
+    mark, userIds, lookUpId, ago,
     likeMedia, likeComment, comments, replies, addComment,
   };
 })();

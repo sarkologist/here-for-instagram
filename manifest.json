@@ -3,15 +3,9 @@
   "name": "Here for Instagram",
   "version": "1.0.0",
   "permissions": [
-    "storage",
-    "downloads"
+    "storage"
   ],
-  "background": {
-    "scripts": [
-      "background.js"
-    ]
-  },
-  "description": "Splits Instagram's Home into three separate views: suggestions (Algo), Following and Favourites, shows Reels as a grid, and adds download buttons.",
+  "description": "Splits Instagram's Home into three separate views: suggestions (Algo), Following and Favourites, hides posts you've seen, and shows Reels as a grid.",
   "icons": {
     "48": "icon.svg",
     "96": "icon.svg"
@@ -24,8 +18,7 @@
       "js": [
         "stories.js",
         "content.js",
-        "reels.js",
-        "downloads.js"
+        "reels.js"
       ],
       "css": [
         "content.css"

@@ -1420,88 +1420,9 @@ html[data-sinsta-reels-grid] main {
   background: #fff;
 }
 
-/* ---- Downloads -------------------------------------------------------- */
-
-/* The Save button's slot, holding our download button before it. */
-[data-sinsta-dl] {
-  display: flex;
-  align-items: center;
-}
-
-[data-sinsta-dl="column"] {
-  flex-direction: column;
-}
-
-.sinsta-dl,
-.sinsta-dl-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 8px;
-  border: 0;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-}
-
-.sinsta-dl svg,
-.sinsta-dl-avatar svg {
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.sinsta-dl:hover {
-  opacity: 0.6;
-}
-
-/* Profile picture: a round button over its bottom-right corner. */
-[data-sinsta-avatar] {
-  position: relative;
-}
-
-.sinsta-dl-avatar {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  padding: 6px;
-  border-radius: 50%;
-  background: rgb(var(--ig-primary-background, 255, 255, 255));
-  color: rgb(var(--ig-primary-text, 0, 0, 0));
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.sinsta-dl-avatar svg {
-  width: 18px;
-  height: 18px;
-}
-
-[data-sinsta-avatar]:hover .sinsta-dl-avatar,
-.sinsta-dl-avatar:focus-visible,
-.sinsta-dl-avatar[data-busy],
-.sinsta-dl-avatar[data-failed] {
-  opacity: 1;
-}
-
-/* While a download starts, and briefly after one fails. */
-.sinsta-dl[data-busy],
-.sinsta-dl-avatar[data-busy],
+/* While a like is being sent. */
 #sinsta-viewer .sv-btn[data-busy],
 #sinsta-reel-player .sr-btn[data-busy] {
   opacity: 0.4;
   cursor: progress;
-}
-
-.sinsta-dl[data-failed],
-.sinsta-dl-avatar[data-failed],
-#sinsta-viewer .sv-btn[data-failed],
-#sinsta-reel-player .sr-btn[data-failed] {
-  color: #ed4956;
 }

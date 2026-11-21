@@ -43,7 +43,6 @@ Unwatched stories come first, then fully watched ones with a grey ring, each gro
 | `Shift` + `→` / `←` | next / previous account |
 | Hold, or `Space` | pause |
 | `M` | sound on/off |
-| `D` | download |
 | `L` | like |
 | `Esc` | close |
 
@@ -58,21 +57,11 @@ Polls, quizzes, sliders and question stickers can't be answered: Instagram only 
 Reels shows Instagram's Reels feed as a grid of covers, like the app's grids, instead of one reel at a time. More load as you scroll. Hovering a cover plays it silently.
 
 - **Columns:** the − / + buttons in the top-right corner (or the `-` and `+` keys) set 1 to 8 columns. Covers never get taller than the window, so few columns leave margins on wide screens.
-- **Player:** clicking a cover plays the grid in order from there, with sound, carrying on from where its hover preview got to. `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous reel, `Space` pauses, `M` toggles sound, `D` downloads, the slider beside the sound button (or scrolling over it) sets the volume, `Esc` closes and lands the grid on the reel you stopped at. Ctrl/⌘-click a cover to open it in a new tab instead.
+- **Player:** clicking a cover plays the grid in order from there, with sound, carrying on from where its hover preview got to. `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous reel, `Space` pauses, `M` toggles sound, the slider beside the sound button (or scrolling over it) sets the volume, `Esc` closes and lands the grid on the reel you stopped at. Ctrl/⌘-click a cover to open it in a new tab instead.
 - **Likes and comments:** beside the video are the like button (`L`), the comments button (`C`) with the comment count, and a button that copies the reel's link. Comments open in a panel beside the video, which stays open as you move between reels until you close it (`C` or `Esc`). It loads more as you scroll; replies load under their comment, and comments can be liked, replied to (Reply) and posted (`Enter`; `Shift+Enter` for a new line).
 - **Links:** opening a link to one reel (`/reels/<code>/`) puts it first in the grid and plays it.
 - **Grid** in the corner switches back to Instagram's own player and back; the choice and the column count are remembered. Leaving Reels and coming back keeps the grid where it was until the page reloads.
 - The player doesn't report views to Instagram, so watching here doesn't tune the feed the way Instagram's player does.
-
-## Downloads
-
-A download button saves the original file (the largest image, or the video) through Firefox's downloads, named `user_date_code.ext`, with the slide number for carousels.
-
-- **Posts and reels:** beside the Save button, in the feed, on post pages and in Instagram's reels player. On a carousel it saves the slide on screen; Shift-click saves every slide.
-- **Stories and the Reels grid's player:** in the header, or `D`.
-- **Profile pictures:** hover the picture on a profile page for a button in its corner; it saves the largest size Instagram keeps.
-
-Files are looked up through Instagram's media API, not taken from the page, and the buttons sit beside Instagram's own without changing them.
 
 ## Other tweaks
 
