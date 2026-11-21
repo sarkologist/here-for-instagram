@@ -404,19 +404,22 @@
     commentBtn.toggleAttribute('data-on', !panel.hidden);
   }
 
+  // Reels whose like is on its way; another reel can be liked meanwhile.
+  const liking = new WeakSet();
+
   async function toggleLike() {
     const it = items[pi];
-    if (!it || likeBtn.dataset.busy) return;
+    if (!it || liking.has(it)) return;
     const on = !it.liked;
     const flip = (v) => {
       it.liked = v;
       if (it.likes != null) it.likes += v ? 1 : -1;
       if (items[pi] === it) syncActions();
     };
+    liking.add(it);
     flip(on);
-    likeBtn.dataset.busy = '';
     const ok = await likeMedia(it.pk, on, it.token);
-    delete likeBtn.dataset.busy;
+    liking.delete(it);
     if (!ok) flip(!on);
   }
 
@@ -487,7 +490,9 @@
     let last = 0;
     for (const m of text.matchAll(/([@#])([\p{L}\p{N}_.]+)/gu)) {
       if (m.index > 0 && /[\p{L}\p{N}_]/u.test(text[m.index - 1])) continue;
-      const name = m[1] === '@' ? m[2].replace(/\.+$/, '') : m[2];
+      // Usernames may contain dots, but not end with one; hashtags have none.
+      const name = m[1] === '@' ? m[2].replace(/\.+$/, '') : m[2].split('.')[0];
+      if (!name) continue;
       out.push(text.slice(last, m.index));
       const href = m[1] === '@' ? `/${name}/` : `/explore/tags/${encodeURIComponent(name)}/`;
       out.push(el('a', { href, className: 'sr-ctag' }, m[1] + name));

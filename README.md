@@ -89,3 +89,7 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 - Story replies, reactions and likes, and likes and comments in the Reels grid's player, use Instagram's comments endpoint and the saved queries its own like, comment and reply buttons send. If those change, a like flips back and a reply or comment says it couldn't be sent.
 - The stories row and viewer rely on Instagram's internal endpoints (the stories tray, the favourites list, and two saved queries its own viewer uses). If the row's endpoints change, the row disappears; if the viewer's queries change, stories open in Instagram's viewer instead. The rest keeps working.
 - When several hidden posts load in a row (in Algo, a run of posts from accounts you follow), a note says so and the space below stays blank until more arrive as you scroll.
+
+## License
+
+[MPL-2.0](LICENSE)

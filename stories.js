@@ -182,6 +182,16 @@ const Sinsta = (() => {
     return out;
   }
 
+  // An object's id as a string. Ids are too long for a JavaScript number, so
+  // when a response has one as a number (losing its last digits) the exact
+  // string forms win: `pk_id`, or the pk before the "_" of `id`.
+  function idOf(o) {
+    if (typeof o.pk === 'string') return o.pk;
+    if (typeof o.pk_id === 'string') return o.pk_id;
+    if (typeof o.id === 'string' && /^\d+(_|$)/.test(o.id)) return o.id.split('_')[0];
+    return String(o.pk);
+  }
+
   // A reel as the grid and player use it, from Instagram's media object.
   function clipItem(m) {
     const video = m && (m.video_versions || [])[0];
@@ -189,7 +199,7 @@ const Sinsta = (() => {
     const cands = (m.image_versions2 && m.image_versions2.candidates) || [];
     const portrait = cands.filter((c) => c.height > c.width);
     return {
-      pk: String(m.pk),
+      pk: idOf(m),
       code: m.code,
       username: m.user.username,
       pic: m.user.profile_pic_url,
@@ -217,7 +227,11 @@ const Sinsta = (() => {
       pk = pk * 64n + BigInt(d);
     }
     const res = await api(`/api/v1/media/${pk}/info/`);
-    return (res && res.items && res.items[0]) || null;
+    const m = res && res.items && res.items[0];
+    if (!m) return null;
+    // The exact pk, which a plain 11-letter code spells out in full.
+    if (code.length <= 11 && m.code === code) m.pk = String(pk);
+    return m;
   }
 
   // One reel by its shortcode.
@@ -263,7 +277,7 @@ const Sinsta = (() => {
   function toComment(c) {
     if (!c || !c.pk || !c.user) return null;
     return {
-      pk: String(c.pk),
+      pk: idOf(c),
       text: c.text || '',
       username: c.user.username,
       pic: c.user.profile_pic_url,
@@ -455,6 +469,7 @@ const Sinsta = (() => {
   let bubbleOn = false; // its "Name ›" bubble is showing
   let downAt = 0;
   let typing = false; // the reply box has focus
+  let sending = false; // a reply or reaction is on its way
   let onClose = null;
 
   const media = new Map(); // reel id -> [{ pk, takenAt, type, src, poster }]
@@ -628,12 +643,22 @@ const Sinsta = (() => {
     if (text) send(text, null);
   }
 
+  // While a reply is on its way the box stays focused but read-only (a
+  // disabled input would lose focus), and the story stays paused, so it
+  // can't move on and take the typed text with it.
   async function send(text, emoji) {
     const cur = currentItem();
-    if (!cur || !cur.item.canReply || replyInput.disabled) return;
-    replyInput.disabled = true;
+    if (!cur || !cur.item.canReply || sending) return;
+    sending = true;
+    replyInput.readOnly = true;
+    replyInput.toggleAttribute('data-sending', true);
+    syncPause();
     const ok = await replyToStory(cur.item.pk, cur.reel.id, cur.reel.id, text, emoji);
-    replyInput.disabled = false;
+    sending = false;
+    replyInput.readOnly = false;
+    replyInput.toggleAttribute('data-sending', false);
+    syncPause();
+    if (!open) return;
     if (ok) {
       if (text) replyInput.value = '';
       replyInput.blur();
@@ -653,25 +678,29 @@ const Sinsta = (() => {
     toastTimer = setTimeout(() => { toast.hidden = true; }, big ? 1200 : 2000);
   }
 
+  // Stories whose like is on its way; another story can be liked meanwhile.
+  const liking = new WeakSet();
+
   async function toggleLike() {
     const cur = currentItem();
-    if (!cur || likeBtn.dataset.busy) return;
+    if (!cur || liking.has(cur.item)) return;
     const { item } = cur;
     const flip = (v) => {
       item.liked = v;
       syncLike();
     };
     const on = !item.liked;
+    liking.add(item);
     flip(on);
-    likeBtn.dataset.busy = '';
     const ok = await likeStory(item.pk, on);
-    delete likeBtn.dataset.busy;
-    if (!ok) flip(!on);
+    liking.delete(item);
+    flip(ok ? on : !on);
   }
 
   function syncLike() {
     const cur = currentItem();
     const liked = !!(cur && cur.item.liked);
+    likeBtn.toggleAttribute('data-busy', !!(cur && liking.has(cur.item)));
     likeBtn.toggleAttribute('data-on', liked);
     likeBtn.title = liked ? 'Unlike (L)' : 'Like (L)';
   }
@@ -1179,7 +1208,7 @@ const Sinsta = (() => {
 
   // ---- Playback -----------------------------------------------------------
 
-  const paused = () => spacePaused || holding || hovering || bubbleOn || typing || turning;
+  const paused = () => spacePaused || holding || hovering || bubbleOn || typing || sending || turning;
 
   // Clickable areas over the stickers, on a layer matching the media's own
   // box within the 9:16 stage (the media is shown uncropped).
@@ -1297,7 +1326,7 @@ const Sinsta = (() => {
       const n = ri + dir;
       if (n < 0 || n >= list.length) return close();
       ri = n;
-      ii = dir > 0 ? START : LAST;
+      ii = dir > 0 ? START : landing(list[n]);
       return show();
     }
     if (ii === START) ii = firstUnseen(reel, items);

@@ -28,16 +28,38 @@ const fail = (msg) => {
 const dirty = git("status", "--porcelain").trimEnd();
 if (dirty) fail(`working tree is dirty; commit or stash first, so the XPI is exactly HEAD:\n${dirty}`);
 
-// The allowlist, from the committed manifest.
+// The allowlist, from the committed manifest: every file it names, the local
+// files those HTML pages load, and _locales/ when the manifest is localised.
 const manifest = JSON.parse(git("show", "HEAD:manifest.json"));
+const tracked = new Set(git("ls-files", "-z").split("\0").filter(Boolean));
 const payload = new Set(["manifest.json"]);
-for (const f of manifest.background?.scripts ?? []) payload.add(f);
-for (const cs of manifest.content_scripts ?? []) for (const f of [...(cs.js ?? []), ...(cs.css ?? [])]) payload.add(f);
-for (const f of Object.values(manifest.icons ?? {})) payload.add(f);
-for (const f of manifest.web_accessible_resources ?? []) payload.add(f);
+const add = (f) => typeof f === "string" && f && payload.add(f.replace(/^\.?\//, ""));
+const icons = (v) => (typeof v === "string" ? add(v) : Object.values(v ?? {}).forEach(add));
+const bg = manifest.background ?? {};
+[...(bg.scripts ?? []), bg.page, bg.service_worker].forEach(add);
+for (const cs of manifest.content_scripts ?? []) [...(cs.js ?? []), ...(cs.css ?? [])].forEach(add);
+icons(manifest.icons);
+for (const key of ["browser_action", "page_action", "action", "sidebar_action"]) {
+  const a = manifest[key];
+  if (!a) continue;
+  [a.default_popup, a.default_panel].forEach(add);
+  icons(a.default_icon);
+}
+add(manifest.options_ui?.page);
+add(manifest.options_page);
+Object.values(manifest.chrome_url_overrides ?? {}).forEach(add);
+for (const w of manifest.web_accessible_resources ?? []) (typeof w === "string" ? [w] : w.resources ?? []).forEach(add);
+if (manifest.default_locale) for (const f of tracked) if (f.startsWith("_locales/")) add(f);
+for (const page of [...payload].filter((f) => f.endsWith(".html"))) {
+  const dir = page.includes("/") ? page.slice(0, page.lastIndexOf("/") + 1) : "";
+  for (const [, ref] of git("show", `HEAD:${page}`).matchAll(/\b(?:src|href)=["']([^"'#?:]+)["']/g)) {
+    add(ref.startsWith("/") ? ref.slice(1) : dir + ref);
+  }
+}
+const globbed = [...payload].filter((f) => f.includes("*"));
+if (globbed.length) fail(`wildcards in the manifest can't be allowlisted; list the files: ${globbed.join(", ")}`);
 const files = [...payload].sort();
 
-const tracked = new Set(git("ls-files", "-z").split("\0").filter(Boolean));
 const untracked = files.filter((f) => !tracked.has(f));
 if (untracked.length) fail(`manifest references files not committed: ${untracked.join(", ")}`);
 
@@ -51,16 +73,18 @@ const ident = (cmd) => {
     return "";
   }
 };
+// Each identifier counts only as a whole word, so a user name like "sam"
+// doesn't trip on "sample".
+const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const personal = [userInfo().username, ident("user.name"), ident("user.email")]
   .filter((s) => s && s.length >= 3)
-  .map((s) => s.toLowerCase());
+  .map((s) => new RegExp(`(?<![\\p{L}\\p{N}_])${escape(s)}(?![\\p{L}\\p{N}_])`, "iu"));
 const hits = [];
 for (const f of files) {
   git("show", `HEAD:${f}`)
     .split("\n")
     .forEach((line, i) => {
-      const lower = line.toLowerCase();
-      if (DEV_PATH.test(line) || personal.some((p) => lower.includes(p))) hits.push(`  ${f}:${i + 1}: ${line.trim().slice(0, 160)}`);
+      if (DEV_PATH.test(line) || personal.some((p) => p.test(line))) hits.push(`  ${f}:${i + 1}: ${line.trim().slice(0, 160)}`);
     });
 }
 if (hits.length) fail(`developer paths or personal identifiers in shipped files:\n${hits.join("\n")}`);
@@ -72,7 +96,10 @@ rmSync(resolve(root, out), { force: true });
 git("archive", "--format=zip", "-o", out, "HEAD", "--", ...files);
 
 // Read the zip back: exactly the allowlist, nothing more or less.
-const listed = execFileSync("unzip", ["-Z1", resolve(root, out)], { encoding: "utf8" }).split("\n").filter(Boolean).sort();
+const listed = execFileSync("unzip", ["-Z1", resolve(root, out)], { encoding: "utf8" })
+  .split("\n")
+  .filter((e) => e && !e.endsWith("/")) // git adds entries for directories
+  .sort();
 if (listed.join("\n") !== files.join("\n")) {
   rmSync(resolve(root, out), { force: true });
   fail(`zip contents differ from the allowlist:\n  zip: ${listed.join(", ")}\n  allowlist: ${files.join(", ")}`);

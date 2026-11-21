@@ -730,7 +730,7 @@ html[data-sinsta-reels-grid] main video {
   border-color: #fff;
 }
 
-.sv-reply:disabled {
+.sv-reply[data-sending] {
   opacity: 0.6;
 }
 
