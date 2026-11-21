@@ -1,4 +1,4 @@
-# Sinstagram
+# Here for Instagram
 
 Firefox extension that keeps Instagram's streams on separate surfaces.
 
@@ -29,6 +29,8 @@ Following and Favourites have a "Hide seen" toggle (on by default). With it on, 
 
 Clicking a story opens the extension's own viewer, which plays the row in order (so Favourites stays within starred accounts) and preloads the next few stories. Started on an unwatched account, it closes after the last unwatched one; started on a watched one, it plays to the end of the row. Viewing marks a story as seen, as on Instagram.
 
+The accounts before and after the current one fan out on either side of it: the nearest ones large and flat, farther ones smaller, narrower and slightly turned, as many as the window has room for. Each shows the story you'd land on (the last one of an account behind, the first unwatched one of an account ahead), and clicking it goes there.
+
 Unwatched stories come first, then fully watched ones with a grey ring, each group newest first. Watched ones stay until their stories expire.
 
 - **Favourites** asks Instagram for every favourite's stories directly, so the row is complete, including stories you watched on your phone.
@@ -41,18 +43,36 @@ Unwatched stories come first, then fully watched ones with a grey ring, each gro
 | `Shift` + `→` / `←` | next / previous account |
 | Hold, or `Space` | pause |
 | `M` | sound on/off |
+| `D` | download |
+| `L` | like |
 | `Esc` | close |
 
-Stickers work as on Instagram: @mentions, hashtags and locations open their page, and links open in a new tab (the story pauses while the pointer is over one). Tapping the middle of a shared post, reel or story shows Instagram's bubble ("View reel", or the original poster's name), which opens it; the next tap elsewhere dismisses it. The same links sit under the account name ("View post" or "View reel", and "from @…"), beside the title of any song. To reply, react, or answer a poll or question, use the arrow button in the header, which opens that story in Instagram's viewer.
+Stickers work as on Instagram: @mentions, hashtags and locations open their page, and links open in a new tab (the story pauses while the pointer is over one). Tapping the middle of a shared post, reel or story shows Instagram's bubble ("View reel", or the original poster's name), which opens it; the next tap elsewhere dismisses it. The same links sit under the account name ("View post" or "View reel", and "from @…"), beside the title of any song.
+
+The bar along the bottom replies to the story in the author's DMs, as on Instagram: type and press `Enter`. While the reply box is open the story pauses and the quick reactions appear (😂 😮 😍 😢 👏 🔥 🎉 💯), each sent with one click. `Esc` leaves the box. The heart beside it likes the story. Stories whose author turned off replies show only the heart.
+
+Polls, quizzes, sliders and question stickers can't be answered: Instagram only accepts those answers from its phone app, and its own website shows them as unsupported too.
 
 ## Reels grid
 
 Reels shows Instagram's Reels feed as a grid of covers, like the app's grids, instead of one reel at a time. More load as you scroll. Hovering a cover plays it silently.
 
 - **Columns:** the − / + buttons in the top-right corner (or the `-` and `+` keys) set 1 to 8 columns. Covers never get taller than the window, so few columns leave margins on wide screens.
-- **Player:** clicking a cover plays the grid in order from there, with sound, carrying on from where its hover preview got to. `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous reel, `Space` pauses, `M` toggles sound, the slider beside the sound button (or scrolling over it) sets the volume, `Esc` closes and lands the grid on the reel you stopped at. The arrow button in the header opens the reel on Instagram to like, comment or share. Ctrl/⌘-click a cover to open it in a new tab instead.
+- **Player:** clicking a cover plays the grid in order from there, with sound, carrying on from where its hover preview got to. `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous reel, `Space` pauses, `M` toggles sound, `D` downloads, the slider beside the sound button (or scrolling over it) sets the volume, `Esc` closes and lands the grid on the reel you stopped at. Ctrl/⌘-click a cover to open it in a new tab instead.
+- **Likes and comments:** beside the video are the like button (`L`), the comments button (`C`) with the comment count, and a button that copies the reel's link. Comments open in a panel beside the video, which stays open as you move between reels until you close it (`C` or `Esc`). It loads more as you scroll; replies load under their comment, and comments can be liked, replied to (Reply) and posted (`Enter`; `Shift+Enter` for a new line).
+- **Links:** opening a link to one reel (`/reels/<code>/`) puts it first in the grid and plays it.
 - **Grid** in the corner switches back to Instagram's own player and back; the choice and the column count are remembered. Leaving Reels and coming back keeps the grid where it was until the page reloads.
 - The player doesn't report views to Instagram, so watching here doesn't tune the feed the way Instagram's player does.
+
+## Downloads
+
+A download button saves the original file (the largest image, or the video) through Firefox's downloads, named `user_date_code.ext`, with the slide number for carousels.
+
+- **Posts and reels:** beside the Save button, in the feed, on post pages and in Instagram's reels player. On a carousel it saves the slide on screen; Shift-click saves every slide.
+- **Stories and the Reels grid's player:** in the header, or `D`.
+- **Profile pictures:** hover the picture on a profile page for a button in its corner; it saves the largest size Instagram keeps.
+
+Files are looked up through Instagram's media API, not taken from the page, and the buttons sit beside Instagram's own without changing them.
 
 ## Other tweaks
 
@@ -69,9 +89,14 @@ Temporary (gone on restart): open `about:debugging#/runtime/this-firefox`, click
 
 Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API keys), or use Firefox Developer Edition with `xpinstall.signatures.required` set to `false`.
 
+## Publishing
+
+`node scripts/package.mjs` writes `web-ext-artifacts/<name>-<version>.zip` for upload to AMO. It refuses a dirty tree and zips from `HEAD`. It ships only the files `manifest.json` references, and fails if any of them contains an absolute developer path or your user name, git name or git email. Paste the notes in [docs/reviewer-notes.md](docs/reviewer-notes.md) into "Notes to reviewer".
+
 ## Limits
 
 - Posts are sorted by English UI labels ("Ad" and "Sponsored" for ads; "Suggested for you" or a Follow button for suggestions), and Instagram's stories row by its "Story by" labels.
 - The Reels grid uses the internal query Instagram's Reels tab loads its feed with. If it changes, the grid says it couldn't load reels; Grid in the corner switches back to Instagram's player.
+- Story replies, reactions and likes, and likes and comments in the Reels grid's player, use Instagram's comments endpoint and the saved queries its own like, comment and reply buttons send. If those change, a like flips back and a reply or comment says it couldn't be sent.
 - The stories row and viewer rely on Instagram's internal endpoints (the stories tray, the favourites list, and two saved queries its own viewer uses). If the row's endpoints change, the row disappears; if the viewer's queries change, stories open in Instagram's viewer instead. The rest keeps working.
 - When several hidden posts load in a row (in Algo, a run of posts from accounts you follow), a note says so and the space below stays blank until more arrive as you scroll.

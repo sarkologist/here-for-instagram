@@ -15,6 +15,15 @@ const Sinsta = (() => {
   const DOC_BADGE = '26853171684350625'; // usePolarisNotificationsNavItemQuery
   const DOC_FEED = '29639616438977013'; // PolarisFeedRootPaginationCachedQuery_subscribe
   const DOC_CLIPS = '29386172244354956'; // PolarisClipsTabDesktopPaginationQuery
+  const DOC_PROFILE = '40158838120366999'; // the query a profile page loads its header with
+  const DOC_LIKE = '27182485238052618'; // usePolarisLikeMediaXIGLikeMutation
+  const DOC_UNLIKE = '27345296031770102'; // usePolarisLikeMediaXIGUnlikeMutation
+  const DOC_COMMENT = '30184188691181526'; // usePolarisCommentSubmitMutation
+  const DOC_COMMENT_LIKE = '25746541371686622'; // usePolarisCommentLikeMutation
+  const DOC_COMMENT_UNLIKE = '26466515576331833'; // usePolarisCommentUnlikeMutation
+  const DOC_STORY_LIKE = '26938887309082050'; // usePolarisStoriesV4LikeMutationLikeMutation
+  const DOC_STORY_UNLIKE = '26510485515280697'; // usePolarisStoriesV4LikeMutationUnlikeMutation
+  const DOC_STORY_REPLY = '29327482173525974'; // IGDirectStoryShareReplyMutation
   // Feature flags the feed query declares; values as Instagram's web app sends them.
   const FEED_FLAGS = {
     __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
@@ -27,6 +36,15 @@ const Sinsta = (() => {
   const CLIPS_FLAGS = {
     __relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider: false,
     __relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider: false,
+    __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
+  };
+  const PROFILE_FLAGS = {
+    __relay_internal__pv__PolarisCannesGuardianExperienceEnabledrelayprovider: true,
+    __relay_internal__pv__PolarisCASB976ProfileEnabledrelayprovider: false,
+    __relay_internal__pv__PolarisProfileInformTreatmentBannerEnabledrelayprovider: false,
+    __relay_internal__pv__PolarisWebSchoolsEnabledrelayprovider: false,
+    __relay_internal__pv__PolarisProfileRingsGradientEnabledrelayprovider: true,
+    __relay_internal__pv__PolarisRepostsConsumptionEnabledrelayprovider: true,
     __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
   };
   const IMAGE_MS = 5000;
@@ -56,12 +74,13 @@ const Sinsta = (() => {
     return request(path, { headers: { 'x-ig-app-id': APP_ID }, credentials: 'include' });
   }
 
-  // Reads work on /graphql/query with just the CSRF cookie. Mutations sent
-  // there are accepted but silently dropped (the result is null): they need
-  // /api/graphql plus the page's session tokens, as do a few reads.
+  // Some reads work on /graphql/query with just the CSRF cookie. Mutations
+  // sent there are accepted but silently dropped (the result is null): they
+  // need /api/graphql plus the page's session tokens (`mutation` true), as
+  // do more and more reads.
   function gql(docId, variables, mutation) {
     const csrf = (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1] || '';
-    const params = { doc_id: docId, variables: JSON.stringify(variables) };
+    const params = { doc_id: docId, variables: typeof variables === 'string' ? variables : JSON.stringify(variables) };
     const headers = {
       'content-type': 'application/x-www-form-urlencoded',
       'x-csrftoken': csrf,
@@ -173,6 +192,50 @@ const Sinsta = (() => {
     return out;
   }
 
+  // A reel as the grid and player use it, from Instagram's media object.
+  function clipItem(m) {
+    const video = m && (m.video_versions || [])[0];
+    if (!m || !m.code || !m.user || !video) return null;
+    const cands = (m.image_versions2 && m.image_versions2.candidates) || [];
+    const portrait = cands.filter((c) => c.height > c.width);
+    return {
+      pk: String(m.pk),
+      code: m.code,
+      username: m.user.username,
+      pic: m.user.profile_pic_url,
+      caption: (m.caption && m.caption.text) || '',
+      likes: m.like_and_view_counts_disabled ? null : m.like_count,
+      liked: !!m.has_liked,
+      comments: m.comment_count || 0,
+      commentsOff: !!(m.comments_disabled || m.commenting_disabled_for_viewer),
+      token: m.organic_tracking_token || null,
+      // Covers, largest first: portrait ones, else the square crops.
+      thumbs: (portrait.length ? portrait : cands).sort((a, b) => b.width - a.width),
+      video: video.url,
+      takenAt: m.taken_at,
+      file: bestFile(m),
+    };
+  }
+
+  // Instagram's media object for a post or reel, by its shortcode, which is
+  // its pk in URL-safe base 64.
+  async function mediaByCode(code) {
+    const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    let pk = 0n;
+    for (const c of code.slice(0, 11)) {
+      const d = ABC.indexOf(c);
+      if (d < 0) return null;
+      pk = pk * 64n + BigInt(d);
+    }
+    const res = await api(`/api/v1/media/${pk}/info/`);
+    return (res && res.items && res.items[0]) || null;
+  }
+
+  // One reel by its shortcode.
+  async function reelByCode(code) {
+    return clipItem(await mediaByCode(code));
+  }
+
   // One page of Instagram's Reels feed (the one its Reels tab plays), as
   // { items, after } where `after` is null at the end, or null on failure.
   // Ads come from a separate query, so there are none here.
@@ -187,27 +250,108 @@ const Sinsta = (() => {
     }, true);
     const conn = res && res.data && res.data.xdt_api__v1__clips__home__connection_v2;
     if (!conn) return null;
-    const items = [];
-    for (const e of conn.edges || []) {
-      const m = e.node && e.node.media;
-      const video = m && (m.video_versions || [])[0];
-      if (!m || !m.code || !m.user || !video) continue;
-      const cands = (m.image_versions2 && m.image_versions2.candidates) || [];
-      const portrait = cands.filter((c) => c.height > c.width);
-      items.push({
-        pk: String(m.pk),
-        code: m.code,
-        username: m.user.username,
-        pic: m.user.profile_pic_url,
-        caption: (m.caption && m.caption.text) || '',
-        likes: m.like_and_view_counts_disabled ? null : m.like_count,
-        // Covers, largest first: portrait ones, else the square crops.
-        thumbs: (portrait.length ? portrait : cands).sort((a, b) => b.width - a.width),
-        video: video.url,
-      });
-    }
+    const items = (conn.edges || []).map((e) => clipItem(e.node && e.node.media)).filter(Boolean);
     const info = conn.page_info || {};
     return { items, after: info.has_next_page ? info.end_cursor : null };
+  }
+
+  // ---- Likes and comments -------------------------------------------------
+
+  // The first field of a mutation's result, or null if it failed.
+  const mutated = (res) => (res && res.data && Object.values(res.data)[0]) || null;
+
+  // Like or unlike a post or reel. Resolves to whether it worked.
+  async function likeMedia(pk, on, token) {
+    const input = { media_id: pk, tracking_token: token || undefined };
+    if (on) input.container_module = 'clips_viewer_clips_tab';
+    return !!mutated(await gql(on ? DOC_LIKE : DOC_UNLIKE, { input }, true));
+  }
+
+  async function likeComment(pk, on) {
+    return !!mutated(await gql(on ? DOC_COMMENT_LIKE : DOC_COMMENT_UNLIKE, { input: { comment_id: pk } }, true));
+  }
+
+  function toComment(c) {
+    if (!c || !c.pk || !c.user) return null;
+    return {
+      pk: String(c.pk),
+      text: c.text || '',
+      username: c.user.username,
+      pic: c.user.profile_pic_url,
+      at: c.created_at,
+      likes: c.comment_like_count || 0,
+      liked: !!c.has_liked_comment,
+      replies: c.child_comment_count || 0,
+    };
+  }
+
+  // A page of a post's comments, as { comments, next } where `next` is the
+  // cursor for the following page (null at the end), or null on failure.
+  async function comments(pk, cursor) {
+    let path = `/api/v1/media/${pk}/comments/?can_support_threading=true&permalink_enabled=false`;
+    if (cursor) path += `&${cursor.key}=${encodeURIComponent(cursor.value)}`;
+    const res = await api(path);
+    if (!res || !res.comments) return null;
+    const next = res.has_more_headload_comments && res.next_min_id ? { key: 'min_id', value: res.next_min_id }
+      : res.has_more_comments && res.next_max_id ? { key: 'max_id', value: res.next_max_id }
+      : null;
+    return { comments: res.comments.map(toComment).filter(Boolean), next };
+  }
+
+  // Replies to a comment, oldest first, paged the same way.
+  async function replies(pk, commentPk, cursor) {
+    let path = `/api/v1/media/${pk}/comments/${commentPk}/child_comments/`;
+    if (cursor) path += `?${cursor.key}=${encodeURIComponent(cursor.value)}`;
+    const res = await api(path);
+    if (!res || !res.child_comments) return null;
+    const next = res.has_more_tail_child_comments && res.next_max_child_cursor ? { key: 'max_id', value: res.next_max_child_cursor }
+      : res.has_more_head_child_comments && res.next_min_child_cursor ? { key: 'min_id', value: res.next_min_child_cursor }
+      : null;
+    return { comments: res.child_comments.map(toComment).filter(Boolean), next };
+  }
+
+  // Post a comment, or a reply to comment `replyTo`. Resolves to the new
+  // comment, or null if it failed.
+  async function addComment(pk, text, replyTo, token) {
+    const data = { comment_text: text, media_id: pk, tracking_token: token || undefined };
+    if (replyTo) data.replied_to_comment_id = '@REPLY@';
+    // Instagram sends the id as a JSON number; ids are too long for a
+    // JavaScript number, so write its digits into the JSON directly.
+    let variables = JSON.stringify({ data, root_connections: [] });
+    if (replyTo && /^\d+$/.test(replyTo)) variables = variables.replace('"@REPLY@"', replyTo);
+    const root = mutated(await gql(DOC_COMMENT, variables, true));
+    return root ? toComment(root.comment || root) : null;
+  }
+
+  // Like or unlike a story (the heart, which its author sees in the viewer list).
+  async function likeStory(pk, on) {
+    return !!mutated(await gql(on ? DOC_STORY_LIKE : DOC_STORY_UNLIKE, { input: { media_id: pk } }, true));
+  }
+
+  // Reply to a story in the author's DMs, with text or a reaction emoji,
+  // as Instagram's own viewer does. Resolves to whether it was sent.
+  async function replyToStory(pk, reelId, userId, text, emoji) {
+    // An "offline threading id": the time in ms shifted left 22 bits, plus random bits.
+    const otid = String((BigInt(Date.now()) << 22n) | BigInt(Math.floor(Math.random() * 4194304)));
+    const variables = {
+      data: {
+        is_shh_mode: false,
+        media_id: pk,
+        reaction_emoji: emoji || null,
+        reel_id: reelId,
+        sampled: false,
+        share_client_context: otid,
+        text: text ? { sensitive_string_value: text } : null,
+      },
+      send_data: {
+        forwarded_from_thread_id: null,
+        is_forwarded_from_own_message: null,
+        offline_threading_id: otid,
+        recipient_users: JSON.stringify([String(userId)]),
+        thread_id: null,
+      },
+    };
+    return !!mutated(await gql(DOC_STORY_REPLY, variables, true));
   }
 
   // Navigate through Instagram's own router (no page reload). In Firefox the
@@ -225,8 +369,21 @@ const Sinsta = (() => {
 
   // ---- DOM helpers --------------------------------------------------------
 
+  // Every element the extension adds carries the id of the copy that made
+  // it. Reloading or updating the extension runs it again in tabs already
+  // open, where the previous copy's elements stay behind, dead (a second
+  // tab bar, a second end-of-feed note); this copy removes them.
+  const GEN = Math.random().toString(36).slice(2);
+  const mark = (node) => {
+    node.setAttribute('data-sinsta-gen', GEN);
+    return node;
+  };
+  for (const node of document.querySelectorAll('[data-sinsta-gen]')) {
+    if (node.getAttribute('data-sinsta-gen') !== GEN) node.remove();
+  }
+
   function el(tag, props, ...kids) {
-    const node = Object.assign(document.createElement(tag), props);
+    const node = mark(Object.assign(document.createElement(tag), props));
     node.append(...kids);
     return node;
   }
@@ -256,7 +413,7 @@ const Sinsta = (() => {
 
   function icon(paths) {
     const NS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(NS, 'svg');
+    const svg = mark(document.createElementNS(NS, 'svg'));
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
     for (const d of paths) {
@@ -265,6 +422,122 @@ const Sinsta = (() => {
       svg.append(path);
     }
     return svg;
+  }
+
+  // ---- Downloads ----------------------------------------------------------
+
+  const userIds = new Map(); // username -> user id, as far as known
+
+  // Favourites' ids come with the favourites list. For anyone else, the only
+  // lookup left on the web (web_profile_info is gone) is the profile page,
+  // which is large, so it is fetched on click rather than on hover.
+  async function lookUpId(user) {
+    if (userIds.has(user)) return userIds.get(user);
+    // Firefox: content.fetch sends the request as the page would.
+    const f = typeof content === 'object' && content && content.fetch ? content.fetch.bind(content) : window.fetch.bind(window);
+    try {
+      const res = await f(`${location.origin}/${encodeURIComponent(user)}/`, { credentials: 'include' });
+      const id = ((await res.text()).match(/"profile_id":"(\d+)"/) || [])[1];
+      if (id) userIds.set(user, id);
+      return id || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // The URL of the largest rendition of a post, carousel slide, reel or
+  // story: its video if it is one, else its image.
+  function bestFile(m) {
+    const largest = (list) => (list || []).reduce((a, b) => (!a || b.width * b.height > a.width * a.height ? b : a), null);
+    const file = (m.media_type === 2 && largest(m.video_versions)) || largest(m.image_versions2 && m.image_versions2.candidates);
+    return file ? file.url : null;
+  }
+
+  // "user_2026-11-19_code_2.jpg": the parts that are present, and the
+  // extension of the file at `url`.
+  function fileName(parts, url) {
+    const ext = (new URL(url).pathname.match(/\.(\w{2,5})$/) || [])[1] || 'jpg';
+    return `${parts.filter(Boolean).join('_').replace(/[^\w.-]+/g, '-')}.${ext}`;
+  }
+
+  // A unix time as a local date, 2026-11-19.
+  function day(t) {
+    if (!t) return '';
+    const d = new Date(t * 1000);
+    const two = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+  }
+
+  // Saves a file through Firefox's download manager (see background.js), so
+  // it lands where Firefox saves downloads, without loading it into the page.
+  async function download(url, name) {
+    if (!url) return false;
+    try {
+      return (await browser.runtime.sendMessage({ type: 'download', url, filename: name })) === true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // A post or reel by its shortcode: slide `index` of a carousel, or every
+  // slide when `index` is negative. Resolves to whether everything was saved.
+  async function downloadPost(code, index) {
+    const m = await mediaByCode(code);
+    if (!m) return false;
+    const slides = m.carousel_media && m.carousel_media.length ? m.carousel_media : [m];
+    const picked = index < 0 ? slides.map((_, i) => i) : [Math.min(index, slides.length - 1)];
+    const user = m.user && m.user.username;
+    let ok = true;
+    for (const i of picked) {
+      const url = bestFile(slides[i]);
+      const n = slides.length > 1 ? String(i + 1) : '';
+      if (!url || !(await download(url, fileName([user, day(m.taken_at), code, n], url)))) ok = false;
+    }
+    return ok;
+  }
+
+  // A profile picture at the largest size Instagram keeps, as its profile
+  // page loads it. Falls back to the REST endpoint, then to the small one.
+  async function downloadProfilePic(username) {
+    const id = await lookUpId(username);
+    if (!id) return false;
+    const res = await gql(DOC_PROFILE, { enable_integrity_filters: true, id, ...PROFILE_FLAGS }, true);
+    let user = res && res.data && res.data.user;
+    if (!user || !user.hd_profile_pic_url_info) {
+      const info = await api(`/api/v1/users/${id}/info/`);
+      user = (info && info.user) || user;
+    }
+    if (!user) return false;
+    const url = (user.hd_profile_pic_url_info && user.hd_profile_pic_url_info.url) || user.profile_pic_url;
+    return download(url, fileName([username, 'profile'], url));
+  }
+
+  const DOWNLOAD = ['M12 4v11', 'M7 10l5 5 5-5', 'M5 20h14'];
+
+  // A download button. `run` resolves to whether it worked; while it runs the
+  // button is dimmed, and a failure turns it red with a tooltip for a moment.
+  function downloadButton(className, title, run) {
+    const b = el('button', { type: 'button', className, title }, icon(DOWNLOAD));
+    b.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (b.dataset.busy) return;
+      b.dataset.busy = '';
+      let ok = false;
+      try {
+        ok = await run(e);
+      } catch (_) {}
+      delete b.dataset.busy;
+      if (ok) return;
+      const before = b.title;
+      b.dataset.failed = '';
+      b.title = 'Download failed';
+      setTimeout(() => {
+        delete b.dataset.failed;
+        if (b.title === 'Download failed') b.title = before;
+      }, 3000);
+    });
+    return b;
   }
 
   // ---- Viewer state -------------------------------------------------------
@@ -287,6 +560,7 @@ const Sinsta = (() => {
   let card = null; // the current story's shared card: { href, label }
   let bubbleOn = false; // its "Name ›" bubble is showing
   let downAt = 0;
+  let typing = false; // the reply box has focus
   let onClose = null;
 
   const media = new Map(); // reel id -> [{ pk, takenAt, type, src, poster }]
@@ -304,28 +578,39 @@ const Sinsta = (() => {
   const userLink = el('a', { className: 'sv-user' });
   const timeText = el('span', { className: 'sv-time' });
   const muteBtn = el('button', { className: 'sv-btn', type: 'button', title: 'Sound (M)' });
-  const nativeLink = el('a', { className: 'sv-btn', title: 'Open in Instagram to reply, react or vote' },
-    icon(['M14 4h6v6', 'M20 4l-9 9', 'M18 13.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5.5']));
+  const saveBtn = downloadButton('sv-btn', 'Download (D)', () => {
+    const reel = list[ri];
+    const item = reel && (media.get(reel.id) || [])[ii];
+    return !!item && download(item.file, fileName([reel.username, day(item.takenAt), 'story', item.pk], item.file));
+  });
   const note = el('div', { className: 'sv-note' });
   const stickerBox = el('div', { className: 'sv-stickers' });
   const bubbleText = el('span');
   const bubble = el('a', { className: 'sv-bubble', hidden: true }, bubbleText, icon(['M9 5l7 7-7 7']));
   const sub = el('div', { className: 'sv-sub' });
+  // Reply, quick reactions and the heart, along the bottom as in Instagram's viewer.
+  const REACTIONS = ['😂', '😮', '😍', '😢', '👏', '🔥', '🎉', '💯'];
+  const HEART = ['M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z'];
+  const replyInput = el('input', { className: 'sv-reply', type: 'text', maxLength: 1000, enterKeyHint: 'send' });
+  const likeBtn = el('button', { className: 'sv-btn sv-like', type: 'button', title: 'Like (L)' }, icon(HEART));
+  const reactions = el('div', { className: 'sv-reactions', hidden: true },
+    ...REACTIONS.map((emoji) => el('button', { type: 'button', className: 'sv-emoji', title: `React with ${emoji}` }, emoji)));
+  const toast = el('div', { className: 'sv-toast', hidden: true });
+  const foot = el('div', { className: 'sv-foot' }, reactions, el('div', { className: 'sv-reply-row' }, replyInput, likeBtn));
   const stage = el('div', { className: 'sv-stage' },
     mediaBox,
     stickerBox,
+    el('div', { className: 'sv-dim' }),
     el('div', { className: 'sv-top' },
       bars,
-      el('div', { className: 'sv-head' }, avatar, userLink, timeText, el('span', { className: 'sv-gap' }), muteBtn, nativeLink),
+      el('div', { className: 'sv-head' }, avatar, userLink, timeText, el('span', { className: 'sv-gap' }), muteBtn, saveBtn),
       sub),
-    note);
-  const prevBtn = el('button', { className: 'sv-arrow', type: 'button', title: 'Previous (←)' }, icon(['M15 5l-7 7 7 7']));
-  const nextBtn = el('button', { className: 'sv-arrow', type: 'button', title: 'Next (→)' }, icon(['M9 5l7 7-7 7']));
+    note,
+    toast,
+    foot);
   const closeBtn = el('button', { className: 'sv-close', type: 'button', title: 'Close (Esc)' }, icon(['M6 6l12 12M18 6L6 18']));
-  const root = el('div', { id: 'sinsta-viewer' }, closeBtn, prevBtn, stage, nextBtn);
+  const root = el('div', { id: 'sinsta-viewer' }, closeBtn, stage);
 
-  prevBtn.addEventListener('click', () => step(-1));
-  nextBtn.addEventListener('click', () => step(1));
   closeBtn.addEventListener('click', () => close());
   muteBtn.addEventListener('click', () => setMuted(!muted));
   // Links within Instagram close the viewer and navigate in place; link
@@ -348,7 +633,8 @@ const Sinsta = (() => {
   // As on Instagram, tapping a shared post or story shows a bubble linking to
   // it instead, and the next tap anywhere else dismisses the bubble.
   stage.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.target.closest('a, button')) return;
+    // While typing a reply, a tap on the story only leaves the reply box.
+    if (e.button !== 0 || typing || e.target.closest('a, button, input, .sv-foot')) return;
     downAt = Date.now();
     holding = true;
     syncPause();
@@ -394,6 +680,18 @@ const Sinsta = (() => {
   }, true);
 
   function onKey(e) {
+    // Typing a reply: keep the keys from the viewer and from Instagram.
+    if (e.target === replyInput) {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        replyInput.blur();
+      } else if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        sendReply();
+      }
+      return;
+    }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const actions = {
       Escape: () => close(),
@@ -401,6 +699,8 @@ const Sinsta = (() => {
       ArrowLeft: () => (e.shiftKey ? jump(-1) : step(-1)),
       ' ': () => { spacePaused = !spacePaused; syncPause(); },
       m: () => setMuted(!muted),
+      d: () => saveBtn.click(),
+      l: toggleLike,
     };
     const action = actions[e.key];
     if (!action) return;
@@ -409,12 +709,108 @@ const Sinsta = (() => {
     action();
   }
 
+  // ---- Replies, reactions and likes ---------------------------------------
+
+  function currentItem() {
+    const reel = list[ri];
+    const item = reel && (media.get(reel.id) || [])[ii];
+    return item ? { reel, item } : null;
+  }
+
+  replyInput.addEventListener('focus', () => {
+    typing = true;
+    reactions.hidden = false;
+    syncPause();
+  });
+  replyInput.addEventListener('blur', () => {
+    typing = false;
+    reactions.hidden = true;
+    syncPause();
+  });
+  // Keep the reply box focused while an emoji is pressed, so it stays open.
+  reactions.addEventListener('pointerdown', (e) => e.preventDefault());
+  reactions.addEventListener('click', (e) => {
+    const b = e.target.closest('.sv-emoji');
+    if (b) send(null, b.textContent);
+  });
+  likeBtn.addEventListener('click', toggleLike);
+
+  function sendReply() {
+    const text = replyInput.value.trim();
+    if (text) send(text, null);
+  }
+
+  async function send(text, emoji) {
+    const cur = currentItem();
+    if (!cur || !cur.item.canReply || replyInput.disabled) return;
+    replyInput.disabled = true;
+    const ok = await replyToStory(cur.item.pk, cur.reel.id, cur.reel.id, text, emoji);
+    replyInput.disabled = false;
+    if (ok) {
+      if (text) replyInput.value = '';
+      replyInput.blur();
+      showToast(emoji ? emoji : 'Sent', !!emoji);
+    } else {
+      showToast(emoji ? 'Couldn\'t send your reaction' : 'Couldn\'t send your reply', false);
+      if (text) replyInput.focus();
+    }
+  }
+
+  let toastTimer = 0;
+  function showToast(text, big) {
+    toast.textContent = text;
+    toast.classList.toggle('sv-toast-big', big);
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, big ? 1200 : 2000);
+  }
+
+  async function toggleLike() {
+    const cur = currentItem();
+    if (!cur || likeBtn.dataset.busy) return;
+    const { item } = cur;
+    const flip = (v) => {
+      item.liked = v;
+      syncLike();
+    };
+    const on = !item.liked;
+    flip(on);
+    likeBtn.dataset.busy = '';
+    const ok = await likeStory(item.pk, on);
+    delete likeBtn.dataset.busy;
+    if (!ok) flip(!on);
+  }
+
+  function syncLike() {
+    const cur = currentItem();
+    const liked = !!(cur && cur.item.liked);
+    likeBtn.toggleAttribute('data-on', liked);
+    likeBtn.title = liked ? 'Unlike (L)' : 'Like (L)';
+  }
+
+  // The bottom bar for the story on screen; typed text stays while the
+  // account stays the same.
+  function syncFoot(reel, item) {
+    if (foot.dataset.reel !== reel.id) {
+      foot.dataset.reel = reel.id;
+      replyInput.value = '';
+    }
+    replyInput.placeholder = `Reply to ${reel.username}…`;
+    replyInput.hidden = !item.canReply;
+    if (!item.canReply && typing) replyInput.blur();
+    foot.hidden = false;
+    syncLike();
+  }
+
   // ---- Data ---------------------------------------------------------------
 
   function toItem(it) {
     const video = it.media_type === 2 && it.video_versions && it.video_versions[0];
-    const image = it.image_versions2 && it.image_versions2.candidates && it.image_versions2.candidates[0];
+    const images = (it.image_versions2 && it.image_versions2.candidates) || [];
+    const image = images[0];
     if (!video && !image) return null;
+    // The smallest image still sharp on a neighbour card beside the stage.
+    const thumb = images.filter((c) => c.width >= 480).sort((a, b) => a.width - b.width)[0] || image;
     const music = it.story_music_stickers && it.story_music_stickers[0] && it.story_music_stickers[0].music_asset_info;
     const shared = (it.story_feed_media || []).find((s) => s.media_code);
     const sharedBy = (it.story_bloks_stickers || []).filter(placeholder)
@@ -430,7 +826,11 @@ const Sinsta = (() => {
       takenAt: it.taken_at,
       type: video ? 'video' : 'image',
       src: video ? video.url : image.url,
+      file: bestFile(it),
+      liked: !!it.has_liked,
+      canReply: !!it.can_reply,
       poster: image ? image.url : '',
+      thumb: thumb ? thumb.url : '',
       ratio: it.original_width && it.original_height ? it.original_width / it.original_height : 9 / 16,
       stickers: stickersOf(it),
       music: music && music.title ? [music.title, music.display_artist].filter(Boolean).join(' · ') : '',
@@ -486,14 +886,23 @@ const Sinsta = (() => {
     }
   }
 
-  // One request for several accounts' stories.
+  // One request for several accounts' stories. Since November 2026 this
+  // query needs /api/graphql and the session tokens: /graphql/query
+  // answers it with an HTML page.
   function loadReels(ids) {
-    const job = gql(DOC_REELS, {
+    const send = () => gql(DOC_REELS, {
       media_id: null,
       reel_ids_arr: ids,
       __relay_internal__pv__PolarisCommunityNoteStoriesLabelEnabledrelayprovider: true,
+    }, true);
+    const reelsOf = (data) => data && data.data && data.data.xdt_api__v1__feed__reels_media;
+    const job = send().then((data) => {
+      if (reelsOf(data)) return data;
+      cachedTokens = null; // tokens may have rotated: re-read them once
+      return send();
     }).then((data) => {
-      const got = data && data.data && data.data.xdt_api__v1__feed__reels_media;
+      const got = reelsOf(data);
+      if (!got) console.warn('Here for Instagram: the stories query failed', data);
       const byId = new Map(((got && got.reels_media) || []).map((r) => [String(r.id), r]));
       for (const id of ids) {
         pending.delete(id);
@@ -503,7 +912,10 @@ const Sinsta = (() => {
         const mine = list.find((r) => r.id === id);
         if (mine && reel) mine.seenAt = Math.max(mine.seenAt, reel.seen || 0);
       }
-      if (open) preload();
+      if (open) {
+        preload();
+        renderDeck();
+      }
       return got ? got.reels_media || [] : null;
     });
     for (const id of ids) pending.set(id, job);
@@ -633,7 +1045,8 @@ const Sinsta = (() => {
       mediaEl(item);
     }
     for (const [src, node] of preloaded) {
-      if (keep.has(src)) continue;
+      // Also spare the previous story while it still shows under this one.
+      if (keep.has(src) || node.parentNode === mediaBox) continue;
       unload(node);
       preloaded.delete(src);
     }
@@ -647,9 +1060,239 @@ const Sinsta = (() => {
     node.load();
   }
 
+  // ---- Neighbouring accounts ----------------------------------------------
+
+  // The accounts before and after the current one, as cards beside the stage;
+  // clicking one goes to the story it shows. The free room on each side is
+  // split by a geometric falloff: each card's visible share is DECK.ratio of
+  // the nearer one's, and cards whose share would be under DECK.minStrip
+  // stage widths are left out. A card's outer edge goes where its share ends
+  // and the nearer card covers the rest of it. Its scale and angle follow its
+  // share, so near cards are large and flat, far ones smaller and turned.
+  const DECK = { ratio: 0.82, scaleFar: 0.63, angleNear: 0, angleFar: 20, minStrip: 0.075, persp: 1.4, fade: 0.09, margin: 0.015 };
+  const peeks = new Map(); // reel id -> card element
+  const peekAsked = new Set(); // reel ids whose stories the cards asked for
+  let slots = []; // right-hand card placements, nearest first: { x, th, s }
+  let deckW = 0;
+  let deckH = 0;
+
+  function layoutDeck() {
+    const FW = root.clientWidth;
+    const FH = root.clientHeight;
+    const W = stage.offsetWidth;
+    const H = stage.offsetHeight;
+    deckW = W;
+    deckH = H;
+    slots = [];
+    const room = FW / 2 - DECK.margin * FW - W / 2;
+    if (!W || room <= 0) return;
+    const d = DECK.persp * FH;
+    root.style.perspective = `${d}px`;
+    let n = 40;
+    let strips = [];
+    for (; n >= 1; n--) {
+      const sum = (1 - DECK.ratio ** n) / (1 - DECK.ratio);
+      strips = Array.from({ length: n }, (_, k) => (room * DECK.ratio ** k) / sum);
+      if (strips[n - 1] >= DECK.minStrip * W) break;
+    }
+    let edge = W / 2;
+    for (let k = 0; k < n; k++) {
+      edge += strips[k];
+      const u = strips[k] / strips[0];
+      const s = DECK.scaleFar + (1 - DECK.scaleFar) * u;
+      const th = DECK.angleNear + (DECK.angleFar - DECK.angleNear) * (1 - u);
+      // Turned with its outer edge toward the viewer, that edge projects to
+      // (x + half·cos θ) · d / (d − half·sin θ); put it at `edge`.
+      const r = (th * Math.PI) / 180;
+      const half = (W * s) / 2;
+      const x = (edge * (d - half * Math.sin(r))) / d - half * Math.cos(r);
+      slots.push({ x, th, s });
+    }
+  }
+
+  function peekCard(reel) {
+    const img = el('img', { className: 'sv-peek-img', alt: '', decoding: 'async', draggable: false });
+    const ring = el('span', { className: 'sv-peek-ring' }, el('img', { alt: '', src: reel.pic, draggable: false }));
+    const when = el('span', { className: 'sv-peek-time' });
+    const card = el('div', { className: 'sv-peek' },
+      img,
+      el('div', { className: 'sv-peek-dim' }),
+      el('div', { className: 'sv-peek-label' }, ring, el('b', {}, reel.username), when));
+    card.parts = { img, ring, when };
+    card.addEventListener('click', () => toReel(list.indexOf(reel)));
+    return card;
+  }
+
+  // What a card shows, which is where going to it lands: for an account
+  // behind, the story you left it on (its last, unless you jumped away); for
+  // one ahead, its first unseen story; for the current one (hidden under the
+  // stage until it turns away), the story on stage. While an account's stories
+  // are unknown, its profile picture.
+  function storyAt(reel, items, off) {
+    if (!off) {
+      if (ii === START) return items[firstUnseen(reel, items)];
+      return items[ii === LAST ? items.length - 1 : Math.min(ii, items.length - 1)];
+    }
+    if (off > 0) return items[firstUnseen(reel, items)];
+    return items[reel.leftAt != null ? Math.min(reel.leftAt, items.length - 1) : items.length - 1];
+  }
+
+  function fillPeek(card, reel, off) {
+    const items = media.get(reel.id);
+    const item = items && items.length ? storyAt(reel, items, off) : null;
+    const { img, ring, when } = card.parts;
+    const src = (item && item.thumb) || reel.pic;
+    if (img.getAttribute('src') !== src) img.src = src;
+    card.classList.toggle('sv-peek-pic', !item || !item.thumb);
+    when.textContent = item ? ago(item.takenAt) : '';
+    ring.classList.toggle('sv-seen', off < 0 || !reel.unseen);
+  }
+
+  function renderDeck() {
+    if (!open) return;
+    const n = slots.length;
+    const lo = Math.max(0, ri - n - 1);
+    const hi = Math.min(list.length - 1, ri + n + 1);
+    const keep = new Set();
+    const missing = [];
+    for (let k = lo; k <= hi; k++) {
+      const reel = list[k];
+      const off = k - ri;
+      const d = Math.abs(off);
+      keep.add(reel.id);
+      if (!media.has(reel.id) && !pending.has(reel.id) && !peekAsked.has(reel.id)) missing.push(reel.id);
+      let card = peeks.get(reel.id);
+      const fresh = !card;
+      if (fresh) {
+        card = peekCard(reel);
+        peeks.set(reel.id, card);
+        root.insertBefore(card, stage);
+      }
+      fillPeek(card, reel, off);
+      const { transform, dim } = placement(off);
+      const inView = !!d && d <= n;
+      Object.assign(card.style, { width: `${deckW}px`, height: `${deckH}px`, marginLeft: `${-deckW / 2}px`, marginTop: `${-deckH / 2}px`, zIndex: String(50 - d) });
+      card.style.setProperty('--dim', String(dim));
+      card.classList.toggle('sv-peek-centre', !d);
+      card.classList.toggle('sv-peek-off', !inView);
+      if (fresh) {
+        // Slide a new neighbour out from behind the stage; fade in farther ones.
+        card.style.transform = d <= 1 ? 'none' : transform;
+        card.style.opacity = '0';
+        card.getBoundingClientRect();
+      }
+      card.style.transform = transform;
+      // After a turn, the new account's card stays under the stage, which is
+      // see-through until its story has loaded, so the picture is there
+      // from the start.
+      card.style.opacity = inView || (!d && arriving) ? '1' : '0';
+    }
+    for (const [id, card] of peeks) {
+      if (keep.has(id)) continue;
+      card.remove();
+      peeks.delete(id);
+    }
+    for (let i = 0; i < missing.length; i += 10) {
+      const ids = missing.slice(i, i + 10);
+      for (const id of ids) peekAsked.add(id);
+      loadReels(ids);
+    }
+  }
+
+  // Where a card `off` places from the middle goes, and how dim it is.
+  function placement(off) {
+    const d = Math.abs(off);
+    const slot = d && slots.length ? slots[Math.min(d, slots.length) - 1] : null;
+    return {
+      transform: slot ? `translateX(${Math.sign(off) * slot.x}px) rotateY(${-Math.sign(off) * slot.th}deg) scale(${slot.s})` : 'none',
+      dim: d ? Math.min(0.85, 0.15 + d * DECK.fade) : 0,
+    };
+  }
+
+  // Apply styles at once, without transitions.
+  function snap(node, apply) {
+    node.classList.add('sv-snap');
+    apply();
+    node.getBoundingClientRect();
+    node.classList.remove('sv-snap');
+  }
+
+  function clearDeck() {
+    for (const card of peeks.values()) card.remove();
+    peeks.clear();
+    peekAsked.clear();
+    clearTimeout(turnTimer);
+    turning = false;
+    arrived();
+    shownReel = null;
+    snap(stage, () => {
+      stage.style.transform = '';
+      stage.style.setProperty('--dim', '0');
+    });
+  }
+
+  // Changing account turns the carousel, as in a coverflow. The stage, already
+  // showing the new account with its controls, flies in from where that
+  // account's card was, brightening as it comes; the card itself moves in
+  // under it, standing in until the story has loaded. The account left behind
+  // becomes a card where the stage was and slides aside.
+  let turning = false;
+  let arriving = false; // turned to an account whose story hasn't loaded yet
+  let turnTimer = 0;
+  let shownReel = null; // the account last put on stage
+  const TURN_MS = 400; // as the transitions in content.css
+
+  function beginTurn(prev, delta) {
+    const card = peeks.get(prev.id);
+    if (card) {
+      snap(card, () => {
+        card.classList.add('sv-peek-centre');
+        card.style.transform = 'none';
+        card.style.opacity = '1';
+        card.style.setProperty('--dim', '0');
+      });
+    }
+    const from = placement(delta);
+    snap(stage, () => {
+      stage.style.transform = from.transform;
+      stage.style.setProperty('--dim', String(from.dim));
+    });
+    stage.style.transform = '';
+    stage.style.setProperty('--dim', '0');
+    arriving = true;
+    root.classList.add('sv-arriving');
+    turning = true; // videos wait until the stage has arrived
+    clearTimeout(turnTimer);
+    turnTimer = setTimeout(() => {
+      turning = false;
+      syncPause();
+    }, TURN_MS);
+    syncPause();
+  }
+
+  // The story has loaded (or failed): the stand-in card under the stage
+  // fades out and the stage is opaque again.
+  function arrived() {
+    if (!arriving) return;
+    arriving = false;
+    root.classList.remove('sv-arriving');
+    renderDeck();
+  }
+
+  // Remember which story an account was left on, for its card.
+  function leave() {
+    if (ii >= 0) list[ri].leftAt = ii;
+  }
+
+  window.addEventListener('resize', () => {
+    if (!open) return;
+    layoutDeck();
+    renderDeck();
+  });
+
   // ---- Playback -----------------------------------------------------------
 
-  const paused = () => spacePaused || holding || hovering || bubbleOn;
+  const paused = () => spacePaused || holding || hovering || bubbleOn || typing || turning;
 
   // Clickable areas over the stickers, on a layer matching the media's own
   // box within the 9:16 stage (the media is shown uncropped).
@@ -714,14 +1357,19 @@ const Sinsta = (() => {
     }
   }
 
+  // How long ago a unix time was, as Instagram writes it: 5m, 3h, 2d, 4w.
   function ago(seconds) {
     const mins = Math.max(1, Math.round((Date.now() / 1000 - seconds) / 60));
-    return mins < 60 ? `${mins}m` : `${Math.round(mins / 60)}h`;
+    if (mins < 60) return `${mins}m`;
+    if (mins < 60 * 24) return `${Math.round(mins / 60)}h`;
+    if (mins < 60 * 24 * 7) return `${Math.floor(mins / 60 / 24)}d`;
+    return `${Math.floor(mins / 60 / 24 / 7)}w`;
   }
 
   function fail(text) {
     note.textContent = text;
     note.hidden = false;
+    arrived();
   }
 
   async function show() {
@@ -736,8 +1384,16 @@ const Sinsta = (() => {
     userLink.href = `/${reel.username}/`;
     timeText.textContent = '';
     renderStickers({ ratio: 9 / 16, stickers: [] });
+    foot.hidden = true;
     note.hidden = true;
     root.classList.add('sv-loading');
+    if (shownReel && shownReel !== reel) {
+      const from = list.indexOf(shownReel);
+      mediaBox.replaceChildren(); // the account's card stands in meanwhile
+      beginTurn(shownReel, from < 0 ? dir : ri - from);
+    }
+    shownReel = reel;
+    renderDeck();
 
     loadAhead();
     if (!media.has(reel.id)) await (pending.get(reel.id) || loadReels([reel.id]));
@@ -768,34 +1424,55 @@ const Sinsta = (() => {
       return el('span', {}, fill);
     }));
     timeText.textContent = ago(item.takenAt);
-    nativeLink.href = `/stories/${reel.username}/${item.pk}/`;
+    syncFoot(reel, item);
     muteBtn.hidden = item.type !== 'video';
     renderStickers(item);
 
     current = mediaEl(item);
-    mediaBox.replaceChildren(current);
+    // The previous story of the account stays underneath until this one has
+    // a picture, so switching doesn't flash black (a video takes a moment to
+    // show its first frame).
+    mediaBox.append(current);
+    const clearBelow = () => {
+      for (const node of [...mediaBox.children]) if (node !== current) node.remove();
+    };
     const ready = () => {
       if (my !== token || shown) return;
       shown = true;
+      clearBelow();
       root.classList.remove('sv-loading');
+      arrived();
       markSeen(reel, item); // only once it is really on screen
     };
     const broken = () => {
-      if (my === token) fail('This story could not be loaded.');
+      if (my !== token) return;
+      clearBelow();
+      fail('This story could not be loaded.');
     };
+    // Ready means really painted: a video counts as loaded (even fully) a few
+    // frames before Firefox presents its first frame, and an image before it
+    // is decoded. Until then the story underneath, or after a turn the card,
+    // must stay in view.
+    const node = current;
     if (item.type === 'video') {
-      current.currentTime = 0;
-      current.onended = () => { if (my === token) step(1); };
-      current.onloadeddata = ready;
-      current.onplaying = ready;
-      current.onerror = broken;
-      if (current.error) broken();
-      else if (current.readyState >= 2) ready();
-      if (!current.error && !paused()) startVideo();
+      const painted = () => {
+        if (!node.requestVideoFrameCallback) return ready();
+        node.requestVideoFrameCallback(() => ready());
+        setTimeout(ready, 500); // a background tab may present no frames
+      };
+      node.currentTime = 0;
+      node.onended = () => { if (my === token) step(1); };
+      node.onloadeddata = painted;
+      node.onplaying = painted;
+      node.onerror = broken;
+      if (node.error) broken();
+      else if (node.readyState >= 2) painted();
+      if (!node.error && !paused()) startVideo();
     } else {
-      current.onload = ready;
-      current.onerror = broken;
-      if (current.complete) (current.naturalWidth ? ready : broken)();
+      const painted = () => (node.decode ? node.decode() : Promise.resolve()).then(ready, ready);
+      node.onload = painted;
+      node.onerror = broken;
+      if (node.complete) (node.naturalWidth ? painted : broken)();
     }
     preload();
   }
@@ -836,11 +1513,25 @@ const Sinsta = (() => {
     if (n < 0) {
       ii = 0;
     } else {
+      leave();
       ri = n;
-      ii = delta > 0 ? START : LAST;
+      ii = delta > 0 ? START : landing(list[n]);
     }
     show();
   }
+
+  // Straight to another account, from its card: the story the card shows.
+  function toReel(k) {
+    if (k < 0 || k >= list.length || k === ri) return;
+    dir = k > ri ? 1 : -1;
+    leave();
+    ri = k;
+    ii = dir > 0 ? START : landing(list[k]);
+    show();
+  }
+
+  // Going back to an account lands where you left it, else on its last story.
+  const landing = (reel) => (reel.leftAt != null ? reel.leftAt : LAST);
 
   function openViewer(reels, index, hooks) {
     if (open) return;
@@ -852,17 +1543,23 @@ const Sinsta = (() => {
       if (end < 0) end = reels.length;
     }
     list = reels.slice(0, end);
+    for (const reel of list) delete reel.leftAt;
     ri = index;
     ii = START;
     dir = 1;
     open = true;
     spacePaused = false;
     holding = false;
+    typing = false;
+    replyInput.value = '';
+    delete foot.dataset.reel;
+    toast.hidden = true;
     onClose = hooks && hooks.onClose;
     setMuted(muted);
     for (const video of document.querySelectorAll('main video')) video.pause();
     document.documentElement.classList.add('sinsta-viewing');
     onTop(root);
+    layoutDeck();
     lastTick = performance.now();
     raf = requestAnimationFrame(tick);
     show();
@@ -877,10 +1574,17 @@ const Sinsta = (() => {
     preloaded.clear();
     current = null;
     mediaBox.replaceChildren();
+    clearDeck();
+    replyInput.blur();
+    typing = false;
     root.remove();
     document.documentElement.classList.remove('sinsta-viewing');
     if (onClose) onClose();
   }
 
-  return { api, go, el, shadowVideo, hostOf, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage };
+  return {
+    api, go, el, shadowVideo, hostOf, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, reelByCode,
+    mark, userIds, lookUpId, download, fileName, day, ago, downloadPost, downloadProfilePic, downloadButton,
+    likeMedia, likeComment, comments, replies, addComment,
+  };
 })();

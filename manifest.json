@@ -1,11 +1,17 @@
 {
   "manifest_version": 2,
-  "name": "Sinstagram",
-  "version": "0.15.9",
+  "name": "Here for Instagram",
+  "version": "1.0.0",
   "permissions": [
-    "storage"
+    "storage",
+    "downloads"
   ],
-  "description": "Splits Instagram's Home into three separate views: suggestions (Algo), Following and Favourites, and shows Reels as a grid.",
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "description": "Splits Instagram's Home into three separate views: suggestions (Algo), Following and Favourites, shows Reels as a grid, and adds download buttons.",
   "icons": {
     "48": "icon.svg",
     "96": "icon.svg"
@@ -18,7 +24,8 @@
       "js": [
         "stories.js",
         "content.js",
-        "reels.js"
+        "reels.js",
+        "downloads.js"
       ],
       "css": [
         "content.css"
@@ -28,7 +35,8 @@
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "sinstagram@local",
+      "id": "here-for-instagram@extension",
+      "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": [
           "none"

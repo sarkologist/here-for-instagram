@@ -8,7 +8,10 @@
 (() => {
   'use strict';
 
-  const { go, el, shadowVideo, hostOf, icon, onTop, reelsPage } = Sinsta;
+  const {
+    go, el, shadowVideo, hostOf, icon, onTop, reelsPage, reelByCode, download, fileName, day, ago, downloadButton,
+    likeMedia, likeComment, comments, replies, addComment,
+  } = Sinsta;
 
   const KEY = 'sinsta-reels';
   const MIN_COLS = 1;
@@ -25,11 +28,12 @@
   const CLOSE = ['M6 6l12 12M18 6L6 18'];
   const UP = ['M6 15l6-6 6 6'];
   const DOWN = ['M6 9l6 6 6-6'];
-  const OPEN = ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'];
+  const COMMENT = ['M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z'];
+  const LINK = ['M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1', 'M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1'];
   const SOUND_OFF = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 9.5l5 5M21.5 9.5l-5 5'];
   const SOUND_ON = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 8.5a5 5 0 0 1 0 7'];
 
-  let prefs = { grid: true, columns: 4, muted: false, volume: 1 };
+  let prefs = { grid: true, columns: 4, muted: false, volume: 1, comments: false };
 
   // Feed state survives leaving /reels/ (the script lives across Instagram's
   // in-page navigation), so coming back finds the same grid at the same place.
@@ -42,6 +46,7 @@
   let savedScroll = 0;
   let queued = false;
   let measuredAt = 0;
+  let lastPath = null;
 
   // ---- DOM ----------------------------------------------------------------
 
@@ -224,6 +229,26 @@
     if (playerOpen) syncPlayerArrows();
   }
 
+  // A link to one reel (/reels/<code>/) puts it first in the grid and
+  // plays it.
+  async function openLinked(code) {
+    let index = items.findIndex((it) => it.code === code);
+    if (index < 0) {
+      const item = await reelByCode(code);
+      if (!item || !gridActive()) return;
+      index = items.findIndex((it) => it.pk === item.pk);
+      if (index < 0) {
+        known.add(item.pk);
+        items.unshift(item);
+        grid.prepend(tile(item, 0));
+        [...grid.children].forEach((t, i) => { t.dataset.index = i; });
+        if (playerOpen) pi++;
+        index = 0;
+      }
+    }
+    if (gridActive()) openPlayer(index);
+  }
+
   function syncStatus() {
     status.replaceChildren();
     if (loading) status.append(el('span', { className: 'sr-spinner' }));
@@ -265,17 +290,45 @@
   const muteBtn = button('sr-btn', 'Sound (M)', SOUND_ON);
   const slider = el('input', { type: 'range', min: 0, max: 1, step: 0.05, title: 'Volume' });
   const volumeBox = el('div', { className: 'sr-volume' }, muteBtn, slider);
-  const openBtn = button('sr-btn', 'Open in Instagram to like, comment or share', OPEN);
-  const head = el('div', { className: 'sr-head' }, avatar, userLink, el('span', { className: 'sr-gap' }), volumeBox, openBtn);
+  const saveBtn = downloadButton('sr-btn', 'Download (D)', () => {
+    const it = items[pi];
+    return !!it && download(it.file, fileName([it.username, day(it.takenAt), it.code], it.file));
+  });
+  const head = el('div', { className: 'sr-head' }, avatar, userLink, el('span', { className: 'sr-gap' }), volumeBox, saveBtn);
   const caption = el('div', { className: 'sr-caption' });
-  const likesText = el('div', { className: 'sr-meta' });
-  const foot = el('div', { className: 'sr-foot' }, caption, likesText);
+  const foot = el('div', { className: 'sr-foot' }, caption);
   stage.append(head, foot, progress);
+
+  // Like, comments and copy link, beside the video as in the app.
+  function action(title, paths) {
+    const b = button('sr-act', title, paths);
+    b.append(el('span'));
+    return b;
+  }
+  const likeBtn = action('Like (L)', HEART);
+  const commentBtn = action('Comments (C)', COMMENT);
+  const linkBtn = action('Copy link', LINK);
+  const actions = el('div', { className: 'sr-actions' }, likeBtn, commentBtn, linkBtn);
+
+  // The comments panel.
+  const cList = el('div', { className: 'sr-clist' });
+  const cClose = button('sr-btn', 'Close comments (C)', CLOSE);
+  const cTitle = el('div', { className: 'sr-ctitle' }, 'Comments');
+  const replyText = el('span');
+  const replyCancel = button('sr-btn', 'Cancel reply', CLOSE);
+  const replyBar = el('div', { className: 'sr-replying', hidden: true }, replyText, replyCancel);
+  const cInput = el('textarea', { className: 'sr-cinput', rows: 1, placeholder: 'Add a comment…', maxLength: 2200 });
+  const cPost = el('button', { type: 'button', className: 'sr-cpost', disabled: true }, 'Post');
+  const cError = el('div', { className: 'sr-cerror', hidden: true });
+  const cForm = el('div', { className: 'sr-cform' }, cInput, cPost);
+  const cOff = el('div', { className: 'sr-coff', hidden: true }, 'Comments are turned off.');
+  const panel = el('div', { className: 'sr-comments', hidden: true },
+    el('div', { className: 'sr-chead' }, cTitle, cClose), cList, replyBar, cError, cForm, cOff);
   const prevBtn = button('sr-arrow', 'Previous (↑)', UP);
   const nextBtn = button('sr-arrow', 'Next (↓)', DOWN);
   const arrows = el('div', { className: 'sr-arrows' }, prevBtn, nextBtn);
   const closeBtn = button('sr-close', 'Close (Esc)', CLOSE);
-  const player = el('div', { id: 'sinsta-reel-player' }, stage, arrows, closeBtn);
+  const player = el('div', { id: 'sinsta-reel-player' }, stage, actions, panel, arrows, closeBtn);
 
   closeBtn.addEventListener('click', closePlayer);
   prevBtn.addEventListener('click', () => step(-1));
@@ -286,12 +339,6 @@
   });
   slider.addEventListener('input', () => setVolume(Number(slider.value)));
   slider.addEventListener('click', (e) => e.stopPropagation());
-  openBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const href = `/reel/${items[pi].code}/`;
-    closePlayer();
-    go(href);
-  });
   userLink.addEventListener('click', (e) => {
     e.stopPropagation();
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -309,6 +356,7 @@
     if (e.target === player) closePlayer();
   });
   player.addEventListener('wheel', (e) => {
+    if (panel.contains(e.target)) return; // scrolls the comments
     e.preventDefault();
     // Over the volume control, scrolling sets the volume instead.
     if (volumeBox.contains(e.target)) {
@@ -330,6 +378,273 @@
     wheelActed = true;
     step(Math.sign(wheelSum));
   }, { passive: false });
+
+  // ---- Like and comments ----------------------------------------------------
+
+  likeBtn.addEventListener('click', toggleLike);
+  commentBtn.addEventListener('click', toggleComments);
+  cClose.addEventListener('click', toggleComments);
+  linkBtn.addEventListener('click', async () => {
+    const it = items[pi];
+    if (!it) return;
+    let ok = true;
+    try {
+      await navigator.clipboard.writeText(`https://www.instagram.com/reel/${it.code}/`);
+    } catch (_) {
+      ok = false;
+    }
+    linkBtn.lastChild.textContent = ok ? 'Copied' : 'Failed';
+    clearTimeout(linkBtn.timer);
+    linkBtn.timer = setTimeout(() => { linkBtn.lastChild.textContent = ''; }, 1500);
+  });
+
+  function syncActions() {
+    const it = items[pi];
+    if (!it) return;
+    likeBtn.toggleAttribute('data-on', it.liked);
+    likeBtn.title = it.liked ? 'Unlike (L)' : 'Like (L)';
+    likeBtn.lastChild.textContent = it.likes != null ? compact(it.likes) : '';
+    commentBtn.lastChild.textContent = it.comments ? compact(it.comments) : '';
+    commentBtn.toggleAttribute('data-on', !panel.hidden);
+  }
+
+  async function toggleLike() {
+    const it = items[pi];
+    if (!it || likeBtn.dataset.busy) return;
+    const on = !it.liked;
+    const flip = (v) => {
+      it.liked = v;
+      if (it.likes != null) it.likes += v ? 1 : -1;
+      if (items[pi] === it) syncActions();
+    };
+    flip(on);
+    likeBtn.dataset.busy = '';
+    const ok = await likeMedia(it.pk, on, it.token);
+    delete likeBtn.dataset.busy;
+    if (!ok) flip(!on);
+  }
+
+  function toggleComments() {
+    panel.hidden = !panel.hidden;
+    prefs.comments = !panel.hidden;
+    save();
+    player.classList.toggle('sr-with-comments', !panel.hidden);
+    syncActions();
+    if (!panel.hidden) loadComments();
+  }
+
+  // Comments of the reel on screen: { pk, next, loading, done, failed }.
+  let thread = null;
+  let replyTo = null; // { pk, username, box } of the comment being replied to
+
+  function loadComments() {
+    const it = items[pi];
+    if (!it || (thread && thread.pk === it.pk)) return;
+    thread = { pk: it.pk, token: it.token, next: null, loading: false, done: false };
+    setReply(null);
+    cError.hidden = true;
+    cList.replaceChildren();
+    cList.scrollTop = 0;
+    cOff.hidden = !it.commentsOff;
+    cForm.hidden = it.commentsOff;
+    if (it.commentsOff && !it.comments) return;
+    moreComments();
+  }
+
+  async function moreComments() {
+    const t = thread;
+    if (!t || t.loading || t.done) return;
+    t.loading = true;
+    const spinner = el('div', { className: 'sr-cstatus' }, el('span', { className: 'sr-spinner' }));
+    cList.append(spinner);
+    const page = await comments(t.pk, t.next);
+    spinner.remove();
+    if (t !== thread) return;
+    t.loading = false;
+    if (!page) {
+      const retry = el('button', { type: 'button', className: 'sr-clink' }, 'Couldn\'t load comments. Try again');
+      retry.addEventListener('click', () => {
+        retry.parentElement.remove();
+        moreComments();
+      });
+      cList.append(el('div', { className: 'sr-cstatus' }, retry));
+      return;
+    }
+    const seen = new Set([...cList.querySelectorAll('.sr-c')].map((n) => n.dataset.pk));
+    cList.append(...page.comments.filter((c) => !seen.has(c.pk)).map((c) => commentNode(c, null)));
+    t.next = page.next;
+    t.done = !page.next || !page.comments.length;
+    if (t.done && !cList.querySelector('.sr-c')) {
+      cList.append(el('div', { className: 'sr-cstatus' }, 'No comments yet.'));
+    }
+    fillComments();
+  }
+
+  function fillComments() {
+    if (cList.scrollHeight - cList.scrollTop - cList.clientHeight < cList.clientHeight) moreComments();
+  }
+  cList.addEventListener('scroll', fillComments, { passive: true });
+
+  // Comment text with @mentions and #hashtags as links.
+  function richText(text) {
+    const out = [];
+    let last = 0;
+    for (const m of text.matchAll(/([@#])([\p{L}\p{N}_.]+)/gu)) {
+      if (m.index > 0 && /[\p{L}\p{N}_]/u.test(text[m.index - 1])) continue;
+      const name = m[1] === '@' ? m[2].replace(/\.+$/, '') : m[2];
+      out.push(text.slice(last, m.index));
+      const href = m[1] === '@' ? `/${name}/` : `/explore/tags/${encodeURIComponent(name)}/`;
+      out.push(el('a', { href, className: 'sr-ctag' }, m[1] + name));
+      last = m.index + 1 + name.length;
+    }
+    out.push(text.slice(last));
+    return out;
+  }
+
+  // `parent`: the top-level comment a reply belongs to.
+  function commentNode(c, parent) {
+    const like = button('sr-clike', '', HEART);
+    const meta = el('div', { className: 'sr-cmeta' }, el('span', {}, ago(c.at)));
+    const likes = el('span');
+    meta.append(likes);
+    const reply = el('button', { type: 'button', className: 'sr-clink' }, 'Reply');
+    meta.append(reply);
+    const body = el('div', { className: 'sr-cbody' },
+      el('div', { className: 'sr-ctext' }, el('a', { href: `/${c.username}/`, className: 'sr-cuser' }, c.username), ' ', ...richText(c.text)),
+      meta);
+    const node = el('div', { className: 'sr-c' },
+      el('a', { href: `/${c.username}/`, className: 'sr-cpic' }, el('img', { src: c.pic, alt: '', loading: 'lazy' })),
+      body, like);
+    node.dataset.pk = c.pk;
+    const box = parent ? parent.box : el('div', { className: 'sr-creplies' });
+    const syncLike = () => {
+      like.toggleAttribute('data-on', c.liked);
+      like.title = c.liked ? 'Unlike' : 'Like';
+      likes.textContent = c.likes ? `${c.likes.toLocaleString('en')} like${c.likes === 1 ? '' : 's'}` : '';
+      likes.hidden = !c.likes;
+    };
+    syncLike();
+    like.addEventListener('click', async () => {
+      if (like.dataset.busy) return;
+      const flip = (v) => {
+        c.liked = v;
+        c.likes += v ? 1 : -1;
+        syncLike();
+      };
+      const on = !c.liked;
+      flip(on);
+      like.dataset.busy = '';
+      const ok = await likeComment(c.pk, on);
+      delete like.dataset.busy;
+      if (!ok) flip(!on);
+    });
+    // Replies to a reply go to the thread's top comment, as on Instagram.
+    const top = parent || { pk: c.pk, box };
+    reply.addEventListener('click', () => setReply({ pk: top.pk, username: c.username, box: top.box }));
+    if (parent) return node;
+    body.append(box);
+    if (c.replies) {
+      let next = null;
+      let shown = 0;
+      const more = el('button', { type: 'button', className: 'sr-clink sr-cmore' });
+      const label = () => {
+        more.textContent = shown ? `View more replies (${c.replies - shown})` : `View replies (${c.replies})`;
+      };
+      label();
+      more.addEventListener('click', async () => {
+        if (more.disabled) return;
+        more.disabled = true;
+        const page = await replies(thread.pk, c.pk, next);
+        more.disabled = false;
+        if (!page) {
+          more.textContent = 'Couldn\'t load replies. Try again';
+          return;
+        }
+        const have = new Set([...box.children].map((n) => n.dataset.pk));
+        const fresh = page.comments.filter((r) => !have.has(r.pk));
+        box.append(...fresh.map((r) => commentNode(r, top)));
+        shown += fresh.length;
+        next = page.next;
+        if (!next || !fresh.length) more.remove();
+        else label();
+      });
+      body.append(more);
+    }
+    return node;
+  }
+
+  function setReply(r) {
+    replyTo = r;
+    replyBar.hidden = !r;
+    if (!r) return;
+    replyText.textContent = `Replying to @${r.username}`;
+    if (!cInput.value.trim()) cInput.value = `@${r.username} `;
+    syncInput();
+    cInput.focus();
+    cInput.setSelectionRange(cInput.value.length, cInput.value.length);
+  }
+  replyCancel.addEventListener('click', () => {
+    if (replyTo && cInput.value.trim() === `@${replyTo.username}`) cInput.value = '';
+    setReply(null);
+    syncInput();
+  });
+
+  function syncInput() {
+    cPost.disabled = !cInput.value.trim() || !!cPost.dataset.busy;
+    cInput.style.height = 'auto';
+    cInput.style.height = `${Math.min(cInput.scrollHeight, 120)}px`;
+  }
+  cInput.addEventListener('input', () => {
+    cError.hidden = true;
+    syncInput();
+  });
+  cPost.addEventListener('click', postComment);
+
+  async function postComment() {
+    const text = cInput.value.trim();
+    const t = thread;
+    if (!text || !t || cPost.dataset.busy) return;
+    const r = replyTo;
+    cPost.dataset.busy = '';
+    cInput.disabled = true;
+    syncInput();
+    const c = await addComment(t.pk, text, r && r.pk, t.token);
+    delete cPost.dataset.busy;
+    cInput.disabled = false;
+    if (!c) {
+      cError.textContent = 'Couldn\'t post your comment. Try again.';
+      cError.hidden = false;
+      syncInput();
+      return;
+    }
+    cInput.value = '';
+    setReply(null);
+    syncInput();
+    const it = items.find((i) => i.pk === t.pk);
+    if (it) it.comments++;
+    syncActions();
+    if (t !== thread) return;
+    const empty = cList.querySelector('.sr-cstatus');
+    if (empty && !empty.querySelector('*')) empty.remove();
+    if (r) {
+      const node = commentNode(c, r);
+      r.box.append(node);
+      node.scrollIntoView({ block: 'nearest' });
+    } else {
+      cList.prepend(commentNode(c, null));
+      cList.scrollTop = 0;
+    }
+  }
+
+  // Links in comments close the player and open in place.
+  panel.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    const href = a.getAttribute('href');
+    closePlayer();
+    go(href);
+  });
 
   function setMuted(m) {
     prefs.muted = m;
@@ -397,7 +712,8 @@
     userLink.href = `/${item.username}/`;
     caption.textContent = item.caption;
     caption.hidden = !item.caption;
-    likesText.textContent = item.likes != null ? `${item.likes.toLocaleString('en')} likes` : '';
+    syncActions();
+    if (!panel.hidden) loadComments();
     syncPlayerArrows();
 
     const next = items[pi + 1];
@@ -430,6 +746,9 @@
     stopPreview();
     pi = index;
     playerOpen = true;
+    thread = null;
+    panel.hidden = !prefs.comments;
+    player.classList.toggle('sr-with-comments', prefs.comments);
     document.documentElement.classList.add('sinsta-viewing');
     onTop(player);
     show(preview || null);
@@ -442,6 +761,8 @@
     if (preload) unload(preload.video);
     video = null;
     preload = null;
+    thread = null;
+    setReply(null);
     player.remove();
     document.documentElement.classList.remove('sinsta-viewing');
     // Land the grid on the reel the player stopped at.
@@ -459,8 +780,20 @@
   }, true);
 
   function onPlayerKey(e) {
+    // Typing a comment: keep the keys from the player and from Instagram.
+    if (panel.contains(e.target) && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.target.blur();
+      } else if (e.target === cInput && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        postComment();
+      }
+      return;
+    }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const actions = {
+    const keys = {
       ArrowDown: () => step(1),
       ArrowRight: () => step(1),
       j: () => step(1),
@@ -470,9 +803,15 @@
       ' ': () => video && (video.paused ? video.play().catch(() => {}) : video.pause()),
       m: toggleMute,
       M: toggleMute,
-      Escape: closePlayer,
+      d: () => saveBtn.click(),
+      D: () => saveBtn.click(),
+      l: toggleLike,
+      L: toggleLike,
+      c: toggleComments,
+      C: toggleComments,
+      Escape: () => (panel.hidden ? closePlayer() : toggleComments()),
     };
-    const act = actions[e.key];
+    const act = keys[e.key];
     if (!act) return;
     e.preventDefault();
     e.stopPropagation();
@@ -549,6 +888,12 @@
   function sync() {
     queued = false;
     const on = onReels();
+    // Arriving at /reels/<code>/ from elsewhere means a link to that reel.
+    // Within the tab, Instagram's own player rewrites the path as it plays.
+    const path = location.pathname;
+    const wasOn = lastPath !== null && /^\/reels(\/|$)/.test(lastPath);
+    const linked = path !== lastPath && !wasOn && path.match(/^\/reels\/([\w-]+)\/?$/);
+    lastPath = path;
     const active = on && prefs.grid;
     const html = document.documentElement;
     html.toggleAttribute('data-sinsta-reels-grid', active);
@@ -579,6 +924,7 @@
     } else if (active) {
       measure();
     }
+    if (linked && active) openLinked(linked[1]);
     syncControls();
   }
 

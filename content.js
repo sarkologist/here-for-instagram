@@ -6,7 +6,7 @@
   //   Following   Instagram's chronological feed, minus favourites
   //   Favourites  the same, for accounts you starred
   // Ads are hidden everywhere.
-  const { api, go, el, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts } = Sinsta;
+  const { api, go, el, mark, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, userIds, lookUpId } = Sinsta;
 
   const VIEWS = [
     {
@@ -67,7 +67,6 @@
   let shownReels = []; // the stories row as rendered, in order
   let favIds = null; // Set of user ids
   const favNames = new Set(); // favourites' usernames
-  const userIds = new Map(); // username -> user id, as far as known
   let trayAt = 0;
   let trayBusy = false;
   let favBusy = false;
@@ -573,6 +572,20 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
     else go(href);
   });
 
+  // Instagram's Home links (sidebar item, logo) always open Algo; open the
+  // last view instead, as opening instagram.com does.
+  document.addEventListener('click', (e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest && e.target.closest('a[href="/"]');
+    if (!a || bar.contains(a)) return;
+    const last = VIEWS.find((v) => v.id === prefs.lastView);
+    if (!last || last.id === 'algo') return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (location.pathname === '/' && currentView() === last.id) window.scrollTo(0, 0);
+    else go(last.href);
+  }, true);
+
   function currentView() {
     const variant = new URLSearchParams(location.search).get('variant');
     return variant === 'following' || variant === 'favorites' ? variant : 'algo';
@@ -642,6 +655,7 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
       loadFavourites();
     }
     if (view === 'favorites') {
+      loadTray(); // the row's fallback, should the full list fail
       loadFavourites();
       loadFavReels();
     }
@@ -863,23 +877,6 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
     return b;
   }
 
-  // Favourites' ids come with the favourites list. For anyone else, the only
-  // lookup left on the web (web_profile_info is gone) is the profile page,
-  // which is large, so it is fetched on click rather than on hover.
-  async function lookUpId(user) {
-    if (userIds.has(user)) return userIds.get(user);
-    // Firefox: content.fetch sends the request as the page would.
-    const f = typeof content === 'object' && content && content.fetch ? content.fetch.bind(content) : window.fetch.bind(window);
-    try {
-      const res = await f(`${location.origin}/${encodeURIComponent(user)}/`, { credentials: 'include' });
-      const id = ((await res.text()).match(/"profile_id":"(\d+)"/) || [])[1];
-      if (id) userIds.set(user, id);
-      return id || null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   function syncFav(b) {
     const id = userIds.get(b.dataset.user);
     const on = !!(favIds && id && favIds.has(id));
@@ -958,7 +955,7 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
       return;
     }
     if (savedItem) savedItem.remove();
-    savedItem = profile.cloneNode(true);
+    savedItem = mark(profile.cloneNode(true));
     savedItem.dataset.sinstaSaved = '';
     const a = savedItem.querySelector('a[href]');
     a.setAttribute('href', href);

@@ -389,22 +389,120 @@ html[data-sinsta-reels-grid] main video {
 
 #sinsta-viewer .sv-close {
   position: absolute;
+  z-index: 101;
   top: 16px;
   right: 16px;
 }
 
-#sinsta-viewer .sv-arrow {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+/* Neighbouring accounts beside the stage, placed by layoutDeck in stories.js.
+   When the carousel turns, the stage flies in from a card's place (see
+   beginTurn), so it moves and dims exactly like the cards. */
+
+.sv-peek {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #000;
+  cursor: pointer;
+  transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.4s;
+}
+
+.sv-peek.sv-peek-off {
+  pointer-events: none;
+}
+
+/* Put in place at once, without transitions. */
+.sv-snap,
+.sv-snap * {
+  transition: none !important;
+}
+
+.sv-peek-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Stories not loaded yet: the profile picture, blurred to fill the card. */
+.sv-peek-pic .sv-peek-img {
+  filter: blur(24px) brightness(0.7);
+  transform: scale(1.2);
+}
+
+.sv-peek-dim {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: var(--dim, 0.3);
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.sv-peek:not(.sv-peek-centre):hover .sv-peek-dim {
+  opacity: 0.1;
+}
+
+.sv-peek-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  font-size: 15px;
+}
+
+/* Hidden on the card in the middle: it fades as a card turns in, and back as
+   the account you leave slides aside. */
+.sv-peek-label {
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.sv-peek-centre .sv-peek-label {
+  opacity: 0;
+}
+
+.sv-peek-label b {
+  font-weight: 600;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.sv-peek-time {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+}
+
+.sv-peek-ring {
+  width: 22%;
+  padding: 3px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: linear-gradient(45deg, #f9b33a, #e1306c, #8a3ab9);
+}
+
+.sv-peek-ring.sv-seen {
+  background: #6b6b70;
+}
+
+.sv-peek-ring img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #000;
+  object-fit: cover;
 }
 
 .sv-stage {
   position: relative;
+  z-index: 100;
+  transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
   flex: 0 0 auto;
-  height: min(calc(100vh - 32px), calc((100vw - 140px) * 16 / 9));
+  height: min(89vh, calc((100vw - 32px) * 16 / 9));
   aspect-ratio: 9 / 16;
   overflow: hidden;
   border-radius: 8px;
@@ -427,6 +525,22 @@ html[data-sinsta-reels-grid] main video {
 .sv-stickers {
   position: absolute;
   pointer-events: none;
+}
+
+/* Dims the story while it flies in from a card's place, as the card was. */
+.sv-dim {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: var(--dim, 0);
+  pointer-events: none;
+  transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* After a turn, see-through until the story loads: the account's card
+   under the stage shows its picture meanwhile. */
+.sv-arriving .sv-stage {
+  background: transparent;
 }
 
 .sv-sticker {
@@ -568,6 +682,124 @@ html[data-sinsta-reels-grid] main video {
   text-align: center;
 }
 
+/* Reply box, quick reactions and the heart. Only the controls take clicks,
+   so taps elsewhere along the bottom still move through the stories. */
+.sv-foot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 32px 12px 14px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+  cursor: auto;
+}
+
+.sv-foot input,
+.sv-foot button {
+  pointer-events: auto;
+}
+
+.sv-reply-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sv-reply {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  margin: 0;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 22px;
+  outline: 0;
+  background: rgba(0, 0, 0, 0.15);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  user-select: text;
+}
+
+.sv-reply::placeholder {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.sv-reply:focus {
+  border-color: #fff;
+}
+
+.sv-reply:disabled {
+  opacity: 0.6;
+}
+
+#sinsta-viewer .sv-like svg {
+  width: 26px;
+  height: 26px;
+}
+
+#sinsta-viewer .sv-like[data-on] {
+  color: #ff3040;
+}
+
+#sinsta-viewer .sv-like[data-on] svg {
+  fill: currentColor;
+}
+
+.sv-reactions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+#sinsta-viewer .sv-emoji {
+  padding: 4px;
+  font-size: 34px;
+  line-height: 1.2;
+  border-radius: 8px;
+  transition: transform 0.1s;
+}
+
+#sinsta-viewer .sv-emoji:hover {
+  transform: scale(1.15);
+}
+
+/* While the reply box is open, dim the story behind the reactions. */
+.sv-stage:has(.sv-reply:focus) .sv-foot {
+  padding-top: 40%;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 30%);
+}
+
+.sv-toast {
+  position: absolute;
+  bottom: 84px;
+  left: 50%;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.8);
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.sv-toast.sv-toast-big {
+  bottom: 40%;
+  padding: 0;
+  background: none;
+  font-size: 72px;
+  animation: sv-pop 1.2s ease-out forwards;
+}
+
+@keyframes sv-pop {
+  0% { transform: translateX(-50%) scale(0.4); opacity: 0; }
+  20% { transform: translateX(-50%) scale(1.1); opacity: 1; }
+  70% { transform: translateX(-50%) translateY(-20px) scale(1); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-60px) scale(1); opacity: 0; }
+}
+
 .sv-loading .sv-stage::after {
   content: "";
   position: absolute;
@@ -579,7 +811,14 @@ html[data-sinsta-reels-grid] main video {
   border: 3px solid rgba(255, 255, 255, 0.3);
   border-top-color: #fff;
   border-radius: 50%;
-  animation: sv-spin 0.8s linear infinite;
+  /* Only once a turn is over: the card's picture covers a short wait. */
+  animation: sv-spin 0.8s linear infinite, sv-appear 0.2s 0.4s both;
+}
+
+@keyframes sv-appear {
+  from {
+    opacity: 0;
+  }
 }
 
 @keyframes sv-spin {
@@ -864,7 +1103,7 @@ html[data-sinsta-reels-grid] main {
 .sr-stage {
   position: relative;
   flex: 0 0 auto;
-  height: min(calc(100vh - 32px), calc((100vw - 160px) * 16 / 9));
+  height: min(calc(100vh - 32px), calc((100vw - 240px) * 16 / 9));
   aspect-ratio: 9 / 16;
   overflow: hidden;
   border-radius: 8px;
@@ -941,10 +1180,227 @@ html[data-sinsta-reels-grid] main {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-.sr-meta {
-  margin-top: 6px;
+/* Like, comments and copy link, beside the video. */
+.sr-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-self: flex-end;
+  margin-bottom: 24px;
+}
+
+#sinsta-reel-player .sr-act {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 48px;
+  font-size: 12px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+#sinsta-reel-player .sr-act svg {
+  width: 26px;
+  height: 26px;
+}
+
+#sinsta-reel-player .sr-act:hover svg {
+  opacity: 0.7;
+}
+
+#sinsta-reel-player .sr-act span:empty {
+  display: none;
+}
+
+#sinsta-reel-player [data-on] svg {
+  fill: currentColor;
+}
+
+#sinsta-reel-player .sr-act:first-child[data-on],
+#sinsta-reel-player .sr-clike[data-on] {
+  color: #ff3040;
+}
+
+/* The comments panel, as tall as the video. */
+#sinsta-reel-player.sr-with-comments .sr-stage {
+  height: min(calc(100vh - 32px), calc((100vw - 640px) * 16 / 9));
+}
+
+.sr-comments {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 360px;
+  width: 360px;
+  height: min(calc(100vh - 32px), max(240px, calc((100vw - 640px) * 16 / 9)));
+  overflow: hidden;
+  border-radius: 8px;
+  background: #262626;
+  user-select: text;
+}
+
+.sr-chead {
+  display: flex;
+  align-items: center;
+  padding: 6px 6px 6px 16px;
+  border-bottom: 1px solid #363636;
+}
+
+.sr-ctitle {
+  flex: 1;
+  font-weight: 600;
+}
+
+.sr-clist {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 0;
+}
+
+.sr-c {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 8px 8px 16px;
+}
+
+.sr-creplies .sr-c {
+  padding: 8px 0 0;
+}
+
+.sr-cpic img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.sr-creplies .sr-cpic img {
+  width: 24px;
+  height: 24px;
+}
+
+.sr-cbody {
+  flex: 1;
+  min-width: 0;
+}
+
+.sr-ctext {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+#sinsta-reel-player .sr-cuser {
+  font-weight: 600;
+}
+
+#sinsta-reel-player .sr-ctag {
+  color: #e0f1ff;
+}
+
+.sr-cmeta {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  color: #a8a8a8;
+  font-size: 12px;
+}
+
+#sinsta-reel-player .sr-clink {
+  padding: 0;
+  color: #a8a8a8;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#sinsta-reel-player .sr-clink:hover {
+  color: #fff;
+}
+
+#sinsta-reel-player .sr-cmore {
+  margin-top: 8px;
+}
+
+#sinsta-reel-player .sr-clike {
+  padding: 4px;
+  color: #a8a8a8;
+}
+
+#sinsta-reel-player .sr-clike svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sr-cstatus {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  color: #a8a8a8;
+}
+
+.sr-replying {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 6px 2px 16px;
+  background: #363636;
+  color: #a8a8a8;
   font-size: 13px;
+}
+
+#sinsta-reel-player .sr-replying svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sr-cerror {
+  padding: 6px 16px 0;
+  color: #ff6b6b;
+  font-size: 13px;
+}
+
+.sr-cform {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px 10px 16px;
+  border-top: 1px solid #363636;
+}
+
+.sr-cinput {
+  flex: 1;
+  resize: none;
+  margin: 0;
+  padding: 6px 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: #fff;
+  font: inherit;
+  line-height: 1.35;
+}
+
+.sr-cinput::placeholder {
+  color: #a8a8a8;
+}
+
+#sinsta-reel-player .sr-cpost {
+  padding: 6px 4px;
+  color: #0095f6;
+  font: inherit;
+  font-weight: 600;
+}
+
+#sinsta-reel-player .sr-cpost:disabled {
+  opacity: 0.4;
+}
+
+.sr-coff {
+  padding: 12px 16px;
+  border-top: 1px solid #363636;
+  color: #a8a8a8;
+  text-align: center;
 }
 
 .sr-progress {
@@ -962,4 +1418,90 @@ html[data-sinsta-reels-grid] main {
   height: 100%;
   width: 0;
   background: #fff;
+}
+
+/* ---- Downloads -------------------------------------------------------- */
+
+/* The Save button's slot, holding our download button before it. */
+[data-sinsta-dl] {
+  display: flex;
+  align-items: center;
+}
+
+[data-sinsta-dl="column"] {
+  flex-direction: column;
+}
+
+.sinsta-dl,
+.sinsta-dl-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sinsta-dl svg,
+.sinsta-dl-avatar svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sinsta-dl:hover {
+  opacity: 0.6;
+}
+
+/* Profile picture: a round button over its bottom-right corner. */
+[data-sinsta-avatar] {
+  position: relative;
+}
+
+.sinsta-dl-avatar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 6px;
+  border-radius: 50%;
+  background: rgb(var(--ig-primary-background, 255, 255, 255));
+  color: rgb(var(--ig-primary-text, 0, 0, 0));
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.sinsta-dl-avatar svg {
+  width: 18px;
+  height: 18px;
+}
+
+[data-sinsta-avatar]:hover .sinsta-dl-avatar,
+.sinsta-dl-avatar:focus-visible,
+.sinsta-dl-avatar[data-busy],
+.sinsta-dl-avatar[data-failed] {
+  opacity: 1;
+}
+
+/* While a download starts, and briefly after one fails. */
+.sinsta-dl[data-busy],
+.sinsta-dl-avatar[data-busy],
+#sinsta-viewer .sv-btn[data-busy],
+#sinsta-reel-player .sr-btn[data-busy] {
+  opacity: 0.4;
+  cursor: progress;
+}
+
+.sinsta-dl[data-failed],
+.sinsta-dl-avatar[data-failed],
+#sinsta-viewer .sv-btn[data-failed],
+#sinsta-reel-player .sr-btn[data-failed] {
+  color: #ed4956;
 }
