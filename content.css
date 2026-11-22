@@ -555,15 +555,23 @@ html[data-sinsta-reels-grid] main video {
 }
 
 /* Placed in proportion to the part that shows, so it scales with the deck:
-   its middle a third of the way in from the card's outer edge, kept within. */
+   its middle 40% of the way in from the card's outer edge, kept within. */
 .sv-peek-open-r .sv-peek-label > *,
 .sv-peek-open-l .sv-peek-label > * {
-  margin: 0 clamp(0px, calc(0.33 * var(--open, 100px) - var(--avatar) / 2), max(0px, calc(var(--open, 100px) - var(--avatar))));
+  margin: 0 clamp(0px, calc(0.4 * var(--open, 100px) - var(--avatar) / 2), max(0px, calc(var(--open, 100px) - var(--avatar))));
 }
 
-/* The account's profile picture, and under it a dot per story. */
+/* The account's profile picture, and under it a dot per story. It spans
+   49% of the part of the card that shows, so the space either side of it
+   keeps its proportion at any window size; cards not peeked at take the
+   nearest card's (--open-rest, set by layoutDeck). */
 .sv-peek-label {
-  --avatar: 80px;
+  --avatar: calc(0.49 * var(--open-rest, 160px));
+}
+
+.sv-peek-open-r .sv-peek-label,
+.sv-peek-open-l .sv-peek-label {
+  --avatar: calc(0.49 * var(--open, 160px));
 }
 
 .sv-peek-avatar {

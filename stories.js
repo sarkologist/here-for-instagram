@@ -1043,6 +1043,9 @@ const Sinsta = (() => {
       const x = (edge * (d - half * Math.sin(r))) / d - half * Math.cos(r);
       slots.push({ x, th, s, edge });
     }
+    // Cards not peeked at size their labels as if they were the nearest one
+    // (see .sv-peek-label).
+    if (slots.length) view.style.setProperty('--open-rest', `${openAt(1)}px`);
     sizeScroller(FW, W);
   }
 
@@ -1298,9 +1301,18 @@ const Sinsta = (() => {
     const side = Math.sign(k - centre);
     const hand = (i) => (Math.sign(i - centre) === side ? shift[Math.min(Math.abs(i - centre), n)] : 0);
     hand.k = k;
-    const t = slots[D - 1];
-    hand.open = (strip(D) + gain) / (t.s * Math.cos((t.th * Math.PI) / 180)); // how much of it shows, in its own px
+    hand.open = openAt(D);
     return hand;
+  }
+
+  // How much of the card D places out shows while it's peeked at, in its own
+  // px: its share, and what every other card on that side gives up.
+  function openAt(D) {
+    const E = [deckW / 2, ...slots.map((t) => t.edge)];
+    let open = E[D] - E[D - 1];
+    for (let j = 1; j < E.length; j++) if (j !== D) open += (E[j] - E[j - 1]) * (1 - DECK.ratio);
+    const t = slots[D - 1];
+    return open / (t.s * Math.cos((t.th * Math.PI) / 180));
   }
 
   // Apply styles at once, without transitions.
