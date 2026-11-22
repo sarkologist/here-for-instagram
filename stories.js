@@ -965,7 +965,9 @@ const Sinsta = (() => {
     return prev[at === LAST ? prev.length - 1 : Math.min(at, prev.length - 1)];
   }
 
-  function preload() {
+  // Load the stories around the current one, and let go of the rest; with
+  // fill false, only let go (what's already loaded around it stays).
+  function preload(fill = true) {
     const reel = list[ri];
     const items = reel && media.get(reel.id);
     const now = items && items[ii];
@@ -975,7 +977,7 @@ const Sinsta = (() => {
     // video let go has to load again before it shows.
     for (const item of [...upcoming(PRELOAD), behind(items)].filter(Boolean)) {
       keep.add(item.src);
-      mediaEl(item);
+      if (fill) mediaEl(item);
     }
     for (const [src, node] of preloaded) {
       // Also spare the previous story while it still shows under this one.
@@ -1626,7 +1628,11 @@ const Sinsta = (() => {
     syncScroll();
     renderDeck();
 
-    if (!media.has(reel.id)) await (pending.get(reel.id) || loadReels([reel.id]));
+    try {
+      if (!media.has(reel.id)) await (pending.get(reel.id) || loadReels([reel.id]));
+    } catch (e) {
+      console.warn('Here for Instagram: loading stories failed', e);
+    }
     if (my !== token || !open) return;
     const items = media.get(reel.id);
     if (!items) {
@@ -1666,17 +1672,19 @@ const Sinsta = (() => {
     // while it downloads, it is drawn again as each part arrives, and a
     // full-size one doing that holds up frames.
     if (item.type === 'video') mediaBox.append(current);
+    preload(false); // stories no longer around this one stop loading now
     // The cards' pictures and the stories preloaded around this one load
     // once it is in, so they don't hold it up (a video starts loading a beat
     // after an image would, behind anything asked for meanwhile); a story
     // slow to load holds them up only so long.
     const follow = () => {
+      clearTimeout(followTimer);
       if (storyIn || my !== token) return;
       storyIn = true;
       renderDeck();
       preload();
     };
-    setTimeout(follow, 1500);
+    const followTimer = setTimeout(follow, 1500);
     const clearBelow = () => {
       for (const node of [...mediaBox.children]) if (node !== current) node.remove();
     };

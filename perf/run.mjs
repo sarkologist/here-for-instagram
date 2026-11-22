@@ -204,7 +204,7 @@ async function openPage(page, images, videos) {
   // requests were made (so asking for something first gets it first), no
   // sooner than a round trip after the request.
   let linkFree = 0;
-  const streams = new Map(); // video path -> where its last range ended
+  const streams = new Map(); // video path -> where its last range ended, and when
   const transfer = (bytes, rtt = LATENCY_MS) => {
     const start = Math.max(Date.now() + rtt, linkFree);
     linkFree = start + (bytes * 8) / (MBPS * 1000);
@@ -244,9 +244,11 @@ async function openPage(page, images, videos) {
       const asked = Date.now();
       // A range that carries on where the last one of this video ended is
       // the same stream going on: no new round trip.
-      const goesOn = streams.get(path) === start;
-      streams.set(path, end + 1);
+      const last = streams.get(path);
+      const goesOn = last && last.end === start && Date.now() - last.at < 50;
+      streams.set(path, { end: end + 1, at: Infinity });
       await transfer(body.length, goesOn ? 0 : LATENCY_MS);
+      streams.set(path, { end: end + 1, at: Date.now() });
       page.netlog.push({ video: path, bytes: body.length, asked, done: Date.now() });
       return route.fulfill({
         status: 206,
@@ -386,6 +388,7 @@ const SCENARIOS = {
   // Opening on a video story: its first frame on screen.
   async 'open-video'(page, accounts) {
     const k = accounts.findIndex((r, i) => i > 5 && firstUnseen(r).media_type === 2);
+    if (k < 0) return null; // no account opens on a video
     await record(page);
     const ms = await openViewer(page, accounts, k);
     await settle(page, 900);
@@ -407,6 +410,7 @@ const SCENARIOS = {
   // A video playing on stage, untouched, for 3 s.
   async 'watch-video'(page, accounts) {
     const k = accounts.findIndex((r, i) => i > 5 && firstUnseen(r).media_type === 2);
+    if (k < 0) return null;
     await openViewer(page, accounts, k);
     await settle(page, 300);
     await record(page);
@@ -418,6 +422,7 @@ const SCENARIOS = {
   async 'step-video'(page, accounts) {
     const videos = (r) => r.items.filter((it) => it.media_type === 2).length;
     const k = accounts.reduce((best, r, i) => (!r.seen && videos(r) > videos(accounts[best]) ? i : best), 0);
+    if (!videos(accounts[k])) return null;
     await openViewer(page, accounts, k);
     await settle(page);
     await record(page);
@@ -698,7 +703,12 @@ async function main() {
       await page.load(accounts);
       await page.mouse.move(VIEWPORT.width / 2, 20);
       const out = await scenario(page, accounts);
+      if (!out) break; // the data has nothing for this scenario
       runs.push({ ...frameStats(out.frames, vsync, out.work), inputs: out.inputs.map((x) => x.ms), shown: out.shown || [], video: out.video, did: out.did, fns: out.fns });
+    }
+    if (!runs.length) {
+      console.log(`SKIP  ${name} (nothing in the data for it)`);
+      continue;
     }
     const inputs = runs.flatMap((r) => r.inputs);
     const shown = runs.flatMap((r) => r.shown);
