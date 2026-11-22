@@ -87,7 +87,7 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 
 ## Performance evals
 
-`perf/` measures the stories carousel in Firefox: it runs `stories.js` and `content.css` on a stand-in instagram.com with synthetic accounts and stories (over a simulated 100 Mbps link with 40 ms round trips), drives it like a person would (opening, turning by key and click, stepping through stories, hovering and scrubbing cards, trackpad swipes, mouse wheel), and checks each against what people can perceive: frames no later than 20 ms at the 99th percentile and never 33 ms or more, input painted within 50 ms (95th percentile) and never 100 ms or more, and opening no more than 50 ms slower than the network allows.
+`perf/` measures the stories carousel in Firefox: it runs `stories.js` and `content.css` on a stand-in instagram.com with synthetic accounts and stories (over a simulated 100 Mbps link with 40 ms round trips), drives it like a person would (opening, turning by key and click, stepping through stories, hovering and scrubbing cards, trackpad swipes, mouse wheel), and checks each against what people can perceive: frames no later than 20 ms at the 99th percentile and never more than two 60 Hz frames (33.4 ms), input painted within 50 ms (95th percentile) and never later than 100 ms, and opening no more than 50 ms slower than the network allows.
 
 ```
 cd perf && npm install && npx playwright install firefox

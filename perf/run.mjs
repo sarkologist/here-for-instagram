@@ -172,10 +172,11 @@ async function openPage(page, images) {
   let byId = new Map();
   const delay = (ms = LATENCY_MS) => new Promise((r) => setTimeout(r, ms));
   // The link: each response's bytes take their turn, in the order the
-  // requests were made (so asking for something first gets it first).
+  // requests were made (so asking for something first gets it first), no
+  // sooner than a round trip after the request.
   let linkFree = 0;
   const transfer = (bytes) => {
-    const start = Math.max(Date.now(), linkFree);
+    const start = Math.max(Date.now() + LATENCY_MS, linkFree);
     linkFree = start + (bytes * 8) / (MBPS * 1000);
     return delay(linkFree - Date.now());
   };
@@ -196,9 +197,7 @@ async function openPage(page, images) {
       const pool = images[img[2]];
       const n = [...img[1]].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0);
       const body = pool[n % pool.length];
-      const sent = transfer(body.length); // queued as asked
-      await delay();
-      await sent;
+      await transfer(body.length);
       return route.fulfill({ contentType: 'image/jpeg', headers: { 'cache-control': 'max-age=3600' }, body });
     }
     if (path === '/api/graphql' || path === '/graphql/query') {
@@ -400,6 +399,7 @@ const SCENARIOS = {
       await page.evaluate(async (sign) => {
         const root = document.getElementById('sinsta-viewer');
         const stops = root.querySelectorAll('.sv-stop');
+        if (stops.length < 2) return;
         const unit = stops[1].offsetLeft - stops[0].offsetLeft;
         const frame = () => new Promise((r) => requestAnimationFrame(r));
         // Each scroll step ends a programmatic scroll, but a swipe ends only

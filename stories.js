@@ -1041,10 +1041,9 @@ const Sinsta = (() => {
     const card = el('div', { className: 'sv-peek' }, el('div', { className: 'sv-peek-clip' }, img), el('div', { className: 'sv-peek-dim' }), label);
     card.parts = { img, dots };
     card.reel = reel;
-    // Opaque until its picture is in (see .sv-peek-wait).
-    const loaded = () => card.classList.remove('sv-peek-wait');
-    img.addEventListener('load', loaded);
-    img.addEventListener('error', loaded);
+    // Opaque until its picture is in (see .sv-peek-wait); one that fails
+    // stays black.
+    img.addEventListener('load', () => card.classList.remove('sv-peek-wait'));
     card.addEventListener('click', () => toReel(list.indexOf(reel), scrubId === reel.id ? scrubJ : null));
     card.addEventListener('pointermove', (e) => scrub(reel, card, e));
     card.addEventListener('pointerenter', (e) => {
@@ -1582,6 +1581,7 @@ const Sinsta = (() => {
 
   async function show() {
     const my = ++token;
+    awaiting = null; // a show() still waiting is superseded
     // Ask for the account's stories before anything else, so the request
     // isn't held up by laying out the deck.
     loadAhead();
@@ -1617,8 +1617,11 @@ const Sinsta = (() => {
     const waited = !media.has(reel.id);
     if (waited) {
       awaiting = reel.id;
-      await (pending.get(reel.id) || loadReels([reel.id]));
-      if (awaiting === reel.id) awaiting = null;
+      try {
+        await (pending.get(reel.id) || loadReels([reel.id]));
+      } finally {
+        if (awaiting === reel.id) awaiting = null;
+      }
     }
     if (my !== token || !open) return;
     const items = media.get(reel.id);
