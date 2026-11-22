@@ -1092,17 +1092,22 @@ const Sinsta = (() => {
     when.textContent = item ? ago(item.takenAt) : '';
   }
 
-  // Go to a card's story.
+  // Go to a card's story; false if it's already on stage (or still loading).
   function toCard(it) {
-    if (it.k !== ri) return toReel(it.k);
-    if (ii < 0 || it.j == null || it.j === ii) return;
+    if (it.k !== ri) {
+      toReel(it.k);
+      return true;
+    }
+    if (ii < 0 || it.j == null || it.j === ii) return false;
     dir = it.j > ii ? 1 : -1;
     ii = it.j;
     show();
+    return true;
   }
 
   let deck = []; // the cards last laid out, kept as they are while scrolling
   let deckAt = 0; // where the stage was among them
+  const fading = new Set(); // cards on their way out
 
   function renderDeck() {
     if (!open) return;
@@ -1167,7 +1172,11 @@ const Sinsta = (() => {
       } else {
         card.style.opacity = '0';
         card.classList.add('sv-peek-off');
-        setTimeout(() => card.remove(), TURN_MS);
+        fading.add(card);
+        setTimeout(() => {
+          fading.delete(card);
+          card.remove();
+        }, TURN_MS);
       }
     }
     for (let i = 0; i < missing.length; i += 10) {
@@ -1214,8 +1223,9 @@ const Sinsta = (() => {
   }
 
   function clearDeck() {
-    for (const card of peeks.values()) card.remove();
+    for (const card of [...peeks.values(), ...fading]) card.remove();
     peeks.clear();
+    fading.clear();
     peekAsked.clear();
     clearTimeout(turnTimer);
     turning = false;
@@ -1371,7 +1381,9 @@ const Sinsta = (() => {
     endScroll();
     if (i === deckAt) return renderDeck();
     landed = true;
-    toCard(deck[i]);
+    if (toCard(deck[i])) return;
+    landed = false;
+    renderDeck();
   }
 
   // Firefox reports a mouse wheel in lines and a trackpad (or Magic Mouse) in
