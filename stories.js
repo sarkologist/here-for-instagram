@@ -990,7 +990,7 @@ const Sinsta = (() => {
   const DECK = { ratio: 0.91, scaleFar: 0.63, angleNear: 0, angleFar: 20, minStrip: 0.075, persp: 1.4, fade: 0.09, margin: 0.015 };
   const peeks = new Map(); // reel id -> card element
   const peekAsked = new Set(); // reel ids whose stories the cards asked for
-  let slots = []; // right-hand card placements, nearest first: { x, th, s }
+  let slots = []; // right-hand card placements, nearest first: { x, th, s, edge } (edge: where its share ends)
   let deckW = 0;
   let deckH = 0;
 
@@ -1024,7 +1024,7 @@ const Sinsta = (() => {
       const r = (th * Math.PI) / 180;
       const half = (W * s) / 2;
       const x = (edge * (d - half * Math.sin(r))) / d - half * Math.cos(r);
-      slots.push({ x, th, s });
+      slots.push({ x, th, s, edge });
     }
     sizeScroller(FW, W);
   }
@@ -1035,7 +1035,14 @@ const Sinsta = (() => {
     const label = el('div', { className: 'sv-peek-label' }, el('b', {}, reel.username), count);
     const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);
     card.parts = { img, count };
+    card.reel = reel;
     card.addEventListener('click', () => toReel(list.indexOf(reel)));
+    card.addEventListener('pointerenter', () => peekAt(reel));
+    card.addEventListener('pointerleave', (e) => {
+      // Onto another card, that one's pointerenter takes over.
+      const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.sv-peek');
+      if (peekId === reel.id && !(to && sideCard(to))) unpeek();
+    });
     return card;
   }
 
@@ -1072,6 +1079,7 @@ const Sinsta = (() => {
     const hi = Math.min(list.length - 1, Math.ceil(pos) + n + 1);
     const keep = new Set();
     const missing = [];
+    const hand = handAt();
     for (let k = lo; k <= hi; k++) {
       const reel = list[k];
       const off = k - pos;
@@ -1086,7 +1094,10 @@ const Sinsta = (() => {
         view.insertBefore(card, stage);
       }
       fillPeek(card, reel, k - ri);
-      const { transform, dim } = placement(off);
+      const { transform, dim } = placement(off, hand(k));
+      card.classList.toggle('sv-peek-open-r', hand.k === k && off > 0);
+      card.classList.toggle('sv-peek-open-l', hand.k === k && off < 0);
+      if (hand.k === k) card.style.setProperty('--open', `${hand.open}px`);
       // While scrolling, the stage is hidden and every card shows, the
       // farthest fading out as it goes.
       const inView = scrolling ? d < (n || 1) + 1 : !!d && d <= n;
@@ -1123,8 +1134,8 @@ const Sinsta = (() => {
 
   // Where a card `off` places from the middle goes, and how dim it is. While
   // the carousel scrolls, `off` is fractional: between two places, a card is
-  // part way from one to the other.
-  function placement(off) {
+  // part way from one to the other. `push` moves it outward, in px.
+  function placement(off, push = 0) {
     const d = Math.abs(off);
     const sign = Math.sign(off);
     const n = slots.length;
@@ -1139,7 +1150,7 @@ const Sinsta = (() => {
     const f = k === n ? 0 : d - k;
     const a = k ? slots[k - 1] : { x: 0, th: 0, s: 1 };
     const b = slots[Math.min(k, n - 1)];
-    const x = a.x + (b.x - a.x) * f;
+    const x = a.x + (b.x - a.x) * f + push;
     const th = a.th + (b.th - a.th) * f;
     const s = a.s + (b.s - a.s) * f;
     const far = 0.15 + DECK.fade;
@@ -1147,6 +1158,76 @@ const Sinsta = (() => {
       transform: `translateX(${sign * x}px) rotateY(${-sign * th}deg) scale(${s})`,
       dim: d < 1 ? d * far : Math.min(0.85, 0.15 + d * DECK.fade),
     };
+  }
+
+  // ---- Peeking at a card -------------------------------------------------
+
+  // Hovering a card beside the stage fans the deck open there, like a hand of
+  // cards: every other card on that side shows DECK.ratio as much of itself,
+  // as if one place further out, and the hovered card takes the room that
+  // frees. Not while the carousel moves; and a card that comes to rest under
+  // a still pointer waits for the pointer to move.
+  let peekId = null; // the account whose card is peeked at
+  let peekRearm = null; // where the pointer was when the deck last moved
+  let pointerX = -1;
+  let pointerY = -1;
+
+  const sideCard = (card) => !card.classList.contains('sv-peek-off') && card.reel !== list[ri];
+
+  function peekAt(reel) {
+    if (!open || scrolling || turning || peekRearm || reel === list[ri] || peekId === reel.id) return;
+    peekId = reel.id;
+    root.classList.add('sv-hand');
+    renderDeck();
+  }
+
+  function unpeek() {
+    if (!peekId) return;
+    peekId = null;
+    renderDeck();
+  }
+
+  // The deck moves: the peek goes, until the pointer moves again.
+  function dropPeek() {
+    peekId = null;
+    peekRearm = { x: pointerX, y: pointerY };
+    root.classList.remove('sv-hand');
+  }
+
+  window.addEventListener('pointermove', (e) => {
+    pointerX = e.clientX;
+    pointerY = e.clientY;
+    if (!open || !peekRearm || Math.hypot(pointerX - peekRearm.x, pointerY - peekRearm.y) < 3) return;
+    peekRearm = null;
+    const hit = document.elementFromPoint(pointerX, pointerY);
+    const card = hit && hit.closest('.sv-peek');
+    if (card && sideCard(card)) peekAt(card.reel);
+  }, true);
+
+  // How far (px, outward) the peek moves the card at index k, with `centre`
+  // in the middle; .k is the card peeked at, or -1.
+  function handAt(centre = ri) {
+    const none = () => 0;
+    none.k = -1;
+    const k = peekId && !scrolling ? list.findIndex((r) => r.id === peekId) : -1;
+    const n = slots.length;
+    const D = Math.abs(k - centre);
+    if (k < 0 || !D || D > n) return none;
+    const E = [deckW / 2, ...slots.map((t) => t.edge)]; // where each share ends; E[0] the stage's edge
+    const strip = (j) => E[j] - E[j - 1];
+    let gain = 0;
+    for (let j = 1; j <= n; j++) if (j !== D) gain += strip(j) * (1 - DECK.ratio);
+    const shift = [0];
+    let e = E[0];
+    for (let j = 1; j <= n; j++) {
+      e += j === D ? strip(j) + gain : strip(j) * DECK.ratio;
+      shift.push(e - E[j]);
+    }
+    const side = Math.sign(k - centre);
+    const hand = (i) => (Math.sign(i - centre) === side ? shift[Math.min(Math.abs(i - centre), n)] : 0);
+    hand.k = k;
+    hand.open = (strip(D) + gain) / slots[D - 1].s; // how much of it shows, in its own (unscaled) px
+    return hand;
   }
 
   // Apply styles at once, without transitions.
@@ -1158,6 +1239,9 @@ const Sinsta = (() => {
   }
 
   function clearDeck() {
+    peekId = null;
+    peekRearm = null;
+    root.classList.remove('sv-hand');
     for (const card of peeks.values()) card.remove();
     peeks.clear();
     peekAsked.clear();
@@ -1194,7 +1278,7 @@ const Sinsta = (() => {
         card.style.setProperty('--dim', '0');
       });
     }
-    const from = placement(delta);
+    const from = placement(delta, handAt(list.indexOf(prev))(ri)); // from where its card is, peeked or not
     snap(stage, () => {
       stage.style.transform = from.transform;
       stage.style.setProperty('--dim', String(from.dim));
@@ -1287,6 +1371,7 @@ const Sinsta = (() => {
       scrolling = true;
       root.classList.add('sv-scrolling');
       if (typing) replyInput.blur(); // the stage, reply box included, hides
+      dropPeek();
       syncPause();
     }
     scrollPos = pos;
@@ -1459,6 +1544,7 @@ const Sinsta = (() => {
       } else {
         beginTurn(shownReel, from < 0 ? dir : ri - from);
       }
+      dropPeek();
     }
     landed = false;
     shownReel = reel;
@@ -1624,6 +1710,7 @@ const Sinsta = (() => {
     document.documentElement.classList.add('sinsta-viewing');
     onTop(root);
     layoutDeck();
+    dropPeek(); // a card that opens under the pointer waits for it to move
     raf = requestAnimationFrame(tick);
     show();
   }
