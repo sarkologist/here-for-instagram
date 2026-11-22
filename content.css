@@ -515,6 +515,40 @@ html[data-sinsta-reels-grid] main video {
   transition: none;
 }
 
+/* Peeking at a card (see handAt in stories.js): the deck fans open a little
+   quicker than it turns, and only the card's outer part shows, so its label
+   moves there. */
+.sv-hand .sv-peek {
+  transition-duration: 0.25s;
+}
+
+.sv-peek-open-r .sv-peek-label,
+.sv-peek-open-l .sv-peek-label {
+  box-sizing: border-box;
+  width: var(--open, 100%);
+  padding: 0 12px;
+}
+
+.sv-peek-open-r .sv-peek-label {
+  left: auto;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.sv-peek-open-l .sv-peek-label {
+  right: auto;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.sv-peek-open-r .sv-peek-label > *,
+.sv-peek-open-l .sv-peek-label > * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sv-peek-label b {
   font-weight: 600;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
