@@ -51,7 +51,12 @@ const MBPS = Number(opt('mbps', 100)); // simulated link: responses share it, fi
 // the stories request, then the picture's round trip and bytes. The open
 // scenario counts only the time beyond it.
 let netFloorMs = 2 * LATENCY_MS;
+let routeMs = 0;
 const PROFILE = args.includes('--profile');
+// About 3 in 10 stories are videos (720x1280 H.264, as Instagram's), unless
+// --images-only. They need ffmpeg (with libx264) to be made, once.
+let VIDEOS = !args.includes('--images-only');
+const CHUNK = 256 * 1024; // the most a video response carries: media loads in ranges, so this stands in for streaming
 
 // --profile: time the carousel's own functions. Each is renamed and wrapped by
 // a function of its own name that adds its (inclusive) time to __perf.fns.
@@ -75,6 +80,9 @@ const LIMITS = {
   maxFrameMs: 33.4,
   p95InputMs: 50,
   maxInputMs: 100,
+  // Video: a dropped frame here and there is invisible; 1 in 100 is a stutter
+  // every few seconds.
+  videoDropped: 0.01,
 };
 
 // ---- Synthetic data -------------------------------------------------------
@@ -94,10 +102,13 @@ function makeAccounts(run) {
     for (let k = 0; k < n; k++) {
       const pk = `${id}${String(k).padStart(3, '0')}`;
       const img = (w, h) => ({ width: w, height: h, url: `https://www.instagram.com/perf/img/r${run}/${pk}_${w}.jpg` });
+      const video = VIDEOS && (a * 7 + k * 3) % 10 < 3;
       items.push({
-        pk, id: pk, taken_at: NOW - 3600 * 20 + a * 60 + k * 600, media_type: 1,
-        original_width: 1080, original_height: 1920, can_reply: true, has_liked: false,
+        pk, id: pk, taken_at: NOW - 3600 * 20 + a * 60 + k * 600, media_type: video ? 2 : 1,
+        original_width: video ? 720 : 1080, original_height: video ? 1280 : 1920, can_reply: true, has_liked: false,
+        // A video's images are its poster, and what its card shows.
         image_versions2: { candidates: [img(1080, 1920), img(750, 1333), img(640, 1138), img(480, 853), img(320, 569), img(240, 427)] },
+        ...(video ? { video_duration: 8, video_versions: [{ type: 101, width: 720, height: 1280, url: `https://www.instagram.com/perf/vid/r${run}/${pk}.mp4` }] } : {}),
       });
     }
     const seen = a % 3 === 2 ? items[items.length - 1].taken_at : a % 3 === 1 ? items[0].taken_at : 0;
@@ -158,6 +169,24 @@ async function makeImages(page) {
   return Object.fromEntries(Object.entries(pool).map(([w, list]) => [w, list.map((b) => Buffer.from(b, 'base64'))]));
 }
 
+// Video bytes: a few 8 s clips like Instagram's story videos (720x1280,
+// H.264 at ~2.5 Mbps, AAC), made once with ffmpeg into .cache/videos.
+function makeVideos() {
+  const dir = join(HERE, '.cache', 'videos');
+  mkdirSync(dir, { recursive: true });
+  const out = [];
+  for (let i = 0; i < 6; i++) {
+    const file = join(dir, `v${i}.mp4`);
+    if (!existsSync(file)) {
+      execSync(`ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=720x1280:rate=30:duration=8,hue=h=${i * 60},noise=alls=12:allf=t" `
+        + `-f lavfi -i "sine=frequency=${300 + i * 80}:duration=8" -c:v libx264 -profile:v high -pix_fmt yuv420p -b:v 2500k -maxrate 3000k `
+        + `-bufsize 5000k -g 60 -c:a aac -b:a 128k -movflags +faststart -shortest "${file}"`);
+    }
+    out.push(readFileSync(file));
+  }
+  return out;
+}
+
 // ---- Page -----------------------------------------------------------------
 
 const FILES = {
@@ -168,15 +197,16 @@ const FILES = {
 
 // One page for the whole session (one window, so it takes the foreground only
 // once); load() reloads it with the given accounts.
-async function openPage(page, images) {
+async function openPage(page, images, videos) {
   let byId = new Map();
   const delay = (ms = LATENCY_MS) => new Promise((r) => setTimeout(r, ms));
   // The link: each response's bytes take their turn, in the order the
   // requests were made (so asking for something first gets it first), no
   // sooner than a round trip after the request.
   let linkFree = 0;
-  const transfer = (bytes) => {
-    const start = Math.max(Date.now() + LATENCY_MS, linkFree);
+  const streams = new Map(); // video path -> where its last range ended, and when
+  const transfer = (bytes, rtt = LATENCY_MS) => {
+    const start = Math.max(Date.now() + rtt, linkFree);
     linkFree = start + (bytes * 8) / (MBPS * 1000);
     return delay(linkFree - Date.now());
   };
@@ -186,6 +216,7 @@ async function openPage(page, images) {
     if (path === '/' || path === '/perf/') {
       return route.fulfill({ contentType: 'text/html', body: readFileSync(join(HERE, 'harness.html')) });
     }
+    if (path === '/perf/ping') return route.fulfill({ body: '' });
     if (FILES[path]) {
       let body = readFileSync(FILES[path][0], 'utf8');
       if (path === '/perf/content.css' && opt('css')) body += `\n/* --css */\n${opt('css')}\n`;
@@ -200,6 +231,34 @@ async function openPage(page, images) {
       await transfer(body.length);
       return route.fulfill({ contentType: 'image/jpeg', headers: { 'cache-control': 'max-age=3600' }, body });
     }
+    const vid = path.match(/^\/perf\/vid\/r\d+\/(\w+)\.mp4$/);
+    if (vid && videos) {
+      const n = [...vid[1]].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0);
+      const all = videos[n % videos.length];
+      const m = (route.request().headers().range || '').match(/bytes=(\d+)-(\d*)/);
+      const start = m ? Number(m[1]) : 0;
+      // At most CHUNK at a time (a server may send less than asked): the
+      // player asks for the rest as it needs it, as if streamed.
+      const end = Math.min(all.length - 1, m && m[2] ? Number(m[2]) : Infinity, start + CHUNK - 1);
+      const body = all.subarray(start, end + 1);
+      const asked = Date.now();
+      // A range that carries on where the last one of this video ended is
+      // the same stream going on: no new round trip.
+      const last = streams.get(path);
+      const goesOn = last && last.end === start && Date.now() - last.at < 50;
+      streams.set(path, { end: end + 1, at: Infinity });
+      await transfer(body.length, goesOn ? 0 : LATENCY_MS);
+      streams.set(path, { end: end + 1, at: Date.now() });
+      page.netlog.push({ video: path, bytes: body.length, asked, done: Date.now() });
+      return route.fulfill({
+        status: 206,
+        headers: {
+          'content-type': 'video/mp4', 'accept-ranges': 'bytes', 'cache-control': 'max-age=3600',
+          'content-range': `bytes ${start}-${end}/${all.length}`, 'content-length': String(body.length),
+        },
+        body,
+      });
+    }
     if (path === '/api/graphql' || path === '/graphql/query') {
       const body = new URLSearchParams(route.request().postData() || '');
       const vars = JSON.parse(body.get('variables') || '{}');
@@ -208,13 +267,16 @@ async function openPage(page, images) {
         const reels = vars.reel_ids_arr.map((id) => byId.get(id)).filter(Boolean);
         return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { xdt_api__v1__feed__reels_media: { reels_media: reels } } }) });
       }
+      if (vars.reelId) page.netlog.push({ seen: Date.now() });
       if (vars.reelId) return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { xdt_mark_story_reel_seen: true } }) });
       return route.fulfill({ contentType: 'application/json', body: '{"data":null}' });
     }
     return route.fulfill({ status: 404, body: '' });
   });
+  page.netlog = []; // video ranges served, and stories marked seen
   page.load = async (accounts) => {
     byId = new Map(accounts.map((r) => [r.id, r]));
+    page.netlog = [];
     await page.goto('https://www.instagram.com/');
     await page.waitForFunction(() => window.__perf && typeof Sinsta === 'object');
   };
@@ -251,6 +313,9 @@ function giveBackFocus() {
     execSync(`osascript -e 'tell application id "${userApp}" to activate'`);
   } catch (_) {}
 }
+
+// The story the viewer opens an account on: its first unwatched one.
+const firstUnseen = (r) => r.items.find((it) => it.taken_at > r.seen) || r.items[0];
 
 // The row's reels, as content.js hands them to the viewer.
 const rowOf = (accounts) => accounts.map((r) => ({
@@ -318,6 +383,55 @@ const SCENARIOS = {
     out.inputs.push({ type: 'open', ms: ms - netFloorMs });
     out.did = { ...out.did, ...(await page.evaluate(() => window.__perf.openTimeline)) };
     return out;
+  },
+
+  // Opening on a video story: its first frame on screen.
+  async 'open-video'(page, accounts) {
+    const k = accounts.findIndex((r, i) => i > 5 && firstUnseen(r).media_type === 2);
+    if (k < 0) return null; // no account opens on a video
+    await record(page);
+    const ms = await openViewer(page, accounts, k);
+    await settle(page, 900);
+    const out = await stop(page);
+    // Less the network at best: the stories, then the video's bytes up to its
+    // first frame (those it had when its first frame was decoded).
+    const firstData = await page.evaluate(() => window.__perf.firstData);
+    const first = page.netlog.find((x) => x.video);
+    const ranges = page.netlog.filter((x) => first && x.video === first.video && x.done <= firstData);
+    const bytes = ranges.reduce((a, x) => a + x.bytes, 0);
+    // Between ranges the player waits for one to end before asking for the
+    // next, which a streamed response doesn't: that's the harness's.
+    const pauses = ranges.slice(1).reduce((a, x, i) => a + Math.max(0, x.asked - ranges[i].done), 0);
+    out.inputs.push({ type: 'open', ms: ms - (2 * LATENCY_MS + (1 + ranges.length) * routeMs + pauses + (bytes * 8) / (MBPS * 1000)) });
+    out.did = { ...out.did, firstFrameKB: Math.round(bytes / 1024), routeMs: Math.round(routeMs) };
+    return out;
+  },
+
+  // A video playing on stage, untouched, for 3 s.
+  async 'watch-video'(page, accounts) {
+    const k = accounts.findIndex((r, i) => i > 5 && firstUnseen(r).media_type === 2);
+    if (k < 0) return null;
+    await openViewer(page, accounts, k);
+    await settle(page, 300);
+    await record(page);
+    await page.waitForTimeout(3000);
+    return stop(page);
+  },
+
+  // Through an account with several videos, forward and back.
+  async 'step-video'(page, accounts) {
+    const videos = (r) => r.items.filter((it) => it.media_type === 2).length;
+    const k = accounts.reduce((best, r, i) => (!r.seen && videos(r) > videos(accounts[best]) ? i : best), 0);
+    if (!videos(accounts[k])) return null;
+    await openViewer(page, accounts, k);
+    await settle(page);
+    await record(page);
+    const n = accounts[k].items.length;
+    for (let i = 0; i < 2 * (n - 1); i++) {
+      await page.keyboard.press(i < n - 1 ? 'ArrowRight' : 'ArrowLeft');
+      await page.waitForTimeout(600);
+    }
+    return stop(page);
   },
 
   // Next and previous account by keyboard: the carousel turns.
@@ -523,10 +637,31 @@ async function main() {
   VIEWPORT = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
   if (!existsSync(IMAGE_CACHE)) console.log('Drawing test images (once)…');
   const images = await makeImages(page);
-  await openPage(page, images);
-  const pictureBytes = images[1080].reduce((a, b) => a + b.length, 0) / images[1080].length;
-  netFloorMs = 2 * LATENCY_MS + (pictureBytes * 8) / (MBPS * 1000);
+  let videos = null;
+  if (VIDEOS) {
+    try {
+      videos = makeVideos();
+    } catch (e) {
+      console.log(`No video stories: making them needs ffmpeg with libx264 (${e.message.split('\n')[0]})`);
+      VIDEOS = false;
+    }
+  }
+  await openPage(page, images, videos);
   let run = 0;
+  // What answering a request through this harness costs (Playwright passes
+  // each one to node and back), paid once per request in a chain.
+  await page.load(makeAccounts(run++));
+  routeMs = await page.evaluate(async () => {
+    const times = [];
+    for (let i = 0; i < 9; i++) {
+      const t = performance.now();
+      await fetch('/perf/ping', { cache: 'no-store' });
+      times.push(performance.now() - t);
+    }
+    return times.sort((a, b) => a - b)[4];
+  });
+  const pictureBytes = images[1080].reduce((a, b) => a + b.length, 0) / images[1080].length;
+  netFloorMs = 2 * (LATENCY_MS + routeMs) + (pictureBytes * 8) / (MBPS * 1000);
 
   // The display's frame interval, from an idle page.
   await page.load(makeAccounts(run++));
@@ -534,6 +669,7 @@ async function main() {
   await page.waitForTimeout(1500);
   const idle = await stop(page);
   const vsync = frameStats(idle.frames, 1).p50;
+  console.log(`Requests through the harness: ${routeMs.toFixed(1)} ms each`);
   console.log(`Frame interval ${vsync.toFixed(2)} ms (${(1000 / vsync).toFixed(0)} Hz); ${HEADLESS ? 'headless' : 'headed'}, ${VIEWPORT.width}x${VIEWPORT.height} @${await page.evaluate(() => devicePixelRatio)}x, ${ACCOUNTS} accounts\n`);
 
   if (opt('shot')) {
@@ -567,9 +703,16 @@ async function main() {
       await page.load(accounts);
       await page.mouse.move(VIEWPORT.width / 2, 20);
       const out = await scenario(page, accounts);
-      runs.push({ ...frameStats(out.frames, vsync, out.work), inputs: out.inputs.map((x) => x.ms), did: out.did, fns: out.fns });
+      if (!out) break; // the data has nothing for this scenario
+      runs.push({ ...frameStats(out.frames, vsync, out.work), inputs: out.inputs.map((x) => x.ms), shown: out.shown || [], video: out.video, did: out.did, fns: out.fns });
+    }
+    if (!runs.length) {
+      console.log(`SKIP  ${name} (nothing in the data for it)`);
+      continue;
     }
     const inputs = runs.flatMap((r) => r.inputs);
+    const shown = runs.flatMap((r) => r.shown);
+    const videoTotal = runs.reduce((a, x) => a + (x.video ? x.video.total : 0), 0);
     // Across runs: the median run's p99, the worst frame of any.
     results[name] = {
       p50: quantile(runs.map((r) => r.p50), 0.5),
@@ -579,11 +722,15 @@ async function main() {
       worstRun: Math.max(...runs.map((r) => r.worstRun)),
       inputP95: inputs.length ? quantile(inputs, 0.95) : null,
       inputMax: inputs.length ? Math.max(...inputs) : null,
+      shownP95: shown.length ? quantile(shown, 0.95) : null,
+      shownMax: shown.length ? Math.max(...shown) : null,
+      videoDropped: videoTotal ? runs.reduce((a, x) => a + x.video.dropped, 0) / videoTotal : null,
       runs,
     };
     const r = results[name];
     r.pass = r.p99 <= LIMITS.p99FrameMs && r.max <= LIMITS.maxFrameMs
-      && (r.inputP95 == null || (r.inputP95 <= LIMITS.p95InputMs && r.inputMax <= LIMITS.maxInputMs));
+      && (r.inputP95 == null || (r.inputP95 <= LIMITS.p95InputMs && r.inputMax <= LIMITS.maxInputMs))
+      && (r.videoDropped == null || r.videoDropped <= LIMITS.videoDropped);
     const did = Object.entries({ ...runs[0].did, maxAt: runs.map((x) => `${Math.round(x.max)}@${x.maxAt}(${x.maxWork})`).join(' ') }).map(([k, v]) => `${k} ${v}`).join(', ');
     if (PROFILE) {
       const fns = {};
@@ -598,7 +745,7 @@ async function main() {
       const top = Object.entries(fns).sort((a, b) => b[1].total - a[1].total).slice(0, 8);
       console.log(`      ${name}: ${top.map(([f, x]) => `${f} ${x.total.toFixed(0)}ms/${Math.round(x.n)} (max ${x.max.toFixed(1)})`).join(', ')}`);
     }
-    console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${name.padEnd(15)} frames p50 ${fmt(r.p50)}  p99 ${fmt(r.p99)}  max ${fmt(r.max)} ms  dropped ${r.dropped} (worst run ${r.worstRun})  input p95 ${fmt(r.inputP95)}  max ${fmt(r.inputMax)} ms  [${did}]`);
+    console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${name.padEnd(15)} frames p50 ${fmt(r.p50)}  p99 ${fmt(r.p99)}  max ${fmt(r.max)} ms  dropped ${r.dropped} (worst run ${r.worstRun})  input p95 ${fmt(r.inputP95)}  max ${fmt(r.inputMax)} ms${r.shownP95 != null ? `  shown p95 ${fmt(r.shownP95)}  max ${fmt(r.shownMax)} ms` : ''}${r.videoDropped != null ? `  video dropped ${(r.videoDropped * 100).toFixed(2)}%` : ''}  [${did}]`);
   }
   await context.close();
   rmSync(profile, { recursive: true, force: true });
@@ -611,7 +758,7 @@ async function main() {
       const b = base.results[name];
       if (!b) continue;
       const d = (k) => `${k} ${fmt(b[k])}→${fmt(r[k])}`;
-      console.log(`  ${name.padEnd(15)} ${d('p99')}  ${d('max')}  ${d('inputP95')}  ${d('inputMax')}`);
+      console.log(`  ${name.padEnd(15)} ${d('p99')}  ${d('max')}  ${d('inputP95')}  ${d('inputMax')}  ${d('shownP95')}  ${d('shownMax')}  videoDropped ${fmt(b.videoDropped)}→${fmt(r.videoDropped)}`);
     }
   }
   const save = opt('save');

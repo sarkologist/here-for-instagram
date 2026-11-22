@@ -469,10 +469,10 @@ const Sinsta = (() => {
   let sending = false; // a reply or reaction is on its way
   let onClose = null;
 
-  const media = new Map(); // reel id -> [{ pk, takenAt, type, src, poster }]
+  const media = new Map(); // reel id -> [{ pk, takenAt, type, src, thumb, ... }]
   const pending = new Map(); // reel id -> promise of the fetch that covers it
   const preloaded = new Map(); // src -> element
-  let awaiting = null; // the account show() waits for the stories of
+  let storyIn = false; // the story on stage is in (or given up on): the cards' pictures and preloads may load
 
   // ---- Viewer DOM ---------------------------------------------------------
 
@@ -748,7 +748,6 @@ const Sinsta = (() => {
       src: video ? video.url : image.url,
       liked: !!it.has_liked,
       canReply: !!it.can_reply,
-      poster: image ? image.url : '',
       thumb: thumb ? thumb.url : '',
       ratio: it.original_width && it.original_height ? it.original_width / it.original_height : 9 / 16,
       stickers: stickersOf(it),
@@ -831,9 +830,8 @@ const Sinsta = (() => {
         const mine = list.find((r) => r.id === id);
         if (mine && reel) mine.seenAt = Math.max(mine.seenAt, reel.seen || 0);
       }
-      // While show() awaits these stories, it asks for the story's picture
-      // first and fills the cards after.
-      if (open && !ids.includes(awaiting)) {
+      // While the story on stage loads, the rest waits for it (see show).
+      if (open && storyIn) {
         preload();
         renderDeck();
       }
@@ -923,7 +921,9 @@ const Sinsta = (() => {
     let node = preloaded.get(item.src);
     if (!node) {
       node = item.type === 'video'
-        ? el('video', { src: item.src, poster: item.poster, preload: 'auto', playsInline: true, muted: true })
+        // No poster: until its first frame the story before stays in view
+        // (see show), and a full-size poster would load ahead of the video.
+        ? el('video', { src: item.src, preload: 'auto', playsInline: true, muted: true })
         : el('img', { src: item.src, alt: '', decoding: 'async' });
       preloaded.set(item.src, node);
     }
@@ -955,15 +955,29 @@ const Sinsta = (() => {
     return out;
   }
 
-  function preload() {
+  // The story going back lands on: the one before, or where the account
+  // before was left (its last story, unless jumped away from).
+  function behind(items) {
+    if (ii > 0) return items[ii - 1];
+    const prev = ri > 0 && media.get(list[ri - 1].id);
+    if (!prev || !prev.length) return null;
+    const at = landing(list[ri - 1]);
+    return prev[at === LAST ? prev.length - 1 : Math.min(at, prev.length - 1)];
+  }
+
+  // Load the stories around the current one, and let go of the rest; with
+  // fill false, only let go (what's already loaded around it stays).
+  function preload(fill = true) {
     const reel = list[ri];
     const items = reel && media.get(reel.id);
     const now = items && items[ii];
     if (!now) return;
     const keep = new Set([now.src]);
-    for (const item of upcoming(PRELOAD)) {
+    // The stories ahead, and the one behind: going back is common, and a
+    // video let go has to load again before it shows.
+    for (const item of [...upcoming(PRELOAD), behind(items)].filter(Boolean)) {
       keep.add(item.src);
-      mediaEl(item);
+      if (fill) mediaEl(item);
     }
     for (const [src, node] of preloaded) {
       // Also spare the previous story while it still shows under this one.
@@ -1581,7 +1595,7 @@ const Sinsta = (() => {
 
   async function show() {
     const my = ++token;
-    awaiting = null; // a show() still waiting is superseded
+    storyIn = false;
     // Ask for the account's stories before anything else, so the request
     // isn't held up by laying out the deck.
     loadAhead();
@@ -1614,14 +1628,10 @@ const Sinsta = (() => {
     syncScroll();
     renderDeck();
 
-    const waited = !media.has(reel.id);
-    if (waited) {
-      awaiting = reel.id;
-      try {
-        await (pending.get(reel.id) || loadReels([reel.id]));
-      } finally {
-        if (awaiting === reel.id) awaiting = null;
-      }
+    try {
+      if (!media.has(reel.id)) await (pending.get(reel.id) || loadReels([reel.id]));
+    } catch (e) {
+      console.warn('Here for Instagram: loading stories failed', e);
     }
     if (my !== token || !open) return;
     const items = media.get(reel.id);
@@ -1662,8 +1672,19 @@ const Sinsta = (() => {
     // while it downloads, it is drawn again as each part arrives, and a
     // full-size one doing that holds up frames.
     if (item.type === 'video') mediaBox.append(current);
-    // Its stories were awaited: the cards' pictures come after the story's.
-    if (waited) renderDeck();
+    preload(false); // stories no longer around this one stop loading now
+    // The cards' pictures and the stories preloaded around this one load
+    // once it is in, so they don't hold it up (a video starts loading a beat
+    // after an image would, behind anything asked for meanwhile); a story
+    // slow to load holds them up only so long.
+    const follow = () => {
+      clearTimeout(followTimer);
+      if (storyIn || my !== token) return;
+      storyIn = true;
+      renderDeck();
+      preload();
+    };
+    const followTimer = setTimeout(follow, 1500);
     const clearBelow = () => {
       for (const node of [...mediaBox.children]) if (node !== current) node.remove();
     };
@@ -1674,11 +1695,13 @@ const Sinsta = (() => {
       root.classList.remove('sv-loading');
       arrived();
       markSeen(reel, item); // only once it is really on screen
+      follow();
     };
     const broken = () => {
       if (my !== token) return;
       clearBelow();
       fail('This story could not be loaded.');
+      follow();
     };
     // Ready means really painted: a video counts as loaded (even fully) a few
     // frames before Firefox presents its first frame, and an image before it
@@ -1691,7 +1714,7 @@ const Sinsta = (() => {
         node.requestVideoFrameCallback(() => ready());
         setTimeout(ready, 500); // a background tab may present no frames
       };
-      node.currentTime = 0;
+      if (node.currentTime) node.currentTime = 0; // a seek, even to where it is
       node.loop = true;
       node.onloadeddata = painted;
       node.onplaying = painted;
@@ -1710,7 +1733,6 @@ const Sinsta = (() => {
       node.onerror = broken;
       if (node.complete) (node.naturalWidth ? painted : broken)();
     }
-    preload();
   }
 
   // No timer moves stories on: a photo stays until you move on and a video

@@ -10,7 +10,10 @@
       this.frames = [];
       this.work = [];
       this.inputs = [];
+      this.shown = [];
+      this.firstData = 0; // wall clock of the first video data (for run.mjs)
       this.did = { turns: 0, peeks: 0, scrolls: 0 };
+      this.videos = new Set(); // every video put on stage meanwhile
       this.fns = {};
       this.was = { user: null, hand: null, scrolling: false };
       this.recording = true;
@@ -19,7 +22,16 @@
     stop() {
       this.recording = false;
       performance.mark('perf-stop');
-      return { frames: this.frames, work: this.work, inputs: this.inputs, did: this.did, fns: this.fns };
+      // Video frames the player dropped (decoded too late, or not at all),
+      // across the videos shown.
+      let dropped = 0;
+      let total = 0;
+      for (const v of this.videos) {
+        const q = v.getVideoPlaybackQuality();
+        dropped += q.droppedVideoFrames;
+        total += q.totalVideoFrames;
+      }
+      return { frames: this.frames, work: this.work, inputs: this.inputs, did: this.did, fns: this.fns, shown: this.shown, video: { dropped, total, count: this.videos.size } };
     },
     // For run.mjs --profile: a function's inclusive time.
     time(name, fn, self, args) {
@@ -67,6 +79,8 @@
     work.port2.postMessage(0);
     const root = document.getElementById('sinsta-viewer');
     if (!root) return;
+    const video = root.querySelector('.sv-media > video');
+    if (video) perf.videos.add(video);
     const user = root.querySelector('.sv-user').textContent;
     const hand = root.querySelector('.sv-peek-open-r, .sv-peek-open-l');
     const scrolling = root.classList.contains('sv-scrolling');
@@ -93,7 +107,21 @@
       if (type === 'pointerover' && (!target || !target.classList.contains('sv-peek') || target === perf.lastOver)) return;
       if (type === 'pointerover') perf.lastOver = target;
       perf.painted().then((t1) => perf.inputs.push({ type, ms: t1 - t0 }));
+      // A key or click that moves to another story: also how long until that
+      // story is on screen (the viewer marks the wait with .sv-loading).
+      const moves = (type === 'keydown' && /^Arrow/.test(e.key)) || (type === 'click' && target && target.classList.contains('sv-peek'));
+      if (moves) {
+        requestAnimationFrame(function check() {
+          const root = document.getElementById('sinsta-viewer');
+          if (root && root.classList.contains('sv-loading') && performance.now() - t0 < 5000) return requestAnimationFrame(check);
+          perf.painted().then((t1) => perf.recording && perf.shown.push(t1 - t0));
+        });
+      }
     }, { capture: true, passive: true });
   }
+  // The wall clock of the first video data, for run.mjs's network floor.
+  window.addEventListener('loadeddata', (e) => {
+    if (perf.recording && e.target.tagName === 'VIDEO' && !perf.firstData) perf.firstData = Date.now();
+  }, true);
   window.__perf = perf;
 })();
