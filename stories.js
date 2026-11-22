@@ -1036,11 +1036,16 @@ const Sinsta = (() => {
     const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);
     card.parts = { img, count };
     card.reel = reel;
-    card.addEventListener('click', () => toReel(list.indexOf(reel)));
+    card.addEventListener('click', () => toReel(list.indexOf(reel), scrubId === reel.id ? scrubJ : null));
+    card.addEventListener('pointermove', (e) => scrub(reel, card, e));
     card.addEventListener('pointerenter', (e) => {
       if (e.pointerType !== 'touch') peekAt(reel); // a tap just turns
     });
     card.addEventListener('pointerleave', (e) => {
+      // A stray leave with the pointer still on the card (as a click can
+      // send) doesn't count.
+      const at = document.elementFromPoint(e.clientX, e.clientY);
+      if (at && card.contains(at)) return;
       // Onto another card, that one's pointerenter takes over.
       const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.sv-peek');
       if (peekId === reel.id && !(to && sideCard(to))) unpeek();
@@ -1064,7 +1069,8 @@ const Sinsta = (() => {
 
   function fillPeek(card, reel, off) {
     const items = media.get(reel.id);
-    const item = items && items.length ? storyAt(reel, items, off) : null;
+    const scrubbed = items && reel.id === scrubId && scrubJ != null;
+    const item = items && items.length ? (scrubbed ? items[Math.min(scrubJ, items.length - 1)] : storyAt(reel, items, off)) : null;
     const { img, count } = card.parts;
     const src = (item && item.thumb) || reel.pic;
     if (img.getAttribute('src') !== src) img.src = src;
@@ -1170,6 +1176,8 @@ const Sinsta = (() => {
   // frees. Not while the carousel moves; and a card that comes to rest under
   // a still pointer waits for the pointer to move.
   let peekId = null; // the account whose card is peeked at
+  let scrubId = null; // the account whose stories the pointer flips through
+  let scrubJ = null; // the story it points at
   let peekRearm = null; // where the pointer was when the deck last moved
   let pointerX = -1;
   let pointerY = -1;
@@ -1179,6 +1187,7 @@ const Sinsta = (() => {
   function peekAt(reel) {
     if (!open || scrolling || turning || peekRearm || reel === list[ri] || peekId === reel.id) return;
     peekId = reel.id;
+    scrubId = scrubJ = null;
     root.classList.add('sv-hand');
     renderDeck();
   }
@@ -1186,12 +1195,14 @@ const Sinsta = (() => {
   function unpeek() {
     if (!peekId) return;
     peekId = null;
+    scrubId = scrubJ = null;
     renderDeck();
   }
 
   // The deck moves: the peek goes, until the pointer moves again.
   function dropPeek() {
     peekId = null;
+    scrubId = scrubJ = null;
     peekRearm = { x: pointerX, y: pointerY };
     root.classList.remove('sv-hand');
   }
@@ -1206,6 +1217,26 @@ const Sinsta = (() => {
     const card = hit && hit.closest('.sv-peek');
     if (card && sideCard(card)) peekAt(card.reel);
   }, true);
+
+  // Across the part of a peeked card that shows, the pointer flips through
+  // its account's stories, and clicking lands on the one it shows.
+  function scrub(reel, card, e) {
+    if (e.pointerType === 'touch' || reel.id !== peekId) return;
+    const items = media.get(reel.id);
+    if (!items || !items.length) return;
+    const k = list.indexOf(reel);
+    const side = Math.sign(k - ri);
+    const over = Math.abs(k - ri) === 1 ? stage : peeks.get(list[k - side].id); // the card on top of it
+    if (!over) return;
+    const r = card.getBoundingClientRect();
+    const o = over.getBoundingClientRect();
+    const [a, b] = side > 0 ? [Math.max(r.left, o.right), r.right] : [r.left, Math.min(r.right, o.left)];
+    const j = Math.min(items.length - 1, Math.max(0, Math.floor(((e.clientX - a) / Math.max(1, b - a)) * items.length)));
+    if (scrubId === reel.id && scrubJ === j) return;
+    scrubId = reel.id;
+    scrubJ = j;
+    fillPeek(card, reel, k - ri);
+  }
 
   // How far (px, outward) the peek moves the card at index k, with `centre`
   // in the middle; .k is the card peeked at, or -1.
@@ -1674,13 +1705,14 @@ const Sinsta = (() => {
     show();
   }
 
-  // Straight to another account, from its card: the story the card shows.
-  function toReel(k) {
+  // Straight to another account, from its card: the story the card shows
+  // (story j, when scrubbed to it).
+  function toReel(k, j = null) {
     if (k < 0 || k >= list.length || k === ri) return;
     dir = k > ri ? 1 : -1;
     leave();
     ri = k;
-    ii = dir > 0 ? START : landing(list[k]);
+    ii = j != null ? j : dir > 0 ? START : landing(list[k]);
     show();
   }
 
