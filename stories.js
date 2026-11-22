@@ -513,7 +513,12 @@ const Sinsta = (() => {
     toast,
     foot);
   const closeBtn = el('button', { className: 'sv-close', type: 'button', title: 'Close (Esc)' }, icon(['M6 6l12 12M18 6L6 18']));
-  const root = el('div', { id: 'sinsta-viewer' }, closeBtn, stage);
+  // The viewer scrolls sideways, one snap point per account (see Scrolling
+  // the carousel): `view` stays put while `wide` gives it room to scroll.
+  const view = el('div', { className: 'sv-view' }, closeBtn, stage);
+  const stops = el('div'); // a snap point per account, placed by sizeScroller
+  const wide = el('div', { className: 'sv-wide' }, view, stops);
+  const root = el('div', { id: 'sinsta-viewer' }, wide);
 
   closeBtn.addEventListener('click', () => close());
   muteBtn.addEventListener('click', () => setMuted(!muted));
@@ -1001,9 +1006,9 @@ const Sinsta = (() => {
     deckH = H;
     slots = [];
     const room = FW / 2 - DECK.margin * FW - W / 2;
-    if (!W || room <= 0) return;
+    if (!W || room <= 0) return sizeScroller(FW, W);
     const d = DECK.persp * FH;
-    root.style.perspective = `${d}px`;
+    view.style.perspective = `${d}px`;
     let n = 40;
     let strips = [];
     for (; n >= 1; n--) {
@@ -1024,6 +1029,7 @@ const Sinsta = (() => {
       const x = (edge * (d - half * Math.sin(r))) / d - half * Math.cos(r);
       slots.push({ x, th, s });
     }
+    sizeScroller(FW, W);
   }
 
   function peekCard(reel) {
@@ -1067,13 +1073,14 @@ const Sinsta = (() => {
   function renderDeck() {
     if (!open) return;
     const n = slots.length;
-    const lo = Math.max(0, ri - n - 1);
-    const hi = Math.min(list.length - 1, ri + n + 1);
+    const pos = scrolling ? scrollPos : ri;
+    const lo = Math.max(0, Math.floor(pos) - n - 1);
+    const hi = Math.min(list.length - 1, Math.ceil(pos) + n + 1);
     const keep = new Set();
     const missing = [];
     for (let k = lo; k <= hi; k++) {
       const reel = list[k];
-      const off = k - ri;
+      const off = k - pos;
       const d = Math.abs(off);
       keep.add(reel.id);
       if (!media.has(reel.id) && !pending.has(reel.id) && !peekAsked.has(reel.id)) missing.push(reel.id);
@@ -1082,16 +1089,19 @@ const Sinsta = (() => {
       if (fresh) {
         card = peekCard(reel);
         peeks.set(reel.id, card);
-        root.insertBefore(card, stage);
+        view.insertBefore(card, stage);
       }
-      fillPeek(card, reel, off);
+      fillPeek(card, reel, k - ri);
       const { transform, dim } = placement(off);
-      const inView = !!d && d <= n;
-      Object.assign(card.style, { width: `${deckW}px`, height: `${deckH}px`, marginLeft: `${-deckW / 2}px`, marginTop: `${-deckH / 2}px`, zIndex: String(50 - d) });
+      // While scrolling, the stage is hidden and every card shows, the
+      // farthest fading out as it goes.
+      const inView = scrolling ? d < (n || 1) + 1 : !!d && d <= n;
+      const opacity = scrolling ? Math.min(1, (n || 1) + 1 - d) : inView || (!d && arriving) ? 1 : 0;
+      Object.assign(card.style, { width: `${deckW}px`, height: `${deckH}px`, marginLeft: `${-deckW / 2}px`, marginTop: `${-deckH / 2}px`, zIndex: String(Math.round(99 - 2 * d)) });
       card.style.setProperty('--dim', String(dim));
-      card.classList.toggle('sv-peek-centre', !d);
+      card.classList.toggle('sv-peek-centre', d < 0.5);
       card.classList.toggle('sv-peek-off', !inView);
-      if (fresh) {
+      if (fresh && !scrolling) {
         // Slide a new neighbour out from behind the stage; fade in farther ones.
         card.style.transform = d <= 1 ? 'none' : transform;
         card.style.opacity = '0';
@@ -1101,7 +1111,7 @@ const Sinsta = (() => {
       // After a turn, the new account's card stays under the stage, which is
       // see-through until its story has loaded, so the picture is there
       // from the start.
-      card.style.opacity = inView || (!d && arriving) ? '1' : '0';
+      card.style.opacity = String(opacity);
     }
     for (const [id, card] of peeks) {
       if (keep.has(id)) continue;
@@ -1115,13 +1125,29 @@ const Sinsta = (() => {
     }
   }
 
-  // Where a card `off` places from the middle goes, and how dim it is.
+  // Where a card `off` places from the middle goes, and how dim it is. While
+  // the carousel scrolls, `off` is fractional: between two places, a card is
+  // part way from one to the other.
   function placement(off) {
     const d = Math.abs(off);
-    const slot = d && slots.length ? slots[Math.min(d, slots.length) - 1] : null;
+    const sign = Math.sign(off);
+    const n = slots.length;
+    if (!d) return { transform: 'none', dim: 0 };
+    if (!n) {
+      // No room for cards beside the stage: they slide in from off screen.
+      return { transform: `translateX(${off * unit}px)`, dim: Math.min(d, 1) * 0.3 };
+    }
+    const k = Math.min(Math.floor(d), n);
+    const f = k === n ? 0 : d - k;
+    const a = k ? slots[k - 1] : { x: 0, th: 0, s: 1 };
+    const b = slots[Math.min(k, n - 1)];
+    const x = a.x + (b.x - a.x) * f;
+    const th = a.th + (b.th - a.th) * f;
+    const s = a.s + (b.s - a.s) * f;
+    const far = 0.15 + DECK.fade;
     return {
-      transform: slot ? `translateX(${Math.sign(off) * slot.x}px) rotateY(${-Math.sign(off) * slot.th}deg) scale(${slot.s})` : 'none',
-      dim: d ? Math.min(0.85, 0.15 + d * DECK.fade) : 0,
+      transform: `translateX(${sign * x}px) rotateY(${-sign * th}deg) scale(${s})`,
+      dim: d < 1 ? d * far : Math.min(0.85, 0.15 + d * DECK.fade),
     };
   }
 
@@ -1139,6 +1165,8 @@ const Sinsta = (() => {
     peekAsked.clear();
     clearTimeout(turnTimer);
     turning = false;
+    endScroll();
+    landed = false;
     arrived();
     shownReel = null;
     snap(stage, () => {
@@ -1206,9 +1234,129 @@ const Sinsta = (() => {
     renderDeck();
   });
 
+  // ---- Scrolling the carousel ---------------------------------------------
+
+  // The viewer is a sideways scroller with a snap point per account, so a
+  // trackpad turns the carousel natively: continuously, with the system's
+  // momentum, coming to rest on an account. A mouse wheel turns it
+  // continuously too (down = next), but without momentum: it scrolls
+  // smoothly as far as the wheel goes, then settles on the nearest account,
+  // at least one along. While it turns, the cards stand in for the stage;
+  // where it comes to rest is shown on the stage again.
+  const WHEEL_PER_LINE = 0.15; // accounts per line of mouse wheel scrolling (3 lines a notch)
+  const WHEEL_SETTLE_MS = 200; // ms after the wheel stops before settling
+  let unit = 1; // px of scrolling per account: from the middle to the first card
+  let scrolling = false;
+  let scrollPos = 0; // where the carousel is, in accounts
+  let landed = false; // the stage comes to an account the carousel turned to
+  let wheelTimer = 0;
+  let wheelFrom = 0;
+  let wheelTo = 0;
+
+  function sizeScroller(FW, W) {
+    unit = Math.max(1, Math.round(slots.length ? slots[0].x : W + 16));
+    view.style.width = `${FW}px`;
+    wide.style.width = `${(list.length - 1) * unit + FW}px`;
+    stops.replaceChildren(...list.map((_, k) => {
+      const stop = el('i', { className: 'sv-stop' });
+      stop.style.left = `${k * unit}px`;
+      return stop;
+    }));
+    syncScroll();
+  }
+
+  // Put the scroller at the account on stage.
+  function syncScroll() {
+    endScroll();
+    if (Math.abs(root.scrollLeft - ri * unit) >= 1) root.scrollLeft = ri * unit;
+  }
+
+  function endScroll() {
+    clearTimeout(wheelTimer);
+    wheelTimer = 0;
+    root.classList.remove('sv-free');
+    if (!scrolling) return;
+    scrolling = false;
+    root.classList.remove('sv-scrolling');
+    syncPause();
+  }
+
+  root.addEventListener('scroll', () => {
+    if (!open) return;
+    const pos = root.scrollLeft / unit;
+    if (!scrolling) {
+      if (Math.abs(pos - ri) < 0.01) return; // put there by syncScroll
+      scrolling = true;
+      root.classList.add('sv-scrolling');
+      syncPause();
+    }
+    scrollPos = pos;
+    renderDeck();
+  });
+
+  // Come to rest, on an account (a snap point; after the mouse wheel, where
+  // settle sent it).
+  root.addEventListener('scrollend', () => {
+    if (open && scrolling && !wheelTimer) rest();
+  });
+
+  function rest() {
+    const k = Math.min(Math.max(Math.round(root.scrollLeft / unit), 0), list.length - 1);
+    if (Math.abs(root.scrollLeft - k * unit) >= 1) {
+      root.scrollTo({ left: k * unit, behavior: 'smooth' });
+      return;
+    }
+    endScroll();
+    if (k === ri) return renderDeck();
+    landed = true;
+    toReel(k);
+  }
+
+  // Firefox reports a mouse wheel in lines and a trackpad (or Magic Mouse) in
+  // pixels, but only to a listener that reads deltaMode before the deltas:
+  // read it first, ahead of Instagram's listeners. Pixels are left to the
+  // scroller.
+  window.addEventListener('wheel', (e) => {
+    if (!open || e.ctrlKey || e.metaKey) return; // zoom
+    const mode = e.deltaMode;
+    if (mode === 0) {
+      if (wheelTimer) {
+        // A trackpad takes over from the wheel: snap again.
+        clearTimeout(wheelTimer);
+        wheelTimer = 0;
+        root.classList.remove('sv-free');
+      }
+      return;
+    }
+    e.preventDefault();
+    const lines = (e.deltaY || e.deltaX) * (mode === 2 ? 1 / WHEEL_PER_LINE : 1);
+    if (!wheelTimer) {
+      wheelFrom = scrolling ? Math.round(root.scrollLeft / unit) : ri;
+      wheelTo = root.scrollLeft;
+      root.classList.add('sv-free'); // no snapping until it settles
+    }
+    wheelTo = Math.min(Math.max(wheelTo + lines * WHEEL_PER_LINE * unit, 0), (list.length - 1) * unit);
+    root.scrollTo({ left: wheelTo, behavior: 'smooth' });
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(settle, WHEEL_SETTLE_MS);
+  }, { capture: true, passive: false });
+
+  function settle() {
+    wheelTimer = 0;
+    const pos = wheelTo / unit;
+    let k = Math.round(pos);
+    if (k === wheelFrom && Math.abs(pos - wheelFrom) > 0.05) k += Math.sign(pos - wheelFrom);
+    k = Math.min(Math.max(k, 0), list.length - 1);
+    // Snapping stays off until it comes to rest (endScroll), so it can't
+    // pull the carousel elsewhere on the way.
+    if (Math.abs(root.scrollLeft - k * unit) >= 1) root.scrollTo({ left: k * unit, behavior: 'smooth' });
+    else if (scrolling) rest();
+    else endScroll();
+  }
+
   // ---- Playback -----------------------------------------------------------
 
-  const paused = () => spacePaused || holding || hovering || bubbleOn || typing || sending || turning;
+  const paused = () => spacePaused || holding || hovering || bubbleOn || typing || sending || turning || scrolling;
 
   // Clickable areas over the stickers, on a layer matching the media's own
   // box within the 9:16 stage (the media is shown uncropped).
@@ -1306,9 +1454,17 @@ const Sinsta = (() => {
     if (shownReel && shownReel !== reel) {
       const from = list.indexOf(shownReel);
       mediaBox.replaceChildren(); // the account's card stands in meanwhile
-      beginTurn(shownReel, from < 0 ? dir : ri - from);
+      if (landed) {
+        // The carousel already turned there: the card is in place under the stage.
+        arriving = true;
+        root.classList.add('sv-arriving');
+      } else {
+        beginTurn(shownReel, from < 0 ? dir : ri - from);
+      }
     }
+    landed = false;
     shownReel = reel;
+    syncScroll();
     renderDeck();
 
     loadAhead();
