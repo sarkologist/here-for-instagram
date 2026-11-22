@@ -33,7 +33,9 @@ Instagram's Home mixes the accounts you follow with suggestions, ads and reshuff
 **Stories where you want them**
 - Following and Favourites get a stories row, which Instagram doesn't show on those views. The Favourites row has every favourite's stories, not just the ones Instagram's tray happens to include.
 - Start on an unwatched account and the viewer stops after the last unwatched story, instead of rolling on into ones you've already seen.
-- The accounts before and after the current one fan out on either side. Click one to jump straight to it.
+- Nothing moves on by itself: a photo stays until you click on, and a video loops.
+- The accounts before and after the current one fan out on either side, each with its profile picture and a dot per story. Swipe or scroll to turn through them.
+- Hover an account to fan the deck open there and flip through its stories; click to jump straight to one.
 - Replying, reacting and liking all still work.
 
 **Reels as a grid**
@@ -71,7 +73,7 @@ It collects no data (`data_collection_permissions.required = ["none"]`), so no p
 Captions, in order:
 
 1. `1-following.png`: Following shows the accounts you follow, newest first, with their stories on top. Favourites and Algo are one click away.
-2. `2-stories.png`: Stories play in order, with the accounts before and after fanned out on either side.
+2. `2-stories.png`: Stories play in order, with the accounts before and after fanned out on either side. Hover one to peek at its stories.
 3. `3-reels-grid.png`: Reels as a grid. Pick from 1 to 8 columns, and hover to preview.
 4. `4-reels-player.png`: Play the grid in order, with likes and comments beside the video.
 
@@ -82,6 +84,15 @@ Captions, in order:
 - Paste [reviewer-notes.md](reviewer-notes.md) into "Notes to reviewer". The code isn't minified, so no source zip is needed.
 
 ## Release notes
+
+### 1.1.0
+
+- Stories: swipe sideways on a trackpad, or scroll a mouse wheel, to turn the carousel of accounts.
+- Stories: the accounts beside the current one show their profile picture and a dot per story: pink for unwatched, grey for watched.
+- Stories: hovering an account fans the deck open there; moving across it flips through that account's stories, and clicking lands on the one shown.
+- Stories: nothing moves on by itself any more. A photo stays until you click on, and a video loops.
+- Stories: stories, videos especially, show sooner, and the carousel turns more smoothly.
+- Carousels in the feed: a trackpad is left to Instagram's own carousel, which scrolls sideways with momentum, while scrolling up and down moves the feed. A mouse wheel still steps through slides.
 
 ### 1.0.1
 
