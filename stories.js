@@ -1034,13 +1034,10 @@ const Sinsta = (() => {
 
   function peekCard(reel) {
     const img = el('img', { className: 'sv-peek-img', alt: '', decoding: 'async', draggable: false });
-    const ring = el('span', { className: 'sv-peek-ring' }, el('img', { alt: '', src: reel.pic, draggable: false }));
     const when = el('span', { className: 'sv-peek-time' });
-    const card = el('div', { className: 'sv-peek' },
-      img,
-      el('div', { className: 'sv-peek-dim' }),
-      el('div', { className: 'sv-peek-label' }, ring, el('b', {}, reel.username), when));
-    card.parts = { img, ring, when };
+    const label = el('div', { className: 'sv-peek-label' }, el('b', {}, reel.username), when);
+    const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);
+    card.parts = { img, when, label };
     card.addEventListener('click', () => toReel(list.indexOf(reel)));
     return card;
   }
@@ -1062,12 +1059,11 @@ const Sinsta = (() => {
   function fillPeek(card, reel, off) {
     const items = media.get(reel.id);
     const item = items && items.length ? storyAt(reel, items, off) : null;
-    const { img, ring, when } = card.parts;
+    const { img, when } = card.parts;
     const src = (item && item.thumb) || reel.pic;
     if (img.getAttribute('src') !== src) img.src = src;
     card.classList.toggle('sv-peek-pic', !item || !item.thumb);
     when.textContent = item ? ago(item.takenAt) : '';
-    ring.classList.toggle('sv-seen', off < 0 || !reel.unseen);
   }
 
   function renderDeck() {
@@ -1101,6 +1097,9 @@ const Sinsta = (() => {
       card.style.setProperty('--dim', String(dim));
       card.classList.toggle('sv-peek-centre', d < 0.5);
       card.classList.toggle('sv-peek-off', !inView);
+      // While scrolling, a card's name fades with its distance from the middle
+      // rather than switching as it passes.
+      card.parts.label.style.opacity = scrolling ? String(Math.min(1, 2 * d)) : '';
       if (fresh && !scrolling) {
         // Slide a new neighbour out from behind the stage; fade in farther ones.
         card.style.transform = d <= 1 ? 'none' : transform;
