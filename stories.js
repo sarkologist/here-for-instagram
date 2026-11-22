@@ -37,7 +37,6 @@ const Sinsta = (() => {
     __relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider: false,
     __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
   };
-  const IMAGE_MS = 5000;
   const AHEAD = 5; // accounts whose story lists are fetched ahead
   const PRELOAD = 3; // media files loaded ahead
   const START = -1; // item index: first unseen story
@@ -458,8 +457,6 @@ const Sinsta = (() => {
   let token = 0; // invalidates async work from a previous show()
   let current = null; // the <img> or <video> on stage
   let shown = false; // current media has actually loaded
-  let elapsed = 0;
-  let lastTick = 0;
   let raf = 0;
   let muted = true;
   let spacePaused = false;
@@ -1443,7 +1440,6 @@ const Sinsta = (() => {
     if (current && current.tagName === 'VIDEO') current.pause();
     current = null;
     shown = false;
-    elapsed = 0;
     const reel = list[ri];
     avatar.src = reel.pic;
     userLink.textContent = reel.username;
@@ -1535,7 +1531,7 @@ const Sinsta = (() => {
         setTimeout(ready, 500); // a background tab may present no frames
       };
       node.currentTime = 0;
-      node.onended = () => { if (my === token) step(1); };
+      node.loop = true;
       node.onloadeddata = painted;
       node.onplaying = painted;
       node.onerror = broken;
@@ -1551,21 +1547,15 @@ const Sinsta = (() => {
     preload();
   }
 
-  function tick(now) {
+  // No timer moves stories on: a photo stays until you move on and a video
+  // loops. The current story's bar is full for a photo and follows a video's
+  // playback.
+  function tick() {
     if (!open) return;
     raf = requestAnimationFrame(tick);
-    const dt = now - lastTick;
-    lastTick = now;
     const bar = bars.children[ii];
     if (!current || !shown || !bar) return;
-    let done;
-    if (current.tagName === 'VIDEO') {
-      done = current.duration ? current.currentTime / current.duration : 0;
-    } else {
-      if (!paused()) elapsed += dt;
-      done = elapsed / IMAGE_MS;
-      if (done >= 1) return step(1);
-    }
+    const done = current.tagName !== 'VIDEO' ? 1 : current.duration ? current.currentTime / current.duration : 0;
     bar.firstChild.style.width = `${Math.min(done, 1) * 100}%`;
   }
 
@@ -1634,7 +1624,6 @@ const Sinsta = (() => {
     document.documentElement.classList.add('sinsta-viewing');
     onTop(root);
     layoutDeck();
-    lastTick = performance.now();
     raf = requestAnimationFrame(tick);
     show();
   }
