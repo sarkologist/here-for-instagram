@@ -1037,10 +1037,10 @@ const Sinsta = (() => {
 
   function peekCard(reel) {
     const img = el('img', { className: 'sv-peek-img', alt: '', decoding: 'async', draggable: false });
-    const when = el('span', { className: 'sv-peek-time' });
-    const label = el('div', { className: 'sv-peek-label' }, el('b', {}, reel.username), when);
+    const count = el('span', { className: 'sv-peek-count' });
+    const label = el('div', { className: 'sv-peek-label' }, el('b', {}, reel.username), count);
     const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);
-    card.parts = { img, when, label };
+    card.parts = { img, count };
     card.addEventListener('click', () => toCard(card.item));
     return card;
   }
@@ -1085,11 +1085,12 @@ const Sinsta = (() => {
     const reel = list[it.k];
     const items = media.get(reel.id);
     const item = items && it.j != null ? items[it.j] : null;
-    const { img, when } = card.parts;
+    const { img, count } = card.parts;
     const src = (item && item.thumb) || reel.pic;
     if (img.getAttribute('src') !== src) img.src = src;
     card.classList.toggle('sv-peek-pic', !item || !item.thumb);
-    when.textContent = item ? ago(item.takenAt) : '';
+    // Which story it is; how old, only on the stage once it settles.
+    count.textContent = item ? `story ${it.j + 1} of ${items.length}` : '';
   }
 
   // Go to a card's story; false if it's already on stage (or still loading).
@@ -1145,11 +1146,10 @@ const Sinsta = (() => {
       const opacity = scrolling ? Math.min(1, (n || 1) + 1 - d) : inView || (!d && arriving) ? 1 : 0;
       Object.assign(card.style, { width: `${deckW}px`, height: `${deckH}px`, marginLeft: `${-deckW / 2}px`, marginTop: `${-deckH / 2}px`, zIndex: String(Math.round(99 - 20 * d)) });
       card.style.setProperty('--dim', String(dim));
-      card.classList.toggle('sv-peek-centre', d < 0.5);
+      // While scrolling, every card keeps its label, the one passing the
+      // middle included (the stage is hidden then).
+      card.classList.toggle('sv-peek-centre', !scrolling && !d);
       card.classList.toggle('sv-peek-off', !inView);
-      // While scrolling, a card's name fades with its distance from the middle
-      // rather than switching as it passes.
-      card.parts.label.style.opacity = scrolling ? String(Math.min(1, 2 * d)) : '';
       if (fresh && !scrolling) {
         // Slide a new neighbour out from behind the stage; fade in farther ones.
         card.style.transform = d <= 1 ? 'none' : transform;
