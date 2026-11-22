@@ -1038,9 +1038,13 @@ const Sinsta = (() => {
     if (reel.pic) avatar.src = reel.pic;
     const dots = el('div', { className: 'sv-peek-dots' });
     const label = el('div', { className: 'sv-peek-label' }, avatar, dots);
-    const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);
+    const card = el('div', { className: 'sv-peek' }, el('div', { className: 'sv-peek-clip' }, img), el('div', { className: 'sv-peek-dim' }), label);
     card.parts = { img, dots };
     card.reel = reel;
+    // Opaque until its picture is in (see .sv-peek-wait).
+    const loaded = () => card.classList.remove('sv-peek-wait');
+    img.addEventListener('load', loaded);
+    img.addEventListener('error', loaded);
     card.addEventListener('click', () => toReel(list.indexOf(reel), scrubId === reel.id ? scrubJ : null));
     card.addEventListener('pointermove', (e) => scrub(reel, card, e));
     card.addEventListener('pointerenter', (e) => {
@@ -1079,7 +1083,10 @@ const Sinsta = (() => {
     const item = items && items.length ? (scrubbed ? items[Math.min(scrubJ, items.length - 1)] : storyAt(reel, items, off)) : null;
     const { img, dots } = card.parts;
     const src = (item && item.thumb) || reel.pic;
-    if (img.getAttribute('src') !== src) img.src = src;
+    if (img.getAttribute('src') !== src) {
+      img.src = src;
+      card.classList.toggle('sv-peek-wait', !img.complete);
+    }
     card.classList.toggle('sv-peek-pic', !item || !item.thumb);
     // A dot per story: the one it shows white, the rest pink while unwatched
     // and grey once watched. How old it is shows only on the stage.
