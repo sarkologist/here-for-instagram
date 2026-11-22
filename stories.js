@@ -1037,7 +1037,9 @@ const Sinsta = (() => {
     card.parts = { img, count };
     card.reel = reel;
     card.addEventListener('click', () => toReel(list.indexOf(reel)));
-    card.addEventListener('pointerenter', () => peekAt(reel));
+    card.addEventListener('pointerenter', (e) => {
+      if (e.pointerType !== 'touch') peekAt(reel); // a tap just turns
+    });
     card.addEventListener('pointerleave', (e) => {
       // Onto another card, that one's pointerenter takes over.
       const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.sv-peek');
@@ -1195,6 +1197,7 @@ const Sinsta = (() => {
   }
 
   window.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;
     pointerX = e.clientX;
     pointerY = e.clientY;
     if (!open || !peekRearm || Math.hypot(pointerX - peekRearm.x, pointerY - peekRearm.y) < 3) return;
@@ -1226,7 +1229,8 @@ const Sinsta = (() => {
     const side = Math.sign(k - centre);
     const hand = (i) => (Math.sign(i - centre) === side ? shift[Math.min(Math.abs(i - centre), n)] : 0);
     hand.k = k;
-    hand.open = (strip(D) + gain) / slots[D - 1].s; // how much of it shows, in its own (unscaled) px
+    const t = slots[D - 1];
+    hand.open = (strip(D) + gain) / (t.s * Math.cos((t.th * Math.PI) / 180)); // how much of it shows, in its own px
     return hand;
   }
 
