@@ -987,7 +987,7 @@ const Sinsta = (() => {
   // stage widths are left out. A card's outer edge goes where its share ends
   // and the nearer card covers the rest of it. Its scale and angle follow its
   // share, so near cards are large and flat, far ones smaller and turned.
-  const DECK = { ratio: 0.82, scaleFar: 0.63, angleNear: 0, angleFar: 20, minStrip: 0.075, persp: 1.4, fade: 0.09, margin: 0.015 };
+  const DECK = { ratio: 0.91, scaleFar: 0.63, angleNear: 0, angleFar: 20, minStrip: 0.075, persp: 1.4, fade: 0.09, margin: 0.015 };
   const peeks = new Map(); // reel id -> card element
   const peekAsked = new Set(); // reel ids whose stories the cards asked for
   let slots = []; // right-hand card placements, nearest first: { x, th, s }
