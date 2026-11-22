@@ -4,3 +4,7 @@
 web-ext-artifacts/
 node_modules/
 screenshots/real/
+perf/.cache/
+perf/*.json
+!perf/package.json
+!perf/package-lock.json

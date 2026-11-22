@@ -472,6 +472,7 @@ const Sinsta = (() => {
   const media = new Map(); // reel id -> [{ pk, takenAt, type, src, poster }]
   const pending = new Map(); // reel id -> promise of the fetch that covers it
   const preloaded = new Map(); // src -> element
+  let awaiting = null; // the account show() waits for the stories of
 
   // ---- Viewer DOM ---------------------------------------------------------
 
@@ -830,7 +831,9 @@ const Sinsta = (() => {
         const mine = list.find((r) => r.id === id);
         if (mine && reel) mine.seenAt = Math.max(mine.seenAt, reel.seen || 0);
       }
-      if (open) {
+      // While show() awaits these stories, it asks for the story's picture
+      // first and fills the cards after.
+      if (open && !ids.includes(awaiting)) {
         preload();
         renderDeck();
       }
@@ -1030,14 +1033,17 @@ const Sinsta = (() => {
   }
 
   function peekCard(reel) {
-    const img = el('img', { className: 'sv-peek-img', alt: '', decoding: 'async', draggable: false });
+    const img = el('img', { className: 'sv-peek-img', alt: '', decoding: 'async', draggable: false, fetchPriority: 'low' });
     const avatar = el('img', { className: 'sv-peek-avatar', alt: reel.username, title: reel.username, decoding: 'async', draggable: false });
     if (reel.pic) avatar.src = reel.pic;
     const dots = el('div', { className: 'sv-peek-dots' });
     const label = el('div', { className: 'sv-peek-label' }, avatar, dots);
-    const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);
+    const card = el('div', { className: 'sv-peek' }, el('div', { className: 'sv-peek-clip' }, img), el('div', { className: 'sv-peek-dim' }), label);
     card.parts = { img, dots };
     card.reel = reel;
+    // Opaque until its picture is in (see .sv-peek-wait); one that fails
+    // stays black.
+    img.addEventListener('load', () => card.classList.remove('sv-peek-wait'));
     card.addEventListener('click', () => toReel(list.indexOf(reel), scrubId === reel.id ? scrubJ : null));
     card.addEventListener('pointermove', (e) => scrub(reel, card, e));
     card.addEventListener('pointerenter', (e) => {
@@ -1076,7 +1082,10 @@ const Sinsta = (() => {
     const item = items && items.length ? (scrubbed ? items[Math.min(scrubJ, items.length - 1)] : storyAt(reel, items, off)) : null;
     const { img, dots } = card.parts;
     const src = (item && item.thumb) || reel.pic;
-    if (img.getAttribute('src') !== src) img.src = src;
+    if (img.getAttribute('src') !== src) {
+      img.src = src;
+      card.classList.toggle('sv-peek-wait', !img.complete);
+    }
     card.classList.toggle('sv-peek-pic', !item || !item.thumb);
     // A dot per story: the one it shows white, the rest pink while unwatched
     // and grey once watched. How old it is shows only on the stage.
@@ -1096,6 +1105,7 @@ const Sinsta = (() => {
     const hi = Math.min(list.length - 1, Math.ceil(pos) + n + 1);
     const keep = new Set();
     const missing = [];
+    const starting = []; // new cards, and where they go once started out
     const hand = handAt();
     for (let k = lo; k <= hi; k++) {
       const reel = list[k];
@@ -1116,7 +1126,9 @@ const Sinsta = (() => {
       card.classList.toggle('sv-peek-open-l', hand.k === k && off < 0);
       if (hand.k === k) card.style.setProperty('--open', `${hand.open}px`);
       // While scrolling, the stage is hidden and every card shows, the
-      // farthest fading out as it goes.
+      // farthest fading out as it goes. After a turn, the new account's card
+      // stays under the stage, which is see-through until its story has
+      // loaded, so the picture is there from the start.
       const inView = scrolling ? d < (n || 1) + 1 : !!d && d <= n;
       const opacity = scrolling ? Math.min(1, (n || 1) + 1 - d) : inView || (!d && arriving) ? 1 : 0;
       Object.assign(card.style, { width: `${deckW}px`, height: `${deckH}px`, marginLeft: `${-deckW / 2}px`, marginTop: `${-deckH / 2}px`, zIndex: String(Math.round(99 - 20 * d)) });
@@ -1126,16 +1138,19 @@ const Sinsta = (() => {
       card.classList.toggle('sv-peek-centre', !scrolling && !d);
       card.classList.toggle('sv-peek-off', !inView);
       if (fresh && !scrolling) {
-        // Slide a new neighbour out from behind the stage; fade in farther ones.
+        // Slide a new neighbour out from behind the stage; fade in farther
+        // ones. They start out together, after one style flush (below).
         card.style.transform = d <= 1 ? 'none' : transform;
         card.style.opacity = '0';
-        card.getBoundingClientRect();
+        starting.push([card, transform, String(opacity)]);
+        continue;
       }
       card.style.transform = transform;
-      // After a turn, the new account's card stays under the stage, which is
-      // see-through until its story has loaded, so the picture is there
-      // from the start.
       card.style.opacity = String(opacity);
+    }
+    if (starting.length) {
+      view.getBoundingClientRect();
+      for (const [card, transform, opacity] of starting) Object.assign(card.style, { transform, opacity });
     }
     for (const [id, card] of peeks) {
       if (keep.has(id)) continue;
@@ -1566,6 +1581,10 @@ const Sinsta = (() => {
 
   async function show() {
     const my = ++token;
+    awaiting = null; // a show() still waiting is superseded
+    // Ask for the account's stories before anything else, so the request
+    // isn't held up by laying out the deck.
+    loadAhead();
     if (current && current.tagName === 'VIDEO') current.pause();
     current = null;
     shown = false;
@@ -1595,8 +1614,15 @@ const Sinsta = (() => {
     syncScroll();
     renderDeck();
 
-    loadAhead();
-    if (!media.has(reel.id)) await (pending.get(reel.id) || loadReels([reel.id]));
+    const waited = !media.has(reel.id);
+    if (waited) {
+      awaiting = reel.id;
+      try {
+        await (pending.get(reel.id) || loadReels([reel.id]));
+      } finally {
+        if (awaiting === reel.id) awaiting = null;
+      }
+    }
     if (my !== token || !open) return;
     const items = media.get(reel.id);
     if (!items) {
@@ -1629,10 +1655,15 @@ const Sinsta = (() => {
     renderStickers(item);
 
     current = mediaEl(item);
+    current.fetchPriority = 'high';
     // The previous story of the account stays underneath until this one has
     // a picture, so switching doesn't flash black (a video takes a moment to
-    // show its first frame).
-    mediaBox.append(current);
+    // show its first frame). An image goes in only once decoded: in place
+    // while it downloads, it is drawn again as each part arrives, and a
+    // full-size one doing that holds up frames.
+    if (item.type === 'video') mediaBox.append(current);
+    // Its stories were awaited: the cards' pictures come after the story's.
+    if (waited) renderDeck();
     const clearBelow = () => {
       for (const node of [...mediaBox.children]) if (node !== current) node.remove();
     };
@@ -1669,7 +1700,12 @@ const Sinsta = (() => {
       else if (node.readyState >= 2) painted();
       if (!node.error && !paused()) startVideo();
     } else {
-      const painted = () => (node.decode ? node.decode() : Promise.resolve()).then(ready, ready);
+      const reveal = () => {
+        if (my !== token) return;
+        mediaBox.append(node);
+        ready();
+      };
+      const painted = () => (node.decode ? node.decode() : Promise.resolve()).then(reveal, reveal);
       node.onload = painted;
       node.onerror = broken;
       if (node.complete) (node.naturalWidth ? painted : broken)();
@@ -1751,6 +1787,7 @@ const Sinsta = (() => {
     toast.hidden = true;
     onClose = hooks && hooks.onClose;
     setMuted(muted);
+    loadAhead(); // first: the request needn't wait for the layout below
     for (const video of document.querySelectorAll('main video')) video.pause();
     document.documentElement.classList.add('sinsta-viewing');
     onTop(root);

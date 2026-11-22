@@ -85,6 +85,17 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 
 `node scripts/package.mjs` writes `web-ext-artifacts/<name>-<version>.zip` for upload to AMO. It refuses a dirty tree and zips from `HEAD`. It ships only the files `manifest.json` references, and fails if any of them contains an absolute developer path or your user name, git name or git email. Paste the notes in [docs/reviewer-notes.md](docs/reviewer-notes.md) into "Notes to reviewer".
 
+## Performance evals
+
+`perf/` measures the stories carousel in Firefox: it runs `stories.js` and `content.css` on a stand-in instagram.com with synthetic accounts and stories (over a simulated 100 Mbps link with 40 ms round trips), drives it like a person would (opening, turning by key and click, stepping through stories, hovering and scrubbing cards, trackpad swipes, mouse wheel), and checks each against what people can perceive: frames no later than 20 ms at the 99th percentile and never more than two 60 Hz frames (33.4 ms), input painted within 50 ms (95th percentile) and never later than 100 ms, and opening no more than 50 ms slower than the network allows.
+
+```
+cd perf && npm install && npx playwright install firefox
+node run.mjs
+```
+
+The Firefox window opens on a second display if there is one, and must stay uncovered while it runs (Firefox stops painting covered windows). Options (profiling, A/B testing CSS, comparing with an older version) are listed at the top of `perf/run.mjs`.
+
 ## Limits
 
 - Posts are sorted by English UI labels ("Ad" and "Sponsored" for ads; "Suggested for you" or a Follow button for suggestions), and Instagram's stories row by its "Story by" labels.
