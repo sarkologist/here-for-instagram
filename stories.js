@@ -1044,7 +1044,8 @@ const Sinsta = (() => {
     card.addEventListener('pointerleave', (e) => {
       // A stray leave with the pointer still on the card (as a click can
       // send) doesn't count.
-      const at = document.elementFromPoint(e.clientX, e.clientY);
+      const inWindow = e.clientX > 0 && e.clientY > 0 && e.clientX < innerWidth - 1 && e.clientY < innerHeight - 1;
+      const at = inWindow && document.elementFromPoint(e.clientX, e.clientY);
       if (at && card.contains(at)) return;
       // Onto another card, that one's pointerenter takes over.
       const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.sv-peek');
