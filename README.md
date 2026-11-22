@@ -27,9 +27,9 @@ Following and Favourites have a "Hide seen" toggle (on by default). With it on, 
 
 ## Stories on Following and Favourites
 
-Clicking a story opens the extension's own viewer, which plays the row in order (so Favourites stays within starred accounts) and preloads the next few stories. Started on an unwatched account, it closes after the last unwatched one; started on a watched one, it plays to the end of the row. Viewing marks a story as seen, as on Instagram.
+Clicking a story opens the extension's own viewer, which goes through the row in order (so Favourites stays within starred accounts) and preloads the next few stories. Nothing moves on by itself: a photo stays until you click on, and a video loops. Started on an unwatched account, it closes after the last unwatched one; started on a watched one, it plays to the end of the row. Viewing marks a story as seen, as on Instagram.
 
-The accounts before and after the current one fan out on either side of it: the nearest ones large and flat, farther ones smaller, narrower and slightly turned, as many as the window has room for. Each shows the story you'd land on (the last one of an account behind, the first unwatched one of an account ahead), and clicking it goes there.
+The accounts before and after the current one fan out on either side of it: the nearest ones large and flat, farther ones smaller, narrower and slightly turned, as many as the window has room for. Each shows the story you'd land on (the last one of an account behind, the first unwatched one of an account ahead) and which of its stories that is, and clicking it goes there.
 
 Unwatched stories come first, then fully watched ones with a grey ring, each group newest first. Watched ones stay until their stories expire.
 
@@ -42,12 +42,12 @@ Unwatched stories come first, then fully watched ones with a grey ring, each gro
 | Click left third / `←` | previous story |
 | `Shift` + `→` / `←` | next / previous account |
 | Swipe sideways (trackpad), or scroll (mouse wheel) | turn the carousel of accounts |
-| Hold, or `Space` | pause |
+| Hold, or `Space` | pause a video |
 | `M` | sound on/off |
 | `L` | like |
 | `Esc` | close |
 
-The carousel turns as you swipe, with the trackpad's momentum, and comes to rest on an account; a mouse wheel turns it smoothly and settles on the nearest account when you stop.
+Scrolling only moves between accounts; clicks move between an account's stories. The carousel turns as you swipe, with the trackpad's momentum, and comes to rest on an account; a mouse wheel turns it smoothly and settles on the nearest account when you stop.
 
 Stickers work as on Instagram: @mentions, hashtags and locations open their page, and links open in a new tab (the story pauses while the pointer is over one). Tapping the middle of a shared post, reel or story shows Instagram's bubble ("View reel", or the original poster's name), which opens it; the next tap elsewhere dismisses it. The same links sit under the account name ("View post" or "View reel", and "from @…"), beside the title of any song.
 
