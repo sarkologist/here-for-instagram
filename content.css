@@ -526,37 +526,61 @@ html[data-sinsta-reels-grid] main video {
 .sv-peek-open-l .sv-peek-label {
   box-sizing: border-box;
   width: var(--open, 100%);
-  padding: 0 12px;
 }
 
 .sv-peek-open-r .sv-peek-label {
   left: auto;
   align-items: flex-end;
-  text-align: right;
 }
 
 .sv-peek-open-l .sv-peek-label {
   right: auto;
   align-items: flex-start;
-  text-align: left;
 }
 
+/* Placed in proportion to the part that shows, so it scales with the deck:
+   its middle a third of the way in from the card's outer edge, kept within. */
 .sv-peek-open-r .sv-peek-label > *,
 .sv-peek-open-l .sv-peek-label > * {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0 clamp(0px, calc(0.33 * var(--open, 100px) - var(--avatar) / 2), max(0px, calc(var(--open, 100px) - var(--avatar))));
 }
 
-.sv-peek-label b {
-  font-weight: 600;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+/* The account's profile picture, and under it a dot per story. */
+.sv-peek-label {
+  --avatar: 80px;
 }
 
-.sv-peek-count {
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 13px;
+.sv-peek-avatar {
+  width: var(--avatar);
+  height: var(--avatar);
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+.sv-peek-dots {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  width: var(--avatar);
+}
+
+.sv-peek-dots i {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
+}
+
+.sv-peek-dots .sv-dot-new {
+  background: #e1306c;
+}
+
+.sv-peek-dots .sv-dot-me {
+  background: #fff;
 }
 
 .sv-stage {
