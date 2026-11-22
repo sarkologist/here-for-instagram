@@ -1097,7 +1097,7 @@ const Sinsta = (() => {
       // farthest fading out as it goes.
       const inView = scrolling ? d < (n || 1) + 1 : !!d && d <= n;
       const opacity = scrolling ? Math.min(1, (n || 1) + 1 - d) : inView || (!d && arriving) ? 1 : 0;
-      Object.assign(card.style, { width: `${deckW}px`, height: `${deckH}px`, marginLeft: `${-deckW / 2}px`, marginTop: `${-deckH / 2}px`, zIndex: String(Math.round(99 - 2 * d)) });
+      Object.assign(card.style, { width: `${deckW}px`, height: `${deckH}px`, marginLeft: `${-deckW / 2}px`, marginTop: `${-deckH / 2}px`, zIndex: String(Math.round(99 - 20 * d)) });
       card.style.setProperty('--dim', String(dim));
       card.classList.toggle('sv-peek-centre', d < 0.5);
       card.classList.toggle('sv-peek-off', !inView);
@@ -1133,8 +1133,10 @@ const Sinsta = (() => {
     const sign = Math.sign(off);
     const n = slots.length;
     if (!d) return { transform: 'none', dim: 0 };
+    if (!n && !scrolling) return { transform: 'none', dim: Math.min(0.85, 0.15 + d * DECK.fade) };
     if (!n) {
-      // No room for cards beside the stage: they slide in from off screen.
+      // No room for cards beside the stage: while scrolling, they slide in
+      // from off screen.
       return { transform: `translateX(${off * unit}px)`, dim: Math.min(d, 1) * 0.3 };
     }
     const k = Math.min(Math.floor(d), n);
@@ -1288,6 +1290,7 @@ const Sinsta = (() => {
       if (Math.abs(pos - ri) < 0.01) return; // put there by syncScroll
       scrolling = true;
       root.classList.add('sv-scrolling');
+      if (typing) replyInput.blur(); // the stage, reply box included, hides
       syncPause();
     }
     scrollPos = pos;
