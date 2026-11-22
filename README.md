@@ -70,7 +70,7 @@ Reels shows Instagram's Reels feed as a grid of covers, like the app's grids, in
 - **App-only notifications:** some notifications, such as "X added to their story" for accounts you get alerts for, light the Notifications dot but never appear in the web panel. When that's the case, Notifications gets a phone icon with their count (visible when the sidebar shows labels) and a tooltip saying so. Checking doesn't clear the dot.
   - The extension checks once a minute and notes when the count rises. A notification arrives right after what it's about, so the tooltip names the stories and posts by followed accounts published in that gap, favourites first: "Probably" when the gap is under about 15 minutes, "Possibly" when it's wider (for example, Firefox was closed). Clicking the phone icon opens the first guess instead of the panel.
   - Stories come from Instagram's stories tray (at most 120 accounts) plus every favourite; posts from the Following feed.
-- **Carousels:** with the cursor over a carousel's photos, scrolling steps through its slides (down = next, up = previous). Past the last slide, or before the first, the feed scrolls as usual. Sideways trackpad swipes over a carousel step through it too, without triggering the browser's swipe-back.
+- **Carousels:** with the cursor over a carousel's photos, scrolling steps through its slides (down = next, up = previous). Past the last slide, or before the first, the feed scrolls as usual. A trackpad is left to Instagram's own carousel, which scrolls sideways with momentum, while scrolling up and down moves the feed.
 
 ## Install
 

@@ -1001,9 +1001,9 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
 
   // With the cursor over a carousel's photos, scrolling steps through its
   // slides (down or right = next) by pressing Instagram's own arrow buttons.
-  // Past the last slide (or before the first) a vertical scroll moves the
-  // feed as usual. Horizontal swipes over a carousel never leak through, so
-  // they don't trigger the browser's swipe-back gesture.
+  // Past the last slide (or before the first) the feed scrolls as usual. A
+  // trackpad (or Magic Mouse) is left alone: the carousel scrolls natively
+  // under it, continuously and with momentum, and up and down moves the feed.
   const WHEEL_STEP = 30; // px of scrolling per slide
   const WHEEL_MIN_GAP = 300; // ms between slides
   const WHEEL_IDLE = 180; // ms without scroll events that ends a gesture
@@ -1024,6 +1024,9 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
 
   window.addEventListener('wheel', (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return; // zoom and similar
+    // Firefox reports a mouse wheel in lines and a trackpad in pixels, but only
+    // to a listener that reads deltaMode before the deltas: read it first.
+    if (e.deltaMode === 0) return;
     const area = carouselAt(e.target);
     if (!area) return;
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
