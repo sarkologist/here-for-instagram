@@ -981,17 +981,20 @@ const Sinsta = (() => {
     node.load();
   }
 
-  // ---- Neighbouring accounts ----------------------------------------------
+  // ---- The deck -----------------------------------------------------------
 
-  // The accounts before and after the current one, as cards beside the stage;
-  // clicking one goes to the story it shows. The free room on each side is
+  // The stories around the one on stage, as cards beside it. The account on
+  // stage opens into a card per story; every other account is one card, the
+  // story going to it lands on. Each card is one stop along the carousel, so
+  // moving a story along turns it as far as moving on to the next account.
+  // Clicking a card goes to its story. The free room on each side is
   // split by a geometric falloff: each card's visible share is DECK.ratio of
   // the nearer one's, and cards whose share would be under DECK.minStrip
   // stage widths are left out. A card's outer edge goes where its share ends
   // and the nearer card covers the rest of it. Its scale and angle follow its
   // share, so near cards are large and flat, far ones smaller and turned.
   const DECK = { ratio: 0.82, scaleFar: 0.63, angleNear: 0, angleFar: 20, minStrip: 0.075, persp: 1.4, fade: 0.09, margin: 0.015 };
-  const peeks = new Map(); // reel id -> card element
+  const peeks = new Map(); // card key ("reel id:story index") -> card element
   const peekAsked = new Set(); // reel ids whose stories the cards asked for
   let slots = []; // right-hand card placements, nearest first: { x, th, s }
   let deckW = 0;
@@ -1038,27 +1041,50 @@ const Sinsta = (() => {
     const label = el('div', { className: 'sv-peek-label' }, el('b', {}, reel.username), when);
     const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);
     card.parts = { img, when, label };
-    card.addEventListener('click', () => toReel(list.indexOf(reel)));
+    card.addEventListener('click', () => toCard(card.item));
     return card;
   }
 
-  // What a card shows, which is where going to it lands: for an account
-  // behind, the story you left it on (its last, unless you jumped away); for
-  // one ahead, its first unseen story; for the current one (hidden under the
-  // stage until it turns away), the story on stage. While an account's stories
-  // are unknown, its profile picture.
-  function storyAt(reel, items, off) {
+  // Which story going to an account `off` accounts away lands on: behind, the
+  // one you left it on (its last, unless you jumped away); ahead, its first
+  // unseen one; for the account on stage, the story on stage.
+  function storyIndex(reel, items, off) {
     if (!off) {
-      if (ii === START) return items[firstUnseen(reel, items)];
-      return items[ii === LAST ? items.length - 1 : Math.min(ii, items.length - 1)];
+      if (ii === START) return firstUnseen(reel, items);
+      return ii === LAST ? items.length - 1 : Math.min(ii, items.length - 1);
     }
-    if (off > 0) return items[firstUnseen(reel, items)];
-    return items[reel.leftAt != null ? Math.min(reel.leftAt, items.length - 1) : items.length - 1];
+    if (off > 0) return firstUnseen(reel, items);
+    return reel.leftAt != null ? Math.min(reel.leftAt, items.length - 1) : items.length - 1;
   }
 
-  function fillPeek(card, reel, off) {
+  // The deck's cards in order, a stop apart: { k: account, j: story (null
+  // while the account's stories are unknown, when it shows its profile
+  // picture), key }.
+  function deckItems() {
+    const out = [];
+    list.forEach((reel, k) => {
+      const items = media.get(reel.id);
+      if (!items || !items.length) out.push({ k, j: null });
+      else if (k === ri && ii >= 0) items.forEach((_, j) => out.push({ k, j }));
+      else out.push({ k, j: storyIndex(reel, items, k - ri) });
+    });
+    for (const it of out) it.key = `${list[it.k].id}:${it.j}`;
+    return out;
+  }
+
+  // Where the story on stage is among them.
+  function stageAt(items) {
+    let at = -1;
+    items.forEach((it, i) => {
+      if (it.k === ri && (at < 0 || it.j === ii)) at = i;
+    });
+    return Math.max(at, 0);
+  }
+
+  function fillPeek(card, it) {
+    const reel = list[it.k];
     const items = media.get(reel.id);
-    const item = items && items.length ? storyAt(reel, items, off) : null;
+    const item = items && it.j != null ? items[it.j] : null;
     const { img, when } = card.parts;
     const src = (item && item.thumb) || reel.pic;
     if (img.getAttribute('src') !== src) img.src = src;
@@ -1066,28 +1092,47 @@ const Sinsta = (() => {
     when.textContent = item ? ago(item.takenAt) : '';
   }
 
+  // Go to a card's story.
+  function toCard(it) {
+    if (it.k !== ri) return toReel(it.k);
+    if (ii < 0 || it.j == null || it.j === ii) return;
+    dir = it.j > ii ? 1 : -1;
+    ii = it.j;
+    show();
+  }
+
+  let deck = []; // the cards last laid out, kept as they are while scrolling
+  let deckAt = 0; // where the stage was among them
+
   function renderDeck() {
     if (!open) return;
     const n = slots.length;
-    const pos = scrolling ? scrollPos : ri;
+    if (!scrolling) {
+      deck = deckItems();
+      deckAt = stageAt(deck);
+      syncTrack();
+    }
+    const pos = scrolling ? scrollPos : deckAt;
     const lo = Math.max(0, Math.floor(pos) - n - 1);
-    const hi = Math.min(list.length - 1, Math.ceil(pos) + n + 1);
+    const hi = Math.min(deck.length - 1, Math.ceil(pos) + n + 1);
     const keep = new Set();
     const missing = [];
-    for (let k = lo; k <= hi; k++) {
-      const reel = list[k];
-      const off = k - pos;
+    for (let i = lo; i <= hi; i++) {
+      const it = deck[i];
+      const reel = list[it.k];
+      const off = i - pos;
       const d = Math.abs(off);
-      keep.add(reel.id);
+      keep.add(it.key);
       if (!media.has(reel.id) && !pending.has(reel.id) && !peekAsked.has(reel.id)) missing.push(reel.id);
-      let card = peeks.get(reel.id);
+      let card = peeks.get(it.key);
       const fresh = !card;
       if (fresh) {
         card = peekCard(reel);
-        peeks.set(reel.id, card);
+        peeks.set(it.key, card);
         view.insertBefore(card, stage);
       }
-      fillPeek(card, reel, k - ri);
+      card.item = it;
+      fillPeek(card, it);
       const { transform, dim } = placement(off);
       // While scrolling, the stage is hidden and every card shows, the
       // farthest fading out as it goes.
@@ -1112,10 +1157,18 @@ const Sinsta = (() => {
       // from the start.
       card.style.opacity = String(opacity);
     }
-    for (const [id, card] of peeks) {
-      if (keep.has(id)) continue;
-      card.remove();
-      peeks.delete(id);
+    for (const [key, card] of peeks) {
+      if (keep.has(key)) continue;
+      peeks.delete(key);
+      // The account left behind folds back into one card: its other stories
+      // fade where they are.
+      if (scrolling || card.style.opacity === '0') {
+        card.remove();
+      } else {
+        card.style.opacity = '0';
+        card.classList.add('sv-peek-off');
+        setTimeout(() => card.remove(), TURN_MS);
+      }
     }
     for (let i = 0; i < missing.length; i += 10) {
       const ids = missing.slice(i, i + 10);
@@ -1169,26 +1222,26 @@ const Sinsta = (() => {
     endScroll();
     landed = false;
     arrived();
-    shownReel = null;
+    deck = [];
+    deckAt = 0;
+    trackLen = 0;
     snap(stage, () => {
       stage.style.transform = '';
       stage.style.setProperty('--dim', '0');
     });
   }
 
-  // Changing account turns the carousel, as in a coverflow. The stage, already
-  // showing the new account with its controls, flies in from where that
-  // account's card was, brightening as it comes; the card itself moves in
-  // under it, standing in until the story has loaded. The account left behind
-  // becomes a card where the stage was and slides aside.
+  // Changing story turns the carousel, as in a coverflow. The stage, already
+  // showing the new story with its controls, flies in from where that story's
+  // card was, brightening as it comes; the card itself moves in under it,
+  // standing in until the story has loaded. The story left behind becomes a
+  // card where the stage was and slides aside.
   let turning = false;
   let arriving = false; // turned to an account whose story hasn't loaded yet
   let turnTimer = 0;
-  let shownReel = null; // the account last put on stage
   const TURN_MS = 400; // as the transitions in content.css
 
-  function beginTurn(prev, delta) {
-    const card = peeks.get(prev.id);
+  function beginTurn(card, delta) {
     if (card) {
       snap(card, () => {
         card.classList.add('sv-peek-centre');
@@ -1249,7 +1302,10 @@ const Sinsta = (() => {
   let unit = 1; // px of scrolling per account: from the middle to the first card
   let scrolling = false;
   let scrollPos = 0; // where the carousel is, in accounts
-  let landed = false; // the stage comes to an account the carousel turned to
+  let landed = false; // the stage comes to a story the carousel turned to
+  let restPos = 0; // where renderDeck put the scroller, in stops
+  let trackLen = 0; // stops laid out
+  let trackUnit = 0;
   let wheelTimer = 0;
   let wheelFrom = 0;
   let wheelTo = 0;
@@ -1257,19 +1313,22 @@ const Sinsta = (() => {
   function sizeScroller(FW, W) {
     unit = Math.max(1, Math.round(slots.length ? slots[0].x : W + 16));
     view.style.width = `${FW}px`;
-    wide.style.width = `${(list.length - 1) * unit + FW}px`;
-    stops.replaceChildren(...list.map((_, k) => {
-      const stop = el('i', { className: 'sv-stop' });
-      stop.style.left = `${k * unit}px`;
-      return stop;
-    }));
-    syncScroll();
   }
 
-  // Put the scroller at the account on stage.
-  function syncScroll() {
-    endScroll();
-    if (Math.abs(root.scrollLeft - ri * unit) >= 1) root.scrollLeft = ri * unit;
+  // A stop per card, and the scroller at the story on stage.
+  function syncTrack() {
+    if (trackLen !== deck.length || trackUnit !== unit) {
+      trackLen = deck.length;
+      trackUnit = unit;
+      wide.style.width = `${(trackLen - 1) * unit + view.offsetWidth}px`;
+      stops.replaceChildren(...deck.map((_, i) => {
+        const stop = el('i', { className: 'sv-stop' });
+        stop.style.left = `${i * unit}px`;
+        return stop;
+      }));
+    }
+    restPos = deckAt;
+    if (Math.abs(root.scrollLeft - deckAt * unit) >= 1) root.scrollLeft = deckAt * unit;
   }
 
   function endScroll() {
@@ -1286,7 +1345,7 @@ const Sinsta = (() => {
     if (!open) return;
     const pos = root.scrollLeft / unit;
     if (!scrolling) {
-      if (Math.abs(pos - ri) < 0.01) return; // put there by syncScroll
+      if (Math.abs(pos - restPos) < 0.01) return; // put there by syncTrack
       scrolling = true;
       root.classList.add('sv-scrolling');
       if (typing) replyInput.blur(); // the stage, reply box included, hides
@@ -1296,22 +1355,23 @@ const Sinsta = (() => {
     renderDeck();
   });
 
-  // Come to rest, on an account (a snap point; after the mouse wheel, where
-  // settle sent it).
+  // Come to rest on a card (a snap point; after the mouse wheel, where settle
+  // sent it). The layout stayed as it was while scrolling; now the account
+  // it rests on opens and the one left folds up.
   root.addEventListener('scrollend', () => {
     if (open && scrolling && !wheelTimer) rest();
   });
 
   function rest() {
-    const k = Math.min(Math.max(Math.round(root.scrollLeft / unit), 0), list.length - 1);
-    if (Math.abs(root.scrollLeft - k * unit) >= 1) {
-      root.scrollTo({ left: k * unit, behavior: 'smooth' });
+    const i = Math.min(Math.max(Math.round(root.scrollLeft / unit), 0), deck.length - 1);
+    if (Math.abs(root.scrollLeft - i * unit) >= 1) {
+      root.scrollTo({ left: i * unit, behavior: 'smooth' });
       return;
     }
     endScroll();
-    if (k === ri) return renderDeck();
+    if (i === deckAt) return renderDeck();
     landed = true;
-    toReel(k);
+    toCard(deck[i]);
   }
 
   // Firefox reports a mouse wheel in lines and a trackpad (or Magic Mouse) in
@@ -1333,11 +1393,11 @@ const Sinsta = (() => {
     e.preventDefault();
     const lines = (e.deltaY || e.deltaX) * (mode === 2 ? 1 / WHEEL_PER_LINE : 1);
     if (!wheelTimer) {
-      wheelFrom = scrolling ? Math.round(root.scrollLeft / unit) : ri;
+      wheelFrom = scrolling ? Math.round(root.scrollLeft / unit) : restPos;
       wheelTo = root.scrollLeft;
       root.classList.add('sv-free'); // no snapping until it settles
     }
-    wheelTo = Math.min(Math.max(wheelTo + lines * WHEEL_PER_LINE * unit, 0), (list.length - 1) * unit);
+    wheelTo = Math.min(Math.max(wheelTo + lines * WHEEL_PER_LINE * unit, 0), (deck.length - 1) * unit);
     root.scrollTo({ left: wheelTo, behavior: 'smooth' });
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(settle, WHEEL_SETTLE_MS);
@@ -1348,7 +1408,7 @@ const Sinsta = (() => {
     const pos = wheelTo / unit;
     let k = Math.round(pos);
     if (k === wheelFrom && Math.abs(pos - wheelFrom) > 0.05) k += Math.sign(pos - wheelFrom);
-    k = Math.min(Math.max(k, 0), list.length - 1);
+    k = Math.min(Math.max(k, 0), deck.length - 1);
     // Snapping stays off until it comes to rest (endScroll), so it can't
     // pull the carousel elsewhere on the way.
     if (Math.abs(root.scrollLeft - k * unit) >= 1) root.scrollTo({ left: k * unit, behavior: 'smooth' });
@@ -1453,20 +1513,20 @@ const Sinsta = (() => {
     foot.hidden = true;
     note.hidden = true;
     root.classList.add('sv-loading');
-    if (shownReel && shownReel !== reel) {
-      const from = list.indexOf(shownReel);
-      mediaBox.replaceChildren(); // the account's card stands in meanwhile
+    const was = deck[deckAt]; // the card of the story that was on stage
+    if (was && (was.k !== ri || (ii >= 0 && was.j != null && was.j !== ii))) {
+      mediaBox.replaceChildren(); // the story's card stands in meanwhile
       if (landed) {
         // The carousel already turned there: the card is in place under the stage.
         arriving = true;
         root.classList.add('sv-arriving');
       } else {
-        beginTurn(shownReel, from < 0 ? dir : ri - from);
+        const to = deck.findIndex((it) => it.k === ri && (it.k !== was.k || it.j === ii));
+        beginTurn(peeks.get(was.key), to < 0 ? dir : to - deckAt);
       }
     }
     landed = false;
-    shownReel = reel;
-    syncScroll();
+    endScroll();
     renderDeck();
 
     loadAhead();
@@ -1491,6 +1551,7 @@ const Sinsta = (() => {
     else if (ii === LAST) ii = items.length - 1;
     ii = Math.min(Math.max(ii, 0), items.length - 1);
     const item = items[ii];
+    renderDeck(); // the account opens into its stories
 
     bars.replaceChildren(...items.map((_, i) => {
       const fill = el('i', {});
