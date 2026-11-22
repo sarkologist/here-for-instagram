@@ -503,16 +503,14 @@ html[data-sinsta-reels-grid] main video {
   font-size: 15px;
 }
 
-/* Hidden on the card under the stage, at once (the stage is see-through
-   until its story loads), and fading back in as the story you leave slides
-   aside. While scrolling, every card shows it. */
+/* Hidden on the card in the middle: it fades as a card turns in, and back as
+   the account you leave slides aside. */
 .sv-peek-label {
   transition: opacity 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .sv-peek-centre .sv-peek-label {
   opacity: 0;
-  transition: none;
 }
 
 .sv-peek-label b {
@@ -520,7 +518,7 @@ html[data-sinsta-reels-grid] main video {
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
 }
 
-.sv-peek-count {
+.sv-peek-time {
   color: rgba(255, 255, 255, 0.75);
   font-size: 13px;
 }
