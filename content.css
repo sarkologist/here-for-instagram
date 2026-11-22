@@ -331,10 +331,6 @@ html[data-sinsta-reels-grid] main video {
   position: fixed;
   inset: 0;
   z-index: 99999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
   background: #1a1a1a;
   color: #fff;
   font: 14px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -352,6 +348,55 @@ html[data-sinsta-reels-grid] main video {
   padding: 0;
   border: 0;
   overflow: hidden;
+}
+
+/* The viewer scrolls sideways, one snap point per account, to turn the
+   carousel (see Scrolling the carousel in stories.js). The view stays put. */
+#sinsta-viewer {
+  overflow-x: scroll;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+/* While the mouse wheel turns it: snapping would pull it to the next stop. */
+#sinsta-viewer.sv-free {
+  scroll-snap-type: none;
+}
+
+.sv-wide {
+  position: relative;
+  height: 100%;
+}
+
+.sv-view {
+  position: sticky;
+  left: 0;
+  width: 100vw;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sv-stop {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  scroll-snap-align: start;
+}
+
+/* While it turns, the cards move with the scrolling, and the current
+   account's card stands in for the stage. */
+.sv-scrolling .sv-stage {
+  visibility: hidden;
+}
+
+.sv-scrolling .sv-peek,
+.sv-scrolling .sv-peek-dim {
+  transition: none;
 }
 
 #sinsta-viewer a,
