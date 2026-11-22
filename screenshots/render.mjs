@@ -255,6 +255,12 @@ await tab.locator(".sinsta-story").nth(2).click();
 await tab.waitForSelector("#sinsta-viewer .sv-peek");
 await tab.waitForFunction(() => !document.querySelector("#sinsta-viewer.sv-loading"));
 await settle();
+// Hover the next account's card, just right of the stage: the deck fans open
+// there and shows its profile picture and a dot per story.
+const stage = await tab.locator("#sinsta-viewer .sv-stage").boundingBox();
+await tab.mouse.move(stage.x + stage.width + 24, stage.y + stage.height / 2, { steps: 4 });
+await tab.waitForSelector("#sinsta-viewer .sv-peek-open-r");
+await tab.waitForTimeout(700);
 await shot("2-stories.png");
 await tab.keyboard.press("Escape");
 
