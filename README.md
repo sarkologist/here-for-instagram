@@ -41,13 +41,13 @@ Unwatched stories come first, then fully watched ones with a grey ring, each gro
 | Click right / `→` | next story |
 | Click left third / `←` | previous story |
 | `Shift` + `→` / `←` | next / previous account |
-| Swipe sideways (trackpad), or scroll (mouse wheel) | turn the carousel of accounts |
+| Swipe sideways (trackpad), or scroll (mouse wheel) | turn the carousel |
 | Hold, or `Space` | pause |
 | `M` | sound on/off |
 | `L` | like |
 | `Esc` | close |
 
-The carousel turns as you swipe, with the trackpad's momentum, and comes to rest on an account; a mouse wheel turns it smoothly and settles on the nearest account when you stop.
+The account on stage is laid out as a card per story, and every other account as one card, so the carousel turns a card at a time whether you move a story along or on to the next account. It turns as you swipe, with the trackpad's momentum, and comes to rest on a card; a mouse wheel turns it smoothly and settles on the nearest card when you stop. The account it rests on opens into its stories and the one you left folds back into one card.
 
 Stickers work as on Instagram: @mentions, hashtags and locations open their page, and links open in a new tab (the story pauses while the pointer is over one). Tapping the middle of a shared post, reel or story shows Instagram's bubble ("View reel", or the original poster's name), which opens it; the next tap elsewhere dismisses it. The same links sit under the account name ("View post" or "View reel", and "from @…"), beside the title of any song.
 
