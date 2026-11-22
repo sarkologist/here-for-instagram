@@ -1031,7 +1031,8 @@ const Sinsta = (() => {
 
   function peekCard(reel) {
     const img = el('img', { className: 'sv-peek-img', alt: '', decoding: 'async', draggable: false });
-    const avatar = el('img', { className: 'sv-peek-avatar', src: reel.pic, alt: reel.username, title: reel.username, decoding: 'async', draggable: false });
+    const avatar = el('img', { className: 'sv-peek-avatar', alt: reel.username, title: reel.username, decoding: 'async', draggable: false });
+    if (reel.pic) avatar.src = reel.pic;
     const dots = el('div', { className: 'sv-peek-dots' });
     const label = el('div', { className: 'sv-peek-label' }, avatar, dots);
     const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);

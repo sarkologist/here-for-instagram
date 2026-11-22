@@ -561,6 +561,7 @@ html[data-sinsta-reels-grid] main video {
 
 .sv-peek-dots {
   display: flex;
+  flex-wrap: wrap; /* many stories: further rows */
   justify-content: center;
   gap: 4px;
   width: var(--avatar);
