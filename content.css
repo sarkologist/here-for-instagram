@@ -190,7 +190,7 @@ main a[href*="variant=home"] {
   width: 100%;
   padding: 2px 4px 6px;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .sinsta-stories[hidden] {
