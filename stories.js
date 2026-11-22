@@ -1031,10 +1031,11 @@ const Sinsta = (() => {
 
   function peekCard(reel) {
     const img = el('img', { className: 'sv-peek-img', alt: '', decoding: 'async', draggable: false });
-    const count = el('span', { className: 'sv-peek-count' });
-    const label = el('div', { className: 'sv-peek-label' }, el('b', {}, reel.username), count);
+    const avatar = el('img', { className: 'sv-peek-avatar', src: reel.pic, alt: reel.username, title: reel.username, decoding: 'async', draggable: false });
+    const dots = el('div', { className: 'sv-peek-dots' });
+    const label = el('div', { className: 'sv-peek-label' }, avatar, dots);
     const card = el('div', { className: 'sv-peek' }, img, el('div', { className: 'sv-peek-dim' }), label);
-    card.parts = { img, count };
+    card.parts = { img, dots };
     card.reel = reel;
     card.addEventListener('click', () => toReel(list.indexOf(reel), scrubId === reel.id ? scrubJ : null));
     card.addEventListener('pointermove', (e) => scrub(reel, card, e));
@@ -1072,12 +1073,18 @@ const Sinsta = (() => {
     const items = media.get(reel.id);
     const scrubbed = items && reel.id === scrubId && scrubJ != null;
     const item = items && items.length ? (scrubbed ? items[Math.min(scrubJ, items.length - 1)] : storyAt(reel, items, off)) : null;
-    const { img, count } = card.parts;
+    const { img, dots } = card.parts;
     const src = (item && item.thumb) || reel.pic;
     if (img.getAttribute('src') !== src) img.src = src;
     card.classList.toggle('sv-peek-pic', !item || !item.thumb);
-    // Which story it is; how old, only on the stage once it settles.
-    count.textContent = item ? `story ${items.indexOf(item) + 1} of ${items.length}` : '';
+    // A dot per story: the one it shows white, the rest pink while unwatched
+    // and grey once watched. How old it is shows only on the stage.
+    const j = item ? items.indexOf(item) : -1;
+    const tones = item ? items.map((it, k) => (k === j ? 'me' : it.takenAt > reel.seenAt ? 'new' : '')).join() : '';
+    if (dots.dataset.tones !== tones) {
+      dots.dataset.tones = tones;
+      dots.replaceChildren(...(item ? items.map((it, k) => el('i', { className: k === j ? 'sv-dot-me' : it.takenAt > reel.seenAt ? 'sv-dot-new' : '' })) : []));
+    }
   }
 
   function renderDeck() {
