@@ -1658,8 +1658,10 @@ const Sinsta = (() => {
     current.fetchPriority = 'high';
     // The previous story of the account stays underneath until this one has
     // a picture, so switching doesn't flash black (a video takes a moment to
-    // show its first frame).
-    mediaBox.append(current);
+    // show its first frame). An image goes in only once decoded: in place
+    // while it downloads, it is drawn again as each part arrives, and a
+    // full-size one doing that holds up frames.
+    if (item.type === 'video') mediaBox.append(current);
     // Its stories were awaited: the cards' pictures come after the story's.
     if (waited) renderDeck();
     const clearBelow = () => {
@@ -1698,7 +1700,12 @@ const Sinsta = (() => {
       else if (node.readyState >= 2) painted();
       if (!node.error && !paused()) startVideo();
     } else {
-      const painted = () => (node.decode ? node.decode() : Promise.resolve()).then(ready, ready);
+      const reveal = () => {
+        if (my !== token) return;
+        mediaBox.append(node);
+        ready();
+      };
+      const painted = () => (node.decode ? node.decode() : Promise.resolve()).then(reveal, reveal);
       node.onload = painted;
       node.onerror = broken;
       if (node.complete) (node.naturalWidth ? painted : broken)();
