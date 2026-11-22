@@ -395,7 +395,8 @@ html[data-sinsta-reels-grid] main video {
 }
 
 .sv-scrolling .sv-peek,
-.sv-scrolling .sv-peek-dim {
+.sv-scrolling .sv-peek-dim,
+.sv-scrolling .sv-peek-label {
   transition: none;
 }
 
@@ -520,26 +521,6 @@ html[data-sinsta-reels-grid] main video {
 .sv-peek-time {
   color: rgba(255, 255, 255, 0.75);
   font-size: 13px;
-}
-
-.sv-peek-ring {
-  width: 22%;
-  padding: 3px;
-  border-radius: 50%;
-  background: linear-gradient(45deg, #f9b33a, #e1306c, #8a3ab9);
-}
-
-.sv-peek-ring.sv-seen {
-  background: #6b6b70;
-}
-
-.sv-peek-ring img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px #000;
-  object-fit: cover;
 }
 
 .sv-stage {
