@@ -1004,6 +1004,8 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
   // Past the last slide (or before the first) the feed scrolls as usual. A
   // trackpad (or Magic Mouse) is left alone: the carousel scrolls natively
   // under it, continuously and with momentum, and up and down moves the feed.
+  // Sideways swipes past a carousel's ends don't trigger the browser's
+  // swipe-back gesture.
   const WHEEL_STEP = 30; // px of scrolling per slide
   const WHEEL_MIN_GAP = 300; // ms between slides
   const WHEEL_IDLE = 180; // ms without scroll events that ends a gesture
@@ -1024,11 +1026,17 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
 
   window.addEventListener('wheel', (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return; // zoom and similar
-    // Firefox reports a mouse wheel in lines and a trackpad in pixels, but only
-    // to a listener that reads deltaMode before the deltas: read it first.
-    if (e.deltaMode === 0) return;
     const area = carouselAt(e.target);
     if (!area) return;
+    // Firefox reports a mouse wheel in lines and a trackpad in pixels, but only
+    // to a listener that reads deltaMode before the deltas: read it first
+    // (only here, so Instagram's own listeners elsewhere still get pixels).
+    if (e.deltaMode === 0) {
+      // Past either end, keep a sideways swipe from going back a page.
+      const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      if (sideways && !area.querySelector(e.deltaX > 0 ? 'button[aria-label="Next"]' : 'button[aria-label="Go back"]')) e.preventDefault();
+      return;
+    }
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
     const dx = e.deltaX * scale;
     const dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * scale;
