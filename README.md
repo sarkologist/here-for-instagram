@@ -34,7 +34,7 @@ The accounts before and after the current one fan out on either side of it: the 
 Unwatched stories come first, then fully watched ones with a grey ring, each group newest first. Watched ones stay until their stories expire.
 
 - **Favourites** asks Instagram for every favourite's stories directly, so the row is complete, including stories you watched on your phone.
-- **Following** uses Instagram's stories tray, which is Instagram's own pick of at most 120 accounts, so it can miss some; favourites are left out. Accounts you fully watch in this browser are remembered and kept at the end even after the tray drops them.
+- **Following** uses Instagram's stories tray, which is Instagram's own pick of at most 120 accounts, so it can miss some; favourites are left out. Accounts you fully watch in this browser are remembered (separately for each Instagram account you log in with) and kept at the end even after the tray drops them.
 
 | Input | Action |
 | --- | --- |
