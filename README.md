@@ -55,6 +55,16 @@ The bar along the bottom replies to the story in the author's DMs, as on Instagr
 
 Polls, quizzes, sliders and question stickers can't be answered: Instagram only accepts those answers from its phone app, and its own website shows them as unsupported too.
 
+## Accounts in separate tabs
+
+Instagram keeps one account signed in per browser: switching accounts in one tab switches every other tab too, and those show "Sorry, something went wrong". The extension keeps accounts apart using Firefox's container tabs, each of which has its own sign-in.
+
+- **Account list:** the extension's button in the address bar, on Instagram pages, lists the accounts signed in across your tabs (the normal ones and every container), with each one's container. Clicking an account opens a new tab signed in as it.
+- **Another account:** "New tab for another account" makes a new container, signed in as the current tab's account, and opens a tab in it. Switch accounts there with Instagram's own switcher: only that container changes. The container is named after its account (`@name`) and keeps it until you switch again there. Links opened from a container tab stay in that container.
+- **Switching inside one container** still switches all its tabs, as on Instagram. Those tabs now reload by themselves instead of showing the error: hidden ones when you next look at them, a visible one after a few seconds.
+- **What's shared:** seen posts are shared by all accounts (it's the same person seeing them). Remembered watched stories are kept per account.
+- Containers made this way show in Firefox's Settings › General › Tabs › Container Tabs, where they can be removed (which signs them out).
+
 ## Reels grid
 
 Reels shows Instagram's Reels feed as a grid of covers, like the app's grids, instead of one reel at a time. More load as you scroll. Hovering a cover plays it silently.
@@ -106,12 +116,17 @@ node run.mjs                 # or: --suite feed, --suite stories
 
 The Firefox window opens on a second display if there is one, and must stay uncovered and unresized while it runs (Firefox stops painting covered windows). Options (profiling, A/B testing CSS, comparing with an older version, the feed without the extension) are listed at the top of `perf/run.mjs`.
 
+## Tests
+
+`node tests/accounts.mjs` (Node 22+) checks accounts in containers end to end in Firefox, headless, with Instagram's pages stubbed and fake cookies: the account list, new containers and their copied cookies, container names, and which tabs reload when an account changes.
+
 ## Limits
 
 - Posts are sorted by English UI labels ("Ad" and "Sponsored" for ads; "Suggested for you" or a Follow button for suggestions), and Instagram's stories row by its "Story by" labels.
 - The Reels grid uses the internal query Instagram's Reels tab loads its feed with. If it changes, the grid says it couldn't load reels; Grid in the corner switches back to Instagram's player.
 - Story replies, reactions and likes, and likes and comments in the Reels grid's player, use Instagram's comments endpoint and the saved queries its own like, comment and reply buttons send. If those change, a like flips back and a reply or comment says it couldn't be sent.
 - The stories row and viewer rely on Instagram's internal endpoints (the stories tray, the favourites list, and two saved queries its own viewer uses). If the row's endpoints change, the row disappears; if the viewer's queries change, stories open in Instagram's viewer instead. The rest keeps working.
+- Accounts are told apart by Instagram's `ds_user_id` and `sessionid` cookies, and named from the Profile link in Instagram's menu.
 - When several hidden posts load in a row (in Algo, a run of posts from accounts you follow), a note says so and the space below stays blank until more arrive as you scroll.
 
 ## License

@@ -166,7 +166,10 @@
   // visit starts on page load, on switching view and on flipping the toggle.
   const SEEN_KEY = 'sinsta-seen';
   const PREFS_KEY = 'sinsta-prefs';
+  // Watched stories are per account: each follows its own accounts.
   const REELS_KEY = 'sinsta-seen-reels';
+  const account = typeof SinstaAccount === 'object' ? SinstaAccount : null;
+  let reelsKey = REELS_KEY;
   const SEEN_MS = 1000;
   const KEEP_DAYS = 60;
   const storage = typeof browser === 'object' && browser.storage && browser.storage.local;
@@ -181,7 +184,18 @@
     let data = {};
     try {
       if (storage) {
-        data = await storage.get([SEEN_KEY, PREFS_KEY, REELS_KEY]);
+        // Everything at once (the seen list is most of it anyway), as the
+        // account's key is known only once the background script answers.
+        let me;
+        [me, data] = await Promise.all([account && account.userId, storage.get(null)]);
+        if (me) reelsKey = `${REELS_KEY}:${me}`;
+        // From before accounts had their own: the first account to load
+        // takes it over.
+        if (reelsKey !== REELS_KEY && data[REELS_KEY]) {
+          if (!data[reelsKey]) data[reelsKey] = data[REELS_KEY];
+          storage.set({ [reelsKey]: data[reelsKey] }).then(() => storage.remove(REELS_KEY), () => {});
+        }
+        data[REELS_KEY] = data[reelsKey];
       } else {
         data[SEEN_KEY] = JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
         data[PREFS_KEY] = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
@@ -224,7 +238,25 @@
     if (!seen || seen.has(id)) return;
     seen.set(id, Math.floor(Date.now() / 1000));
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => save(SEEN_KEY, Object.fromEntries(seen)), 2000);
+    saveTimer = setTimeout(saveSeen, 2000);
+  }
+
+  // Other tabs (on any account) mark posts seen too, and each saves the whole
+  // list, so take theirs in before saving ours. Posts they saw during this
+  // visit stay shown here until the next one, as for this tab's own.
+  async function saveSeen() {
+    if (storage) {
+      try {
+        const theirs = (await storage.get(SEEN_KEY))[SEEN_KEY] || {};
+        const cutoff = Date.now() / 1000 - KEEP_DAYS * 86400;
+        for (let [id, t] of Object.entries(theirs)) {
+          if (t <= cutoff) continue;
+          if (met.has(id)) t = Math.max(t, visitStart); // don't pull it from under the reader
+          if (!seen.has(id) || seen.get(id) > t) seen.set(id, t);
+        }
+      } catch (_) {}
+    }
+    save(SEEN_KEY, Object.fromEntries(seen));
   }
 
   const timers = new WeakMap();
@@ -469,7 +501,7 @@
       delete seenReels[id];
       changed = true;
     }
-    if (changed) save(REELS_KEY, seenReels);
+    if (changed) save(reelsKey, seenReels);
   }
 
   function rememberedReels(present) {
@@ -979,6 +1011,10 @@
     const link = profile && profile.querySelector('a[href]');
     const user = link && (link.getAttribute('href').match(/^\/([^/]+)\/$/) || [])[1];
     if (!user) return;
+    if (account) {
+      const img = profile.querySelector('img');
+      account.report(user, img && img.currentSrc || img && img.src);
+    }
     const href = `/${user}/saved/`;
     // The copy keeps the classes Profile had when it was made, but Instagram
     // changes them, for instance when the sidebar widens on hover and shows
