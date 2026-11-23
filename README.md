@@ -34,7 +34,7 @@ The accounts before and after the current one fan out on either side of it: the 
 Unwatched stories come first, then fully watched ones with a grey ring, each group newest first. Watched ones stay until their stories expire.
 
 - **Favourites** asks Instagram for every favourite's stories directly, so the row is complete, including stories you watched on your phone.
-- **Following** uses Instagram's stories tray, which is Instagram's own pick of at most 120 accounts, so it can miss some; favourites are left out. Accounts you fully watch in this browser are remembered and kept at the end even after the tray drops them.
+- **Following** uses Instagram's stories tray, which is Instagram's own pick of at most 120 accounts, so it can miss some; favourites are left out. Accounts you fully watch in this browser are remembered (separately for each Instagram account you log in with) and kept at the end even after the tray drops them.
 
 | Input | Action |
 | --- | --- |
@@ -84,6 +84,14 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 ## Publishing
 
 `node scripts/package.mjs` writes `web-ext-artifacts/<name>-<version>.zip` for upload to AMO. It refuses a dirty tree and zips from `HEAD`. It ships only the files `manifest.json` references, and fails if any of them contains an absolute developer path or your user name, git name or git email. Paste the notes in [docs/reviewer-notes.md](docs/reviewer-notes.md) into "Notes to reviewer".
+
+## Tests
+
+`tests/` checks what the extension shows, in headless Firefox, with its own scripts on a stand-in instagram.com answering for made-up logged-in accounts. So far: the stories row on Following and Favourites, including after switching accounts. CI runs them.
+
+```bash
+cd tests && npm ci && npx playwright install firefox && npm test
+```
 
 ## Performance evals
 
