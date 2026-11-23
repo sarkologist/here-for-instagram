@@ -262,19 +262,28 @@
       .filter(([id, t]) => t < visitStart && /^[\w-]+$/.test(id))
       .sort((a, b) => b[1] - a[1])
       .slice(0, MAX_CSS_IDS)
-      .map(([id]) => `html[data-sinsta-hide-seen] article:has(a[href*="/${id}/"])`);
-    setCollapseCss(seenStyle, ids);
+      .map(([id]) => `[href*="/${id}/"]`);
+    setCollapseCss(seenStyle, 'html[data-sinsta-hide-seen]', 'a', ids);
   }
 
-  // Collapse the posts matching any of the selectors.
-  function setCollapseCss(style, selectors) {
-    style.textContent = selectors.length
-      ? `${selectors.join(',\n')} {
+  // Collapse the posts (articles under `scope`) holding a `link` with any of
+  // the attributes. Firefox checks every :has() against each post it adds,
+  // and one :has() with a long list costs about its square: 1500 post ids
+  // took ~9 ms a post as one :has() and ~20 ms as one each, ~1 ms in :has()es
+  // of 50. Their contents are skipped (content-visibility) rather than each
+  // child hidden by a second rule, which would match them all again.
+  const COLLAPSE_CHUNK = 50;
+  function setCollapseCss(style, scope, link, attrs) {
+    const posts = [];
+    for (let i = 0; i < attrs.length; i += COLLAPSE_CHUNK) {
+      posts.push(`${scope} article:has(${link}:is(${attrs.slice(i, i + COLLAPSE_CHUNK).join(', ')}))`);
+    }
+    style.textContent = posts.length
+      ? `${posts.join(',\n')} {
   height: 0 !important; min-height: 0 !important; margin: 0 !important;
   padding: 0 !important; border: 0 !important; overflow: hidden !important;
-  visibility: hidden !important;
-}
-${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
+  visibility: hidden !important; content-visibility: hidden !important;
+}`
       : '';
     if (!style.isConnected) (document.head || document.documentElement).append(style);
   }
@@ -282,7 +291,6 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
   // A post's author is the first link in its header: four nested first-child
   // spans deep. Collaborators, @mentions and tags sit elsewhere.
   const AUTHOR = 'span:first-child > span:first-child > span:first-child > span:first-child > div > a';
-  const authorLink = (user) => `${AUTHOR}[href="/${user}/"]`;
 
   function author(article) {
     const a = article.querySelector(`${AUTHOR}[href]`);
@@ -292,9 +300,9 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
   // Collapse posts by these authors when the attribute is set. As with seen
   // posts, a stylesheet catches them before Instagram measures them.
   function setAuthorCss(style, attr, users) {
-    setCollapseCss(style, [...users]
+    setCollapseCss(style, `html[${attr}]`, AUTHOR, [...users]
       .filter((u) => /^[\w.]+$/.test(u))
-      .map((u) => `html[${attr}] article:has(${authorLink(u)})`));
+      .map((u) => `[href="/${u}/"]`));
   }
 
   // Following leaves out favourites, who have their own view.
@@ -349,16 +357,22 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
   const RUN_LIMIT = 120; // seen posts in a row before pausing
   const MAX_STALLS = 8; // nudges in a row that loaded nothing
   const NUDGE_MS = 800;
+  const EAGER_MS = 250; // after posts come in, nudge every frame for this long
   const met = new Set(); // post ids met this visit
   let hiddenRun = 0; // seen posts met in a row
   let runLimit = RUN_LIMIT;
   let stalls = 0;
   let metAtNudge = 0;
+  let metGrew = 0; // when posts last came in
   let lastNudge = 0;
   let nudgeTimer = 0;
 
   function loadMore(shown, hidden) {
-    if (met.size > metAtNudge) stalls = 0;
+    if (met.size > metAtNudge) {
+      stalls = 0;
+      metAtNudge = met.size;
+      metGrew = Date.now();
+    }
     const last = shown[shown.length - 1] || bar;
     const nearEnd = last.getBoundingClientRect().bottom < window.innerHeight * 2;
     const ended = stalls >= MAX_STALLS;
@@ -370,15 +384,24 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
     else setNote(null);
     if (ended || paused || !nearEnd) return;
     clearTimeout(nudgeTimer);
+    // Right after posts come in, Instagram takes a frame or two to lay them
+    // out before a scroll makes it load more (and ignores scrolls while it
+    // loads): nudge every frame for a moment, then now and then, counting
+    // those towards a stall.
+    const eager = Date.now() - metGrew < EAGER_MS;
+    const page = window.wrappedJSObject || window;
+    if (eager) {
+      page.dispatchEvent(new page.Event('scroll'));
+      schedule(); // the next frame
+      return;
+    }
     const wait = lastNudge + NUDGE_MS - Date.now();
     if (wait > 0) {
       nudgeTimer = setTimeout(schedule, wait);
       return;
     }
     lastNudge = Date.now();
-    metAtNudge = met.size;
     stalls++;
-    const page = window.wrappedJSObject || window;
     page.dispatchEvent(new page.Event('scroll'));
     nudgeTimer = setTimeout(schedule, NUDGE_MS);
   }
@@ -406,11 +429,15 @@ ${selectors.map((s) => `${s} > *`).join(',\n')} { display: none !important; }`
   function setNote(state) {
     caughtUp.hidden = !state;
     caughtUp.dataset.state = state || '';
-    if (state === 'looking') noteText.textContent = `Looking for posts you haven't seen\u2026 (skipped ${hiddenRun})`;
-    if (state === 'paused') noteText.textContent = `You're caught up: the last ${hiddenRun} posts were ones you've seen.`;
-    if (state === 'ended') noteText.textContent = "You're caught up: that's as far back as this feed goes.";
+    const text = state === 'looking' ? `Looking for posts you haven't seen\u2026 (skipped ${hiddenRun})`
+      : state === 'paused' ? `You're caught up: the last ${hiddenRun} posts were ones you've seen.`
+        : state === 'ended' ? "You're caught up: that's as far back as this feed goes." : null;
+    // Setting text replaces the node even when it's the same, which wakes
+    // the MutationObserver and runs all this again the next frame.
+    if (text !== null && noteText.textContent !== text) noteText.textContent = text;
     furtherBtn.hidden = state !== 'paused' && state !== 'ended';
-    furtherBtn.textContent = state === 'ended' ? 'Try again' : 'Look further back';
+    const further = state === 'ended' ? 'Try again' : 'Look further back';
+    if (furtherBtn.textContent !== further) furtherBtn.textContent = further;
     showSeenBtn.hidden = state !== 'paused' && state !== 'ended';
     // Instagram's spinner would keep suggesting more is on the way.
     document.documentElement.toggleAttribute('data-sinsta-caught-up', state === 'paused' || state === 'ended');

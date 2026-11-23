@@ -87,14 +87,24 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 
 ## Performance evals
 
-`perf/` measures the stories carousel in Firefox: it runs `stories.js` and `content.css` on a stand-in instagram.com with synthetic accounts and stories, about 3 in 10 of them videos like Instagram's (over a simulated 100 Mbps link with 40 ms round trips), drives it like a person would (opening on a photo and on a video, watching a video, turning by key and click, stepping through stories, hovering and scrubbing cards, trackpad swipes, mouse wheel), and checks each against what people can perceive: frames no later than 20 ms at the 99th percentile and never more than two 60 Hz frames (33.4 ms), input painted within 50 ms (95th percentile) and never later than 100 ms, opening no more than 50 ms slower than the network allows, and videos dropping under 1% of their frames. It also reports how long each move takes to show its story.
+`perf/` measures the stories carousel and the feed in Firefox, against what people can perceive. It runs the extension's own scripts and `content.css` on a stand-in instagram.com, over a simulated 100 Mbps link with 40 ms round trips:
+- **Stories:** synthetic accounts and stories, about 3 in 10 of them videos like Instagram's. It opens the viewer on a photo and on a video, watches a video, turns by key and click, steps through stories, hovers and scrubs cards, and swipes and scrolls.
+- **Feed:** a stand-in for Instagram's home feed (`perf/feed-app.js`), built like the real one: posts of ~150 elements, only the ~9 near the screen in the page, pages of posts taking 2 s each from the server, and the next page asked for only on scroll. The extension's storage holds a 20,000-post seen history. It opens Following, opens it after three pages of posts already seen, scrolls Following and Algo by trackpad and mouse wheel, toggles "Hide seen", and switches view.
+
+Each scenario must keep:
+- frames within 20 ms at the 99th percentile, and never more than two 60 Hz frames (33.4 ms);
+- input painted within 50 ms (95th percentile), and never later than 100 ms;
+- opening the viewer no more than 50 ms slower than the network allows, and the feed's first post no more than 50 ms slower than without the extension (or, after pages of seen posts, than the network allows, per page);
+- videos dropping under 1% of their frames.
+
+It also reports how long each move takes to show its story.
 
 ```
 cd perf && npm install && npx playwright install firefox   # and ffmpeg with libx264, for the videos
-node run.mjs
+node run.mjs                 # or: --suite feed, --suite stories
 ```
 
-The Firefox window opens on a second display if there is one, and must stay uncovered while it runs (Firefox stops painting covered windows). Options (profiling, A/B testing CSS, comparing with an older version) are listed at the top of `perf/run.mjs`.
+The Firefox window opens on a second display if there is one, and must stay uncovered and unresized while it runs (Firefox stops painting covered windows). Options (profiling, A/B testing CSS, comparing with an older version, the feed without the extension) are listed at the top of `perf/run.mjs`.
 
 ## Limits
 

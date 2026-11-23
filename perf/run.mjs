@@ -1,14 +1,18 @@
-// Performance evals for the stories carousel.
+// Performance evals for the stories carousel and the feed.
 //
-// Runs the extension's own stories.js and content.css in Firefox, on an
-// instagram.com origin whose requests are answered with synthetic accounts
-// and stories, drives the carousel the ways people use it, and measures what
-// they would see: frame pacing while things move, and how long input takes
-// to show. Each scenario passes when it is below what people can perceive
-// (see LIMITS).
+// Runs the extension's own scripts and content.css in Firefox, on an
+// instagram.com origin whose requests are answered with synthetic accounts,
+// stories and posts, drives the carousel and the feed the ways people use
+// them, and measures what they would see: frame pacing while things move,
+// how long input takes to show, and how long loading takes beyond what the
+// network allows. Each scenario passes when it is below what people can
+// perceive (see LIMITS). The feed is a stand-in for Instagram's (feed-app.js).
 //
 //   node run.mjs                  all scenarios, 3 runs each
 //   node run.mjs --runs 5 --only turn-keys,peek-scrub
+//   node run.mjs --suite feed     only the feed's scenarios (or: stories)
+//   node run.mjs --bare           the feed without the extension, for comparison
+//   node run.mjs --server 2000    ms Instagram's server takes per feed page
 //   node run.mjs --profile        also time the carousel's functions
 //   node run.mjs --gecko-profile p.json   record a Firefox profiler profile
 //                                 (open it at profiler.firefox.com)
@@ -16,6 +20,7 @@
 //   node run.mjs --src DIR        stories.js and content.css from DIR (e.g. an
 //                                 older version, from `git show`)
 //   node run.mjs --shot deck.png  screenshot the open viewer, and stop
+//   node run.mjs --shot-feed f.png  screenshot Following, and stop
 //   node run.mjs --display 0      put the window on display 0 (the main one)
 //   node run.mjs --headless       no window (software rendering: frames far
 //                                 slower than real, so only for relative use)
@@ -32,6 +37,7 @@ import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { feedScenarios, makeFeed, storageScript } from './feed.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -56,6 +62,9 @@ const PROFILE = args.includes('--profile');
 // About 3 in 10 stories are videos (720x1280 H.264, as Instagram's), unless
 // --images-only. They need ffmpeg (with libx264) to be made, once.
 let VIDEOS = !args.includes('--images-only');
+const SUITE = opt('suite', 'all');
+const BARE = args.includes('--bare');
+const SERVER_MS = Number(opt('server', 2000)); // Instagram's feed pages take ~2 s to come back
 const CHUNK = 256 * 1024; // the most a video response carries: media loads in ranges, so this stands in for streaming
 
 // --profile: time the carousel's own functions. Each is renamed and wrapped by
@@ -63,8 +72,12 @@ const CHUNK = 256 * 1024; // the most a video response carries: media loads in r
 const PROFILED = ['layoutDeck', 'renderDeck', 'fillPeek', 'placement', 'handAt', 'peekCard', 'show', 'preload', 'sizeScroller',
   'beginTurn', 'arrived', 'scrub', 'peekAt', 'unpeek', 'toReel', 'jump', 'step', 'rest', 'settle', 'clearDeck', 'openViewer',
   'renderStickers', 'loadReels', 'tick', 'syncPause', 'syncScroll', 'dropPeek', 'snap', 'mediaEl', 'storyAt'];
-function instrument(src) {
-  for (const name of PROFILED) {
+// The feed's, in content.js.
+const PROFILED_FEED = ['sweep', 'filterFeed', 'hideSeenPosts', 'hideExcluded', 'loadMore', 'mountBar', 'renderStories', 'ensureFavButtons',
+  'ensureSavedItem', 'syncBadgeTip', 'buildSeenCss', 'setCollapseCss', 'newVisit', 'loadState', 'save', 'postKind', 'hideNativeStories', 'feedColumn',
+  'markPostSeen', 'setNote', 'excluded', 'postId'];
+function instrument(src, names = PROFILED) {
+  for (const name of names) {
     const re = new RegExp(`\\n(\\s*)(async )?function ${name}\\(`);
     if (!re.test(src)) throw new Error(`--profile: no function ${name}`);
     src = src.replace(re, (_, ind, async) => `\n${ind}function ${name}(...a) { return window.__perf.time('${name}', ${name}__raw, this, a); }\n${ind}${async || ''}function ${name}__raw(`);
@@ -191,9 +204,15 @@ function makeVideos() {
 
 const FILES = {
   '/perf/stories.js': [join(ROOT, 'stories.js'), 'text/javascript'],
+  '/perf/content.js': [join(ROOT, 'content.js'), 'text/javascript'],
+  '/perf/reels.js': [join(ROOT, 'reels.js'), 'text/javascript'],
   '/perf/content.css': [join(ROOT, 'content.css'), 'text/css'],
   '/perf/probe.js': [join(HERE, 'probe.js'), 'text/javascript'],
+  '/perf/feed-app.js': [join(HERE, 'feed-app.js'), 'text/javascript'],
 };
+// The content scripts as the manifest has Firefox load them, at document start.
+const EXTENSION = '<link rel="stylesheet" href="/perf/content.css"><script src="/perf/stories.js"></script>'
+  + '<script src="/perf/content.js"></script><script src="/perf/reels.js"></script>';
 
 // One page for the whole session (one window, so it takes the foreground only
 // once); load() reloads it with the given accounts.
@@ -213,14 +232,43 @@ async function openPage(page, images, videos) {
   await page.route('https://www.instagram.com/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
+    const feed = page.feedData;
+    if ((path === '/' || path === '/perf/') && feed) {
+      const asked = Date.now();
+      await delay();
+      page.netlog.push({ kind: 'doc', asked, done: Date.now() });
+      const html = readFileSync(join(HERE, 'feed.html'), 'utf8').replace('<!--extension-->', page.bare ? '' : EXTENSION);
+      return route.fulfill({ contentType: 'text/html', body: html });
+    }
     if (path === '/' || path === '/perf/') {
       return route.fulfill({ contentType: 'text/html', body: readFileSync(join(HERE, 'harness.html')) });
     }
     if (path === '/perf/ping') return route.fulfill({ body: '' });
+    if (path === '/perf/blank') return route.fulfill({ contentType: 'text/html', body: '<!doctype html>' });
+    if (path === '/perf/storage.js') return route.fulfill({ contentType: 'text/javascript', body: storageScript });
+    if (path === '/perf/store.json') return route.fulfill({ contentType: 'application/json', body: JSON.stringify(feed ? feed.store : {}) });
+    if (path === '/perf/feed' && feed) {
+      // Instagram's server takes its time, then the page's bytes.
+      const asked = Date.now();
+      const body = JSON.stringify(feed.page(url.searchParams.get('view'), Number(url.searchParams.get('page'))));
+      await delay(SERVER_MS);
+      await transfer(Math.max(body.length, 30000));
+      page.netlog.push({ kind: 'feed', view: url.searchParams.get('view'), asked, done: Date.now() });
+      return route.fulfill({ contentType: 'application/json', body });
+    }
+    if (path === '/api/v1/feed/reels_tray/') {
+      await delay();
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ tray: [...byId.values()] }) });
+    }
+    if (path === '/api/v1/friendships/feed_favorites/') {
+      await delay();
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ users: feed ? feed.favourites : [] }) });
+    }
     if (FILES[path]) {
       let body = readFileSync(FILES[path][0], 'utf8');
       if (path === '/perf/content.css' && opt('css')) body += `\n/* --css */\n${opt('css')}\n`;
       if (PROFILE && path === '/perf/stories.js') body = instrument(body);
+      if (PROFILE && path === '/perf/content.js') body = instrument(body, PROFILED_FEED);
       return route.fulfill({ contentType: FILES[path][1], body });
     }
     const img = path.match(/^\/perf\/img\/r\d+\/(\w+?)_(\d+)\.jpg$/);
@@ -228,7 +276,9 @@ async function openPage(page, images, videos) {
       const pool = images[img[2]];
       const n = [...img[1]].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 0);
       const body = pool[n % pool.length];
+      const asked = Date.now();
       await transfer(body.length);
+      page.netlog.push({ kind: 'img', path, asked, done: Date.now() });
       return route.fulfill({ contentType: 'image/jpeg', headers: { 'cache-control': 'max-age=3600' }, body });
     }
     const vid = path.match(/^\/perf\/vid\/r\d+\/(\w+)\.mp4$/);
@@ -276,9 +326,22 @@ async function openPage(page, images, videos) {
   page.netlog = []; // video ranges served, and stories marked seen
   page.load = async (accounts) => {
     byId = new Map(accounts.map((r) => [r.id, r]));
+    page.feedData = null;
     page.netlog = [];
     await page.goto('https://www.instagram.com/');
     await page.waitForFunction(() => window.__perf && typeof Sinsta === 'object');
+  };
+  // The feed: its seen history in the extension's storage, then the view.
+  // The probe watches from navigation start for the first post to show.
+  page.loadFeed = async (feed, bare = false) => {
+    byId = new Map(page.accounts.map((r) => [r.id, r]));
+    page.feedData = feed;
+    page.bare = BARE || bare;
+    // (Via a blank page: going to the URL already open would only scroll.)
+    await page.goto('https://www.instagram.com/perf/blank');
+    page.netlog = [];
+    await page.goto(`https://www.instagram.com/${feed.view === 'algo' ? '' : `?variant=${feed.view}`}#watch-${feed.view}`);
+    await page.waitForFunction(() => window.__perf);
   };
   return page;
 }
@@ -557,6 +620,13 @@ const SCENARIOS = {
   },
 };
 
+Object.assign(SCENARIOS, feedScenarios({
+  record, stop, settle, now: NOW,
+  viewport: () => VIEWPORT,
+  routeMs: () => routeMs,
+}));
+const isFeed = (name) => /^(feed-|toggle-seen|switch-view)/.test(name);
+
 // ---- Stats ----------------------------------------------------------------
 
 const quantile = (xs, q) => {
@@ -672,6 +742,16 @@ async function main() {
   console.log(`Requests through the harness: ${routeMs.toFixed(1)} ms each`);
   console.log(`Frame interval ${vsync.toFixed(2)} ms (${(1000 / vsync).toFixed(0)} Hz); ${HEADLESS ? 'headless' : 'headed'}, ${VIEWPORT.width}x${VIEWPORT.height} @${await page.evaluate(() => devicePixelRatio)}x, ${ACCOUNTS} accounts\n`);
 
+  if (opt('shot-feed')) {
+    page.accounts = makeAccounts(run);
+    await page.loadFeed(makeFeed(run, 'following', (n) => n % 3 === 0, NOW));
+    await page.waitForFunction(() => window.__perf.feed && window.__perf.feed.shown, null, { timeout: 60000 });
+    await settle(page, 1200);
+    await page.screenshot({ path: opt('shot-feed') });
+    await context.close();
+    rmSync(profile, { recursive: true, force: true });
+    return;
+  }
   if (opt('shot')) {
     const accounts = makeAccounts(run++);
     await page.load(accounts);
@@ -692,17 +772,36 @@ async function main() {
     await page.load(accounts);
     await SCENARIOS['turn-keys'](page, accounts);
     await SCENARIOS['trackpad-swipe'](page, accounts);
+    page.accounts = accounts;
+    if (SUITE !== 'stories') await SCENARIOS['feed-scroll'](page, run++);
   }
 
   const results = {};
   for (const [name, scenario] of Object.entries(SCENARIOS)) {
     if (ONLY && !ONLY.includes(name)) continue;
+    if ((SUITE === 'feed' && !isFeed(name)) || (SUITE === 'stories' && isFeed(name))) continue;
+    if (BARE && !isFeed(name)) continue;
     const runs = [];
     for (let i = 0; i < RUNS; i++) {
       const accounts = makeAccounts(run++);
-      await page.load(accounts);
-      await page.mouse.move(VIEWPORT.width / 2, 20);
-      const out = await scenario(page, accounts);
+      let out;
+      if (isFeed(name)) {
+        page.accounts = accounts;
+        await page.mouse.move(VIEWPORT.width / 2, 20);
+        out = await scenario(page, run - 1);
+        // Loads: what the extension adds to the feed's own time, where the
+        // same load can be timed without it.
+        const ref = scenario.reference && !BARE ? await scenario(page, run + 500, true) : null;
+        for (const [k, load] of (out.loads || []).entries()) {
+          const alone = ref ? ref.loads[k].ms : 0;
+          out.inputs.push({ type: 'load', ms: load.ms - alone });
+          out.did.load = `${out.did.load ? `${out.did.load}, ` : ''}${load.about}${ref ? `, alone ${Math.round(alone)}ms` : ''}`;
+        }
+      } else {
+        await page.load(accounts);
+        await page.mouse.move(VIEWPORT.width / 2, 20);
+        out = await scenario(page, accounts);
+      }
       if (!out) break; // the data has nothing for this scenario
       runs.push({ ...frameStats(out.frames, vsync, out.work), inputs: out.inputs.map((x) => x.ms), shown: out.shown || [], video: out.video, did: out.did, fns: out.fns });
     }
