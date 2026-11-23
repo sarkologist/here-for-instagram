@@ -158,10 +158,13 @@ try {
       tabs: tabs.map((t) => ({ index: t.index, store: t.cookieStoreId })),
     };
   `);
-  // A new Instagram tab in a jar, and the browsing context for it.
-  async function newTab(storeId) {
+  // A new Instagram tab in a jar, and the browsing context for it. It's
+  // opened from an Instagram tab in that jar if there is one, as by a link
+  // (a tab opened afresh would follow the account last used).
+  async function newTab(storeId, path = '/') {
     const before = new Set((await contexts()).map((c) => c.context));
-    await inExt(`await browser.tabs.create({ url: 'https://www.instagram.com/', cookieStoreId: '${storeId}' })`);
+    await inExt(`const [o] = await browser.tabs.query({ cookieStoreId: '${storeId}', url: '*://www.instagram.com/*' });
+      await browser.tabs.create({ url: 'https://www.instagram.com${path}', cookieStoreId: '${storeId}', openerTabId: o && o.id })`);
     for (let i = 0; i < 40; i++) {
       await sleep(250);
       const c = (await contexts()).find((x) => !before.has(x.context) && x.url.startsWith('https://www.instagram.com'));
@@ -250,6 +253,37 @@ try {
   await sleep(1000);
   const popup = await inExt(`return [...document.querySelectorAll('#accounts .name')].map((e) => e.textContent)`);
   check('popup lists accounts', popup.join() === '@alice', popup.join(' | '));
+
+  // 7. A pinned, muted tab switching moves as it was, and isn't left among
+  // the recently closed tabs.
+  const p = await newTab('firefox-default', '/?t=pin');
+  await inExt(`const t = (await browser.tabs.query({ url: '*://www.instagram.com/*' })).find((t) => t.url.includes('t=pin'));
+    await browser.tabs.update(t.id, { pinned: true, muted: true, active: true })`);
+  await sleep(500);
+  await switchIn(p, 456);
+  await sleep(2500);
+  const moved = await inExt(`const [t] = await browser.tabs.query({ pinned: true, url: '*://www.instagram.com/*' });
+    const closed = await browser.sessions.getRecentlyClosed();
+    return t && { store: t.cookieStoreId, muted: t.mutedInfo.muted, active: t.active,
+      closed: closed.some((s) => s.tab && (s.tab.url || '').includes('t=pin')) }`);
+  check('7: moved, still pinned, muted and active', moved && moved.store !== 'firefox-default' && moved.muted && moved.active, JSON.stringify(moved));
+  check('7: old tab not among recently closed', moved && !moved.closed);
+  const bob2 = moved && moved.store;
+
+  // 8. A tab opened afresh follows the account last used (bob's, just now).
+  const where = (q) => inExt(`return (await browser.tabs.query({ url: '*://www.instagram.com/*' })).filter((t) => t.url.includes('${q}')).map((t) => t.cookieStoreId)`);
+  await inExt(`await browser.tabs.create({ url: 'https://www.instagram.com/?t=fresh' })`);
+  await sleep(2500);
+  let w = await where('t=fresh');
+  check('8: fresh tab opens on the last-used account', w.length === 1 && w[0] === bob2, JSON.stringify(w));
+
+  // 9. After looking at an alice tab, a fresh tab stays in the default jar.
+  await send('browsingContext.activate', { context: a1 });
+  await sleep(800);
+  await inExt(`await browser.tabs.create({ url: 'https://www.instagram.com/?t=again' })`);
+  await sleep(2500);
+  w = await where('t=again');
+  check('9: and then on alice\'s', w.length === 1 && w[0] === 'firefox-default', JSON.stringify(w));
 } catch (e) {
   console.log('ERROR', e.stack || e.message);
   failures++;

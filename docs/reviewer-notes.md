@@ -15,8 +15,10 @@ Paste the section below into "Notes to reviewer" when uploading a version.
 **Permissions.**
 - `storage`: the data above.
 - `cookies` and `*://*.instagram.com/*`: the background script reads Instagram's `sessionid` cookie in each cookie store to tell which account is signed in where, and watches it change so tabs loaded for a previous account can reload. When a tab switches to an account kept in a new container, it copies the tab's store's instagram.com cookies into that container.
-- `webRequest` and `webRequestBlocking`, for instagram.com only: when a tab switches Instagram accounts while other Instagram tabs share its cookie store, the background script removes the Set-Cookie headers from the response that signs it in to the new account, stores those cookies in that account's container instead, and reopens the tab there, so the other tabs keep their account. Other responses pass unchanged; requests are never modified.
+- `webRequest` and `webRequestBlocking`, for instagram.com only: when a tab switches Instagram accounts while other Instagram tabs share its cookie store, the background script removes the Set-Cookie headers from the response that signs it in to the new account, stores those cookies in that account's container instead, and reopens the tab there, so the other tabs keep their account. And when a blank new tab (`about:newtab`, `about:blank`, `about:home`) starts loading www.instagram.com and the Instagram tab the user last looked at is in one of the extension's containers, it cancels that load and opens the page in that container instead. Other requests and responses pass unchanged; request headers are never modified.
 - `contextualIdentities`: to list containers, make one per additional account, name it after its account, and remove ones left empty and redundant.
+- `tabs`: to tell a blank new tab (above) from one showing another site, whose URL is otherwise hidden. Other sites' URLs aren't kept or used.
+- `sessions`: a tab reopened in another container is closed in its old one; the extension removes that closed tab from Firefox's recently closed list, so reopening a closed tab doesn't bring it back on the old account. Nothing else there is read.
 
 Cookies are never read for any other site and never sent anywhere. The background script (`background.js`) makes no network requests. The address-bar button (`page_action`, shown on www.instagram.com only) opens `popup.html`, the account list. The content scripts match `*://www.instagram.com/*` only.
 
@@ -26,3 +28,4 @@ Cookies are never read for any other site and never sent anywhere. The backgroun
 3. Open Reels to see the grid.
 4. Click a story in Following to open the extension's viewer.
 5. With two Instagram tabs open, switch accounts in one with Instagram's own switcher (this needs a second account): that tab reopens in a container tab on the new account, and the other stays on the first. The extension's address-bar button lists both.
+6. Then, with the switched tab in front, type instagram.com into a new tab: it opens on the new account, in its container. Look at the first tab and do it again: it opens on the first account.

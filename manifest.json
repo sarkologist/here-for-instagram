@@ -6,6 +6,8 @@
     "storage",
     "cookies",
     "contextualIdentities",
+    "sessions",
+    "tabs",
     "webRequest",
     "webRequestBlocking",
     "*://*.instagram.com/*"

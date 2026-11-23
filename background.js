@@ -11,7 +11,8 @@
 // its cookies go to that account's own container instead (an existing one
 // signed in to it, or a new copy of the jar), and the tab reopens there. The
 // other tabs keep their account. A tab alone in its jar just switches, as on
-// Instagram. Tabs opened from a tab stay in its container, so on its account.
+// Instagram. Tabs opened from a tab stay in its container, so on its account;
+// a tab opened afresh goes to the jar of the Instagram tab last looked at.
 //
 // This script also lists the accounts signed in across jars for the
 // address-bar button, names the containers it made after their account,
@@ -117,13 +118,44 @@ function igTabs(storeId) {
   return browser.tabs.query({ cookieStoreId: storeId, url: IG_TABS }).catch(() => []);
 }
 
-function openTab(storeId, after, active = true) {
-  const props = { url: ORIGIN + '/', cookieStoreId: storeId, active };
-  if (after) {
-    props.windowId = after.windowId;
-    props.index = after.index + 1;
+// Tabs opened here, which go where they're put (see "New tabs" below).
+const ours = new Set();
+
+// A tab opened at `url` in a jar. It opens blank first, so it's known as ours
+// before it asks for Instagram.
+async function openTab(storeId, url, props = {}) {
+  const tab = await browser.tabs.create({ url: 'about:blank', cookieStoreId: storeId, ...props });
+  ours.add(tab.id);
+  await browser.tabs.update(tab.id, { url });
+  return tab;
+}
+
+// Reopen a tab in another jar where it was and as it was: pinned, muted, in
+// its group, under the same opener. The closed copy is forgotten, so undoing
+// a closed tab doesn't bring it back on the old account.
+async function reopen(tab, storeId, url) {
+  const props = { windowId: tab.windowId, index: tab.index + 1, active: tab.active, pinned: tab.pinned };
+  if (tab.openerTabId !== undefined) props.openerTabId = tab.openerTabId;
+  const opened = await openTab(storeId, url, props);
+  if (tab.mutedInfo && tab.mutedInfo.muted) await browser.tabs.update(opened.id, { muted: true }).catch(() => {});
+  if (tab.groupId !== undefined && tab.groupId !== -1 && browser.tabs.group) {
+    await browser.tabs.group({ groupId: tab.groupId, tabIds: [opened.id] }).catch(() => {});
   }
-  return browser.tabs.create(props);
+  await browser.tabs.remove(tab.id).catch(() => {});
+  forgetClosed(tab).catch(() => {});
+  return opened;
+}
+
+// Firefox records a closed tab a moment after it closes.
+async function forgetClosed(tab) {
+  if (!browser.sessions) return;
+  const since = Date.now() - 1000;
+  for (let i = 0; i < 20; i++) {
+    const recent = await browser.sessions.getRecentlyClosed({ maxResults: 5 });
+    const s = recent.find((r) => r.tab && r.tab.url === tab.url && r.tab.windowId === tab.windowId && (r.lastModified < 1e12 ? r.lastModified * 1000 : r.lastModified) >= since);
+    if (s) return browser.sessions.forgetClosedTab(tab.windowId, s.tab.sessionId);
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }
 
 async function makeContainer() {
@@ -236,9 +268,8 @@ async function handOff(tab, from, userId, cookies, host) {
     await copyCookies(from, storeId);
     await applyCookies(cookies, host, storeId);
   }
-  const opened = await openTab(storeId, tab, tab.active);
+  const opened = await reopen(tab, storeId, ORIGIN + '/');
   note({ ev: 'handoff', from, to: storeId, reused: !!target, oldTab: tab.id, newTab: opened.id });
-  await browser.tabs.remove(tab.id).catch(() => {});
 }
 
 browser.webRequest.onBeforeRequest.addListener((d) => {
@@ -301,9 +332,76 @@ browser.webRequest.onHeadersReceived.addListener(onHeaders, { urls: ['*://*.inst
 
 browser.tabs.onRemoved.addListener((tabId, info) => {
   setTimeout(() => handedOff.delete(tabId), HANDED_OFF_MS);
+  ours.delete(tabId);
   // Not on closing a window, which may be reopened with its tabs.
   if (!info.isWindowClosing) tidy();
 });
+
+// ---- New tabs ---------------------------------------------------------------------
+// On Instagram a new tab opens on the account last switched to. Here, a tab
+// that opens Instagram afresh (typed into a new tab, a bookmark, a link from
+// another site or app) opens on the account of the Instagram tab last looked
+// at. Tabs opened from an Instagram tab keep its account, and a tab already
+// showing a page stays where it is, so its back history isn't lost.
+
+const LAST_KEY = 'sinsta-last-used'; // { storeId, userId } of the Instagram tab last looked at
+const FRESH = /^about:(blank|newtab|home)$/;
+const isIg = (url) => /^https?:\/\/www\.instagram\.com\//.test(url || '');
+let lastUsed = null;
+
+async function ourJar(storeId) {
+  return storeId === DEFAULT_STORE || (await stored(MADE_KEY, [])).includes(storeId);
+}
+
+async function noteUsed(tab) {
+  if (!tab || tab.incognito || !isIg(tab.url)) return;
+  const storeId = tab.cookieStoreId || DEFAULT_STORE;
+  if (!await ourJar(storeId)) return; // someone's own container: theirs to manage
+  const userId = await userIn(storeId);
+  if (!userId) return;
+  if (!lastUsed) lastUsed = await stored(LAST_KEY, {});
+  if (lastUsed.storeId === storeId && lastUsed.userId === userId) return;
+  lastUsed = { storeId, userId };
+  await browser.storage.local.set({ [LAST_KEY]: lastUsed });
+}
+
+browser.tabs.onActivated.addListener(({ tabId }) => browser.tabs.get(tabId).then(noteUsed, () => {}));
+browser.tabs.onUpdated.addListener((id, info, tab) => { if (tab.active) noteUsed(tab); }, { urls: IG_TABS, properties: ['url'] });
+browser.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId < 0) return;
+  browser.tabs.query({ windowId, active: true }).then(([t]) => noteUsed(t), () => {});
+});
+
+// The jar of the account last used: its tab's jar, or, should that be gone,
+// another signed in to the same account.
+async function lastUsedJar() {
+  const last = lastUsed || (lastUsed = await stored(LAST_KEY, {}));
+  if (!last.storeId) return null;
+  const all = await jars();
+  return all.find((j) => j.cookieStoreId === last.storeId && j.userId)
+    || all.find((j) => j.userId === last.userId) || null;
+}
+
+browser.webRequest.onBeforeRequest.addListener((d) => {
+  if (d.tabId < 0 || ours.has(d.tabId) || (d.cookieStoreId && d.cookieStoreId !== DEFAULT_STORE)) return {};
+  return (async () => {
+    const tab = await browser.tabs.get(d.tabId).catch(() => null);
+    if (!tab || tab.incognito || !FRESH.test(tab.url)) return {};
+    if (tab.openerTabId !== undefined) {
+      const opener = await browser.tabs.get(tab.openerTabId).catch(() => null);
+      if (opener && isIg(opener.url)) return {}; // opened from Instagram: on its account
+    }
+    const [jar, here] = await Promise.all([lastUsedJar(), userIn(DEFAULT_STORE)]);
+    if (!jar || jar.cookieStoreId === DEFAULT_STORE || jar.userId === here) return {};
+    if (!await queryContainers()) return {};
+    note({ ev: 'follow', tab: tab.id, to: jar.cookieStoreId });
+    reopen(tab, jar.cookieStoreId, d.url).catch(() => {
+      ours.add(tab.id); // open it here after all
+      browser.tabs.update(tab.id, { url: d.url }).catch(() => {});
+    });
+    return { cancel: true };
+  })();
+}, { urls: IG_TABS, types: ['main_frame'] }, ['blocking']);
 
 // ---- Containers made here -------------------------------------------------------
 
@@ -360,8 +458,10 @@ browser.runtime.onMessage.addListener((m, sender) => {
       return noteViewer(store, m.userId, m.username, m.pic);
     case 'list':
       return Promise.all([listAccounts(), queryContainers()]).then(([accounts, cis]) => ({ accounts, containers: !!cis }));
-    case 'open':
-      return openTab(m.storeId, m.after).then(() => true);
+    case 'open': {
+      const at = m.after ? { windowId: m.after.windowId, index: m.after.index + 1 } : {};
+      return openTab(m.storeId, ORIGIN + '/', at).then(() => true);
+    }
     case 'log':
       return logLoaded.then(() => log);
   }
