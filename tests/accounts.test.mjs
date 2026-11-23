@@ -2,7 +2,7 @@
 // popup.js) in a real Firefox, over WebDriver BiDi. Instagram's pages are
 // stubbed (nothing goes to the network) and its cookies are fake.
 //
-//   node tests/accounts.mjs [path to firefox]     (Node 22+, for WebSocket)
+//   node tests/accounts.test.mjs [path to firefox]     (Node 22+, for WebSocket)
 //
 // BiDi can't open extension pages, so the extension is staged into a temp
 // directory with one extra line that opens popup.html itself; scripts run
@@ -115,7 +115,6 @@ try {
     await browser.cookies.set({ url, name: 'sessionid', value: '123%3Aabc%3A1', secure: true, httpOnly: true, domain: '.instagram.com', expirationDate: Date.now()/1000 + 86400 });
     await browser.cookies.set({ url, name: 'ds_user_id', value: '123', secure: true, domain: '.instagram.com', expirationDate: Date.now()/1000 + 86400 });
     await browser.cookies.set({ url, name: 'csrftoken', value: 'tok', secure: true, domain: '.instagram.com', sameSite: 'lax', expirationDate: Date.now()/1000 + 86400 });
-    await browser.storage.local.set({ 'sinsta-seen-reels': { 999: { username: 'old', pic: '', expires: Date.now()/1000 + 3600 } } });
   `);
   let list = await inExt(`return browser.runtime.sendMessage({ type: 'list' })`);
   check('list: default jar account', list.containers && list.accounts.length === 1 && list.accounts[0].userId === '123' && list.accounts[0].storeId === 'firefox-default', JSON.stringify(list));
@@ -126,8 +125,6 @@ try {
   await sleep(1500);
   const accounts1 = await inExt(`return (await browser.storage.local.get('sinsta-accounts'))['sinsta-accounts']`);
   check('viewer reported for default jar', accounts1 && accounts1['123'] && accounts1['123'].username === 'alice', JSON.stringify(accounts1));
-  const reelsStore = await inExt(`const s = await browser.storage.local.get(null); return Object.keys(s)`);
-  check('legacy reels list moved to account key', reelsStore.includes('sinsta-seen-reels:123') && !reelsStore.includes('sinsta-seen-reels'), reelsStore.join(','));
 
   // New container, seeded from the default jar.
   stubUser = 'alice';

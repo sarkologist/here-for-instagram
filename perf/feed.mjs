@@ -55,7 +55,6 @@ export const storageScript = `window.browser = { storage: { local: (() => {
   return {
     async get(keys) {
       const all = await load();
-      if (keys == null) return structuredClone(all);
       const out = {};
       for (const k of [].concat(keys)) if (k in all) out[k] = structuredClone(all[k]);
       return out;

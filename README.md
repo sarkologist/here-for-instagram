@@ -34,7 +34,7 @@ The accounts before and after the current one fan out on either side of it: the 
 Unwatched stories come first, then fully watched ones with a grey ring, each group newest first. Watched ones stay until their stories expire.
 
 - **Favourites** asks Instagram for every favourite's stories directly, so the row is complete, including stories you watched on your phone.
-- **Following** uses Instagram's stories tray, which is Instagram's own pick of at most 120 accounts, so it can miss some; favourites are left out. Accounts you fully watch in this browser are remembered and kept at the end even after the tray drops them.
+- **Following** uses Instagram's stories tray, which is Instagram's own pick of at most 120 accounts, so it can miss some; favourites are left out. Accounts you fully watch in this browser are remembered (separately for each Instagram account you log in with) and kept at the end even after the tray drops them.
 
 | Input | Action |
 | --- | --- |
@@ -95,6 +95,16 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 
 `node scripts/package.mjs` writes `web-ext-artifacts/<name>-<version>.zip` for upload to AMO. It refuses a dirty tree and zips from `HEAD`. It ships only the files `manifest.json` references, and fails if any of them contains an absolute developer path or your user name, git name or git email. Paste the notes in [docs/reviewer-notes.md](docs/reviewer-notes.md) into "Notes to reviewer".
 
+## Tests
+
+`tests/` checks what the extension shows, in headless Firefox, with its own scripts on a stand-in instagram.com answering for made-up logged-in accounts. So far: the stories row on Following and Favourites, including after switching accounts. CI runs them.
+
+`accounts.test.mjs` checks accounts in containers in the system's own Firefox (Playwright's can't load extensions), over WebDriver BiDi with fake cookies: the account list, new containers and their copied cookies, container names, and which tabs reload when an account changes. `node accounts.test.mjs [path to firefox]` runs it alone.
+
+```bash
+cd tests && npm ci && npx playwright install firefox && npm test
+```
+
 ## Performance evals
 
 `perf/` measures the stories carousel and the feed in Firefox, against what people can perceive. It runs the extension's own scripts and `content.css` on a stand-in instagram.com, over a simulated 100 Mbps link with 40 ms round trips:
@@ -115,10 +125,6 @@ node run.mjs                 # or: --suite feed, --suite stories
 ```
 
 The Firefox window opens on a second display if there is one, and must stay uncovered and unresized while it runs (Firefox stops painting covered windows). Options (profiling, A/B testing CSS, comparing with an older version, the feed without the extension) are listed at the top of `perf/run.mjs`.
-
-## Tests
-
-`node tests/accounts.mjs` (Node 22+) checks accounts in containers end to end in Firefox, headless, with Instagram's pages stubbed and fake cookies: the account list, new containers and their copied cookies, container names, and which tabs reload when an account changes.
 
 ## Limits
 

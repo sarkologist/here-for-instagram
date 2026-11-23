@@ -33,3 +33,20 @@ jobs:
           mkdir "$RUNNER_TEMP/xpi"
           unzip -q web-ext-artifacts/*.zip -d "$RUNNER_TEMP/xpi"
           npx --yes web-ext@10.8.0 lint --source-dir "$RUNNER_TEMP/xpi"
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tests
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.11.0
+
+      - run: npm ci
+      - run: npx playwright install --with-deps firefox
+      - run: npm test

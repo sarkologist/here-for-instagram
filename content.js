@@ -166,10 +166,8 @@
   // visit starts on page load, on switching view and on flipping the toggle.
   const SEEN_KEY = 'sinsta-seen';
   const PREFS_KEY = 'sinsta-prefs';
-  // Watched stories are per account: each follows its own accounts.
-  const REELS_KEY = 'sinsta-seen-reels';
-  const account = typeof SinstaAccount === 'object' ? SinstaAccount : null;
-  let reelsKey = REELS_KEY;
+  const REELS_KEY = 'sinsta-seen-reels-by-account';
+  const OLD_REELS_KEY = 'sinsta-seen-reels'; // before it was kept per account
   const SEEN_MS = 1000;
   const KEEP_DAYS = 60;
   const storage = typeof browser === 'object' && browser.storage && browser.storage.local;
@@ -184,18 +182,7 @@
     let data = {};
     try {
       if (storage) {
-        // Everything at once (the seen list is most of it anyway), as the
-        // account's key is known only once the background script answers.
-        let me;
-        [me, data] = await Promise.all([account && account.userId, storage.get(null)]);
-        if (me) reelsKey = `${REELS_KEY}:${me}`;
-        // From before accounts had their own: the first account to load
-        // takes it over.
-        if (reelsKey !== REELS_KEY && data[REELS_KEY]) {
-          if (!data[reelsKey]) data[reelsKey] = data[REELS_KEY];
-          storage.set({ [reelsKey]: data[reelsKey] }).then(() => storage.remove(REELS_KEY), () => {});
-        }
-        data[REELS_KEY] = data[reelsKey];
+        data = await storage.get([SEEN_KEY, PREFS_KEY, REELS_KEY]);
       } else {
         data[SEEN_KEY] = JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
         data[PREFS_KEY] = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
@@ -206,6 +193,10 @@
     seen = new Map(Object.entries(data[SEEN_KEY] || {}).filter(([, t]) => t > cutoff));
     prefs = { ...prefs, ...(data[PREFS_KEY] || {}) };
     seenReels = data[REELS_KEY] || {};
+    try {
+      if (storage) storage.remove(OLD_REELS_KEY);
+      else localStorage.removeItem(OLD_REELS_KEY);
+    } catch (_) {}
     // Opening instagram.com lands on Algo; reopen the last view instead.
     const last = VIEWS.find((v) => v.id === prefs.lastView);
     if (location.pathname === '/' && !location.search && last && last.id !== 'algo') {
@@ -482,32 +473,41 @@
   // Instagram's stories tray holds at most 120 accounts, unwatched first, so
   // with enough unwatched stories around, fully watched ones drop out of it.
   // Remember them here until they expire, to keep them at the end of the row.
-  let seenReels = {}; // user id -> { username, pic, expires }
+  // Kept per logged-in account: another account follows other people.
+  let seenReels = {}; // account id -> user id -> { username, pic, expires }
+
+  const account = () => (document.cookie.match(/(?:^|; )ds_user_id=(\d+)/) || [])[1] || '';
 
   function rememberSeenReels(list) {
     if (!seen) return; // stored state not loaded yet: saving now would wipe it
+    const me = account();
+    if (!me) return;
+    const mine = seenReels[me] || (seenReels[me] = {});
     const now = Date.now() / 1000;
     let changed = false;
     for (const r of list) {
       if (r.unseen || !r.latest) continue;
       const expires = r.latest + 86400;
-      const known = seenReels[r.id];
+      const known = mine[r.id];
       if (known && known.expires === expires) continue;
-      seenReels[r.id] = { username: r.username, pic: r.pic, expires };
+      mine[r.id] = { username: r.username, pic: r.pic, expires };
       changed = true;
     }
-    for (const [id, s] of Object.entries(seenReels)) {
-      if (s.expires > now) continue;
-      delete seenReels[id];
-      changed = true;
+    for (const [acc, reelsOf] of Object.entries(seenReels)) {
+      for (const [id, s] of Object.entries(reelsOf)) {
+        if (s.expires > now) continue;
+        delete reelsOf[id];
+        changed = true;
+      }
+      if (acc !== me && !Object.keys(reelsOf).length) delete seenReels[acc];
     }
-    if (changed) save(reelsKey, seenReels);
+    if (changed) save(REELS_KEY, seenReels);
   }
 
   function rememberedReels(present) {
     const now = Date.now() / 1000;
     const inTray = new Set(present.map((r) => r.id));
-    return Object.entries(seenReels)
+    return Object.entries(seenReels[account()] || {})
       .filter(([id, s]) => s.expires > now && !inTray.has(id))
       .sort((a, b) => b[1].expires - a[1].expires)
       .map(([id, s]) => ({ id, username: s.username, pic: s.pic, unseen: false, seenAt: s.expires - 86400, latest: s.expires - 86400 }));
@@ -1011,9 +1011,9 @@
     const link = profile && profile.querySelector('a[href]');
     const user = link && (link.getAttribute('href').match(/^\/([^/]+)\/$/) || [])[1];
     if (!user) return;
-    if (account) {
+    if (typeof SinstaAccount === 'object') {
       const img = profile.querySelector('img');
-      account.report(user, img && img.currentSrc || img && img.src);
+      SinstaAccount.report(user, img && (img.currentSrc || img.src));
     }
     const href = `/${user}/saved/`;
     // The copy keeps the classes Profile had when it was made, but Instagram
