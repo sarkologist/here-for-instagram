@@ -85,6 +85,14 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 
 `node scripts/package.mjs` writes `web-ext-artifacts/<name>-<version>.zip` for upload to AMO. It refuses a dirty tree and zips from `HEAD`. It ships only the files `manifest.json` references, and fails if any of them contains an absolute developer path or your user name, git name or git email. Paste the notes in [docs/reviewer-notes.md](docs/reviewer-notes.md) into "Notes to reviewer".
 
+## Tests
+
+`tests/` checks what the extension shows, in headless Firefox, with its own scripts on a stand-in instagram.com answering for made-up logged-in accounts. So far: the stories row on Following and Favourites, including after switching accounts. CI runs them.
+
+```bash
+cd tests && npm ci && npx playwright install firefox && npm test
+```
+
 ## Performance evals
 
 `perf/` measures the stories carousel and the feed in Firefox, against what people can perceive. It runs the extension's own scripts and `content.css` on a stand-in instagram.com, over a simulated 100 Mbps link with 40 ms round trips:
