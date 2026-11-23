@@ -2,7 +2,6 @@
 'use strict';
 
 const list = document.getElementById('accounts');
-const newBtn = document.getElementById('new');
 
 function el(tag, props, ...kids) {
   const e = Object.assign(document.createElement(tag), props);
@@ -35,13 +34,8 @@ async function render() {
     return el('li', {}, btn);
   }));
 
-  newBtn.hidden = !containers;
   document.getElementById('hint').hidden = !containers;
   document.getElementById('off').hidden = containers;
-  newBtn.onclick = async () => {
-    await browser.runtime.sendMessage({ type: 'new', from: here, after });
-    window.close();
-  };
 }
 
 render();

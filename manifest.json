@@ -6,6 +6,8 @@
     "storage",
     "cookies",
     "contextualIdentities",
+    "webRequest",
+    "webRequestBlocking",
     "*://*.instagram.com/*"
   ],
   "description": "Splits Instagram's Home into three separate views: suggestions (Algo), Following and Favourites, hides posts you've seen, and shows Reels as a grid.",
