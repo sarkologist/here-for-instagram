@@ -50,6 +50,14 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <script src="/test/ext/stories.js"></script><script src="/test/ext/content.js"></script><script src="/test/ext/reels.js"></script>
 </head><body><main><div><div class="col"><article><a href="/p/Dtest0001/">post</a></article></div></div></main></body></html>`;
 
+// A profile, as Instagram renders its header: the picture is a button, not a
+// link. Clicks that reach the page are counted, as Instagram's own handler.
+const PROFILE = (id, username) => PAGE.replace('<main>', `<script>window.__igClicks = 0; // "profile_id":"${id}"
+document.addEventListener('click', (e) => { if (e.target.closest('[role=button]')) window.__igClicks++; });</script>
+<main><header><section><div role="button" tabindex="0"><span role="link" tabindex="-1">
+<img alt="${username}'s profile picture" src="/test/pic/${id}.jpg"></span></div></section></header>`);
+const PROFILES = { alice: '1', carol: '2', nostory: '9' };
+
 let browser;
 let context;
 let page;
@@ -72,6 +80,8 @@ async function freshContext() {
     const acc = accounts[me];
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
     if (path === '/') return route.fulfill({ contentType: 'text/html', body: PAGE });
+    const profile = path.match(/^\/([\w.]+)\/$/);
+    if (profile && PROFILES[profile[1]]) return route.fulfill({ contentType: 'text/html', body: PROFILE(PROFILES[profile[1]], profile[1]) });
     const ext = path.match(/^\/test\/ext\/([\w.]+)$/);
     if (ext) return route.fulfill({ contentType: ext[1].endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(join(ROOT, ext[1])) });
     if (!acc) return route.fulfill({ status: 401, body: '' });
@@ -146,4 +156,33 @@ test('Switching accounts: each sees only its own stories', async () => {
   accounts['111'].tray = accounts['111'].tray.filter((r) => r.username !== 'alice');
   await logIn('111');
   assert.deepEqual(await row('following'), ['carol', 'alice (watched)']);
+});
+
+// Clicks the profile picture on a profile; what the viewer then shows.
+async function openFromProfile(username) {
+  await page.goto(`${ORIGIN}/${username}/`);
+  await page.click('header img');
+  await page.waitForTimeout(1000);
+  return page.evaluate(() => ({
+    viewer: !!document.querySelector('#sinsta-viewer'),
+    user: document.querySelector('#sinsta-viewer .sv-user')?.textContent ?? null,
+    // Cards of other accounts: the account on stage has one of its own.
+    cards: [...document.querySelectorAll('#sinsta-viewer .sv-peek-avatar')].filter((a) => a.alt !== document.querySelector('#sinsta-viewer .sv-user').textContent).length,
+    instagramGotClick: window.__igClicks > 0,
+    path: location.pathname,
+  }));
+}
+
+test('Profile picture opens the story in the extension viewer, without a carousel', async () => {
+  await freshContext();
+  await logIn('111');
+  assert.deepEqual(await openFromProfile('carol'),
+    { viewer: true, user: 'carol', cards: 0, instagramGotClick: false, path: '/carol/' });
+});
+
+test('Profile picture without a story: the click goes on to Instagram', async () => {
+  await freshContext();
+  await logIn('111');
+  assert.deepEqual(await openFromProfile('nostory'),
+    { viewer: false, user: null, cards: 0, instagramGotClick: true, path: '/nostory/' });
 });
