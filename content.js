@@ -229,7 +229,25 @@
     if (!seen || seen.has(id)) return;
     seen.set(id, Math.floor(Date.now() / 1000));
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => save(SEEN_KEY, Object.fromEntries(seen)), 2000);
+    saveTimer = setTimeout(saveSeen, 2000);
+  }
+
+  // Other tabs (on any account) mark posts seen too, and each saves the whole
+  // list, so take theirs in before saving ours. Posts they saw during this
+  // visit stay shown here until the next one, as for this tab's own.
+  async function saveSeen() {
+    if (storage) {
+      try {
+        const theirs = (await storage.get(SEEN_KEY))[SEEN_KEY] || {};
+        const cutoff = Date.now() / 1000 - KEEP_DAYS * 86400;
+        for (let [id, t] of Object.entries(theirs)) {
+          if (t <= cutoff) continue;
+          if (met.has(id)) t = Math.max(t, visitStart); // don't pull it from under the reader
+          if (!seen.has(id) || seen.get(id) > t) seen.set(id, t);
+        }
+      } catch (_) {}
+    }
+    save(SEEN_KEY, Object.fromEntries(seen));
   }
 
   const timers = new WeakMap();
@@ -993,6 +1011,10 @@
     const link = profile && profile.querySelector('a[href]');
     const user = link && (link.getAttribute('href').match(/^\/([^/]+)\/$/) || [])[1];
     if (!user) return;
+    if (typeof SinstaAccount === 'object') {
+      const img = profile.querySelector('img');
+      SinstaAccount.report(user, img && (img.currentSrc || img.src));
+    }
     const href = `/${user}/saved/`;
     // The copy keeps the classes Profile had when it was made, but Instagram
     // changes them, for instance when the sidebar widens on hover and shows

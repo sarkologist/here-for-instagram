@@ -55,6 +55,17 @@ The bar along the bottom replies to the story in the author's DMs, as on Instagr
 
 Polls, quizzes, sliders and question stickers can't be answered: Instagram only accepts those answers from its phone app, and its own website shows them as unsupported too.
 
+## Accounts in separate tabs
+
+Instagram keeps one account signed in per browser: switching accounts in one tab switches every other tab too, and those show "Sorry, something went wrong". With the extension, each tab keeps its own account.
+
+- **Switching** accounts in a tab, with Instagram's own switcher, changes only that tab. It reopens in a container tab of that account (Firefox's container tabs each have their own sign-in), and your other tabs stay on theirs. It stays where it was, pinned, muted or in its group as before, and leaves no copy among recently closed tabs; only its back history starts afresh. A tab that is the only Instagram tab on its account just switches, as on Instagram.
+- **New tabs** opened from an Instagram tab (links, Ctrl/⌘-click) are on its account. One opened afresh (typed into a new tab, a bookmark, a link from another app or from another site into a new tab) is on the account of the Instagram tab you last looked at, as Instagram's new tabs are on the account last switched to. A tab already showing another site that goes to Instagram stays as it is, on the account of your normal tabs, so its back history is kept.
+- **Account list:** the extension's button in the address bar lists the accounts signed in across your tabs, each with its container. Clicking one opens a new tab as it.
+- Containers made this way are named after their account (`@name`). One is removed when its last tab closes, unless it's the only place that account is signed in, so the account list can still open it. They also show in Firefox's Settings › General › Tabs › Container Tabs, where they can be removed (which signs them out).
+- **Signing out** in a tab signs that account out everywhere, as on Instagram. Tabs whose account changed under them like this reload by themselves instead of showing the error: hidden ones when you next look at them, a visible one after a few seconds.
+- **What's shared:** seen posts are shared by all accounts (it's the same person seeing them). Remembered watched stories are kept per account.
+
 ## Reels grid
 
 Reels shows Instagram's Reels feed as a grid of covers, like the app's grids, instead of one reel at a time. More load as you scroll. Hovering a cover plays it silently.
@@ -89,6 +100,8 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 
 `tests/` checks what the extension shows, in headless Firefox, with its own scripts on a stand-in instagram.com answering for made-up logged-in accounts. So far: the stories row on Following and Favourites, including after switching accounts. CI runs them.
 
+`accounts.test.mjs` checks accounts kept apart in the system's own Firefox (Playwright's can't load extensions), over WebDriver BiDi, with a local stand-in for instagram.com and fake accounts: switching in a tab that shares its account moves only that tab (to a new container or one already on that account), a moved tab keeps its pinned and muted state and leaves no recently closed copy, a tab alone just switches, a tab opened afresh follows the account last used, container names and tidying, and the account list. `node accounts.test.mjs [path to firefox]` runs it alone.
+
 ```bash
 cd tests && npm ci && npx playwright install firefox && npm test
 ```
@@ -120,6 +133,7 @@ The Firefox window opens on a second display if there is one, and must stay unco
 - The Reels grid uses the internal query Instagram's Reels tab loads its feed with. If it changes, the grid says it couldn't load reels; Grid in the corner switches back to Instagram's player.
 - Story replies, reactions and likes, and likes and comments in the Reels grid's player, use Instagram's comments endpoint and the saved queries its own like, comment and reply buttons send. If those change, a like flips back and a reply or comment says it couldn't be sent.
 - The stories row and viewer rely on Instagram's internal endpoints (the stories tray, the favourites list, and two saved queries its own viewer uses). If the row's endpoints change, the row disappears; if the viewer's queries change, stories open in Instagram's viewer instead. The rest keeps working.
+- Accounts are told apart by Instagram's `sessionid` cookie (which starts with the account's id) and named from the Profile link in Instagram's menu. A switch is caught by the response that signs the tab in to another account.
 - When several hidden posts load in a row (in Algo, a run of posts from accounts you follow), a note says so and the space below stays blank until more arrive as you scroll.
 
 ## License
