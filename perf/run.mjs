@@ -17,8 +17,8 @@
 //   node run.mjs --gecko-profile p.json   record a Firefox profiler profile
 //                                 (open it at profiler.firefox.com)
 //   node run.mjs --css '.sv-peek{box-shadow:none}'   A/B test a CSS override
-//   node run.mjs --src DIR        stories.js and content.css from DIR (e.g. an
-//                                 older version, from `git show`)
+//   node run.mjs --src DIR        the extension's scripts and content.css from
+//                                 DIR (e.g. an older version, from `git show`)
 //   node run.mjs --shot deck.png  screenshot the open viewer, and stop
 //   node run.mjs --shot-feed f.png  screenshot Following, and stop
 //   node run.mjs --display 0      put the window on display 0 (the main one)
@@ -621,7 +621,7 @@ const SCENARIOS = {
 };
 
 Object.assign(SCENARIOS, feedScenarios({
-  record, stop, settle, now: NOW,
+  record, stop, settle, now: NOW, bare: BARE,
   viewport: () => VIEWPORT,
   routeMs: () => routeMs,
 }));
@@ -791,8 +791,8 @@ async function main() {
         out = await scenario(page, run - 1);
         // Loads: what the extension adds to the feed's own time, where the
         // same load can be timed without it.
-        const ref = scenario.reference && !BARE ? await scenario(page, run + 500, true) : null;
-        for (const [k, load] of (out.loads || []).entries()) {
+        const ref = out && scenario.reference && !BARE ? await scenario(page, run + 500, true) : null;
+        for (const [k, load] of ((out && out.loads) || []).entries()) {
           const alone = ref ? ref.loads[k].ms : 0;
           out.inputs.push({ type: 'load', ms: load.ms - alone });
           out.did.load = `${out.did.load ? `${out.did.load}, ` : ''}${load.about}${ref ? `, alone ${Math.round(alone)}ms` : ''}`;

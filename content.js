@@ -386,9 +386,9 @@
     clearTimeout(nudgeTimer);
     // Right after posts come in, Instagram takes a frame or two to lay them
     // out before a scroll makes it load more (and ignores scrolls while it
-    // loads): nudge every frame for a moment, then now and then, counting
-    // those towards a stall.
-    const eager = Date.now() - metGrew < EAGER_MS;
+    // loads): while skipping seen posts, nudge every frame for a moment;
+    // otherwise, and then, now and then, counting those towards a stall.
+    const eager = hiddenRun > 0 && Date.now() - metGrew < EAGER_MS;
     const page = window.wrappedJSObject || window;
     if (eager) {
       page.dispatchEvent(new page.Event('scroll'));

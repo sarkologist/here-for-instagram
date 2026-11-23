@@ -101,7 +101,7 @@
   requestAnimationFrame(loop);
 
   // The first post of the watched view that shows (not hidden, on screen,
-  // its picture loaded), once painted.
+  // its picture loaded, or its video's first frame), once painted.
   function watchPosts() {
     const f = perf.feed;
     if (!f || f.t0 == null || f.shown || f.pending) return;
@@ -110,10 +110,12 @@
       const r = a.getBoundingClientRect();
       if (r.bottom <= 0 || r.top >= innerHeight) continue;
       const img = a.querySelector('.media img');
-      if (!img || !img.complete || !img.naturalWidth) return;
+      const video = !img && a.querySelector('.media video');
+      if (img ? !img.complete || !img.naturalWidth : !video || video.readyState < 2) return;
       f.pending = true;
       perf.painted().then((at) => {
-        f.shown = { at, id: a.dataset.id, src: img.currentSrc };
+        // (For a video, its poster stands in for the bytes it needed.)
+        f.shown = { at, id: a.dataset.id, src: img ? img.currentSrc : new URL(video.poster, location.href).href };
       });
       return;
     }

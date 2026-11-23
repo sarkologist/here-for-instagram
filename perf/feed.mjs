@@ -56,7 +56,7 @@ export const storageScript = `window.browser = { storage: { local: (() => {
     async get(keys) {
       const all = await load();
       const out = {};
-      for (const k of [].concat(keys)) if (k in all) out[k] = all[k];
+      for (const k of [].concat(keys)) if (k in all) out[k] = structuredClone(all[k]);
       return out;
     },
     async set(obj) {
@@ -195,6 +195,7 @@ export function feedScenarios(h) {
 
     // "Hide seen" off and on again.
     async 'toggle-seen'(page, run) {
+      if (h.bare) return null; // no toggle without the extension
       await open(page, run, 'following', (n) => n % 3 === 0);
       await h.settle(page, 800);
       await h.record(page);
