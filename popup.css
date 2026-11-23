@@ -86,6 +86,15 @@ li button:focus-visible {
   background: var(--dot, var(--muted));
 }
 
+.link {
+  margin: 8px 4px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+
 .hint {
   margin: 8px 4px 0;
   color: var(--muted);

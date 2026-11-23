@@ -38,4 +38,11 @@ async function render() {
   document.getElementById('off').hidden = containers;
 }
 
+// Temporary: the switch log (see background.js), for bug reports.
+document.getElementById('diag').addEventListener('click', async (e) => {
+  const log = await browser.runtime.sendMessage({ type: 'log' });
+  await navigator.clipboard.writeText(JSON.stringify(log, null, 1));
+  e.target.textContent = `Copied ${log.length} entries`;
+});
+
 render();

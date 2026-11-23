@@ -23,11 +23,37 @@ const ORIGIN = 'https://www.instagram.com';
 const DEFAULT_STORE = 'firefox-default';
 const ACCOUNTS_KEY = 'sinsta-accounts'; // user id -> { username, pic }
 const MADE_KEY = 'sinsta-containers'; // cookieStoreIds of containers made here
-const COLORS = ['blue', 'turquoise', 'green', 'yellow', 'orange', 'red', 'pink', 'purple'];
 const IG_TABS = ['*://www.instagram.com/*'];
 const HANDED_OFF_MS = 10000;
+// Containers made here look like ordinary tabs: the tab bar's line takes
+// the toolbar's own colour.
+const LOOK = { color: 'toolbar', icon: 'circle' };
 
 const hasContainers = () => !!browser.contextualIdentities;
+
+// ---- Diagnostics (temporary, while switching is worked out) ------------------
+// What happens around account switches, for the popup's "Copy diagnostics":
+// paths without query strings, cookie names, and the account id a session
+// cookie names. No cookie values.
+const LOG_KEY = 'sinsta-switch-log';
+let log = null;
+let logTimer = 0;
+const logLoaded = browser.storage.local.get(LOG_KEY).then((r) => { log = (r[LOG_KEY] || []).concat(log || []); });
+function note(event) {
+  (log || (log = [])).push({ t: new Date().toISOString().slice(11, 23), ...event });
+  if (log.length > 400) log = log.slice(-400);
+  clearTimeout(logTimer);
+  logTimer = setTimeout(() => logLoaded.then(() => browser.storage.local.set({ [LOG_KEY]: log })), 300);
+}
+const pathOf = (url) => {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace('www.instagram.com', '') + u.pathname;
+  } catch (_) {
+    return '?';
+  }
+};
+const AUTH_PATH = /log(in|out)|switch|one_?tap|accounts|session|nonce/i;
 
 async function stored(key, fallback) {
   return (await browser.storage.local.get(key))[key] || fallback;
@@ -101,12 +127,7 @@ function openTab(storeId, after, active = true) {
 }
 
 async function makeContainer() {
-  const cis = await containers();
-  const ci = await browser.contextualIdentities.create({
-    name: 'Instagram',
-    color: COLORS[cis.length % COLORS.length],
-    icon: 'circle',
-  });
+  const ci = await browser.contextualIdentities.create({ name: 'Instagram', ...LOOK });
   const made = await stored(MADE_KEY, []);
   await browser.storage.local.set({ [MADE_KEY]: [...made, ci.cookieStoreId] });
   return ci.cookieStoreId;
@@ -215,36 +236,64 @@ async function handOff(tab, from, userId, cookies, host) {
     await copyCookies(from, storeId);
     await applyCookies(cookies, host, storeId);
   }
-  await openTab(storeId, tab, tab.active);
+  const opened = await openTab(storeId, tab, tab.active);
+  note({ ev: 'handoff', from, to: storeId, reused: !!target, oldTab: tab.id, newTab: opened.id });
   await browser.tabs.remove(tab.id).catch(() => {});
 }
+
+browser.webRequest.onBeforeRequest.addListener((d) => {
+  if (AUTH_PATH.test(new URL(d.url).pathname)) {
+    note({ ev: 'request', method: d.method, path: pathOf(d.url), type: d.type, tab: d.tabId, store: d.cookieStoreId });
+  }
+}, { urls: ['*://*.instagram.com/*'] });
 
 function onHeaders(d) {
   const lines = setCookieLines(d.responseHeaders);
   if (!lines.length) return {};
+  const auth = lines.map(parseSetCookie).filter((c) => c && (c.name === 'sessionid' || c.name === 'ds_user_id'));
+  if (auth.length || AUTH_PATH.test(new URL(d.url).pathname)) {
+    note({
+      ev: 'response', status: d.statusCode, path: pathOf(d.url), type: d.type, tab: d.tabId, store: d.cookieStoreId,
+      sets: lines.map((l) => {
+        const c = parseSetCookie(l);
+        if (!c) return '?';
+        const gone = !c.value || (c.expires !== undefined && c.expires <= Date.now() / 1000);
+        const who = c.name === 'sessionid' ? '(' + (userOfSession(c.value) || 'no id') + ')' : c.name === 'ds_user_id' ? '(' + c.value + ')' : '';
+        return c.name + who + (gone ? ' DELETED' : '');
+      }),
+    });
+  }
+  const decide = (why, result) => {
+    if (auth.length) note({ ev: 'decision', path: pathOf(d.url), tab: d.tabId, why });
+    return result;
+  };
   const strip = () => ({ responseHeaders: d.responseHeaders.filter((h) => h.name.toLowerCase() !== 'set-cookie') });
   // Late responses for a tab already moved out must not change its old jar.
   const off = handedOff.get(d.tabId);
-  if (off && Date.now() - off < HANDED_OFF_MS) return strip();
+  if (off && Date.now() - off < HANDED_OFF_MS) return decide('stripped: tab handed off', strip());
   const cookies = lines.map(parseSetCookie).filter(Boolean);
   const session = cookies.find((c) => c.name === 'sessionid');
   const ds = cookies.find((c) => c.name === 'ds_user_id');
   const userId = session && session.value
     && (userOfSession(session.value) || (ds && /^\d+$/.test(ds.value) ? ds.value : null));
-  if (!userId) return {}; // no sign-in here (signing out stays as on Instagram)
+  if (!userId) return decide('pass: no sign-in', {}); // signing out stays as on Instagram
   return (async () => {
     const storeId = d.cookieStoreId || DEFAULT_STORE;
     const current = await userIn(storeId);
-    if (!current || current === userId) return {}; // signing in, or a refresh
+    if (!current) return decide('pass: jar signed out', {});
+    if (current === userId) return decide('pass: same account', {});
     const tab = await switchingTab(d, storeId);
-    if (!tab || tab.cookieStoreId !== storeId) return {};
+    if (!tab || tab.cookieStoreId !== storeId) return decide('pass: no tab', {});
     const others = (await igTabs(storeId)).filter((t) => t.id !== tab.id);
-    if (!others.length) return {}; // alone in its jar: nothing to keep apart
-    if (!await queryContainers()) return {};
+    if (!others.length) return decide('pass: alone in jar', {});
+    if (!await queryContainers()) return decide('pass: containers off', {});
     const host = new URL(d.url).hostname;
     // Should moving fail, switch the jar after all, as Instagram would.
-    handOff(tab, storeId, userId, cookies, host).catch(() => applyCookies(cookies, host, storeId));
-    return strip();
+    handOff(tab, storeId, userId, cookies, host).catch((e) => {
+      note({ ev: 'handoff failed', error: String(e) });
+      return applyCookies(cookies, host, storeId);
+    });
+    return decide(`moving tab ${tab.id} from ${current} to ${userId}`, strip());
   })();
 }
 
@@ -297,7 +346,7 @@ async function noteViewer(storeId, pageUserId, username, pic) {
   const name = '@' + username;
   try {
     const ci = await browser.contextualIdentities.get(storeId);
-    if (ci.name !== name) await browser.contextualIdentities.update(storeId, { name });
+    if (ci.name !== name || ci.color !== LOOK.color) await browser.contextualIdentities.update(storeId, { name, ...LOOK });
   } catch (_) {}
 }
 
@@ -313,6 +362,8 @@ browser.runtime.onMessage.addListener((m, sender) => {
       return Promise.all([listAccounts(), queryContainers()]).then(([accounts, cis]) => ({ accounts, containers: !!cis }));
     case 'open':
       return openTab(m.storeId, m.after).then(() => true);
+    case 'log':
+      return logLoaded.then(() => log);
   }
   return undefined;
 });
@@ -324,6 +375,7 @@ const pending = new Map();
 browser.cookies.onChanged.addListener(({ removed, cookie, cause }) => {
   if (cookie.name !== 'sessionid') return;
   if (!/(^|\.)instagram\.com$/.test(cookie.domain)) return;
+  note({ ev: 'cookie', store: cookie.storeId, removed, cause, user: removed ? null : userOfSession(cookie.value) });
   if (removed && cause === 'overwrite') return; // the new value follows
   const storeId = cookie.storeId;
   clearTimeout(pending.get(storeId));
