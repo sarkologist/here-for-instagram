@@ -33,6 +33,11 @@
       }
       return { frames: this.frames, work: this.work, inputs: this.inputs, did: this.did, fns: this.fns, shown: this.shown, video: { dropped, total, count: this.videos.size } };
     },
+    // Feed scenarios: when the first visible post of `view` shows, from t0
+    // (performance.now; null: from the next click or key).
+    watchFeed(view, t0 = null) {
+      this.feed = { view, t0, shown: null };
+    },
     // For run.mjs --profile: a function's inclusive time.
     time(name, fn, self, args) {
       const t0 = performance.now();
@@ -73,10 +78,14 @@
   // accounts put on stage, peeks, scrolls.
   const loop = (t) => {
     requestAnimationFrame(loop);
+    watchPosts();
     if (!perf.recording) return;
+    const articles = document.querySelectorAll('main article').length;
+    if (articles) perf.did.articles = Math.max(perf.did.articles || 0, articles);
     perf.frames.push(t);
     pending.push([perf.frames.length - 1, performance.now()]);
     work.port2.postMessage(0);
+    for (const v of document.querySelectorAll('main article video')) if (!v.paused) perf.videos.add(v);
     const root = document.getElementById('sinsta-viewer');
     if (!root) return;
     const video = root.querySelector('.sv-media > video');
@@ -91,6 +100,29 @@
   };
   requestAnimationFrame(loop);
 
+  // The first post of the watched view that shows (not hidden, on screen,
+  // its picture loaded, or its video's first frame), once painted.
+  function watchPosts() {
+    const f = perf.feed;
+    if (!f || f.t0 == null || f.shown || f.pending) return;
+    for (const a of document.querySelectorAll(`main article[data-view="${f.view}"]`)) {
+      if (!a.offsetHeight || getComputedStyle(a).visibility === 'hidden' || a.matches('.sinsta-hide, .sinsta-tail')) continue;
+      const r = a.getBoundingClientRect();
+      if (r.bottom <= 0 || r.top >= innerHeight) continue;
+      const img = a.querySelector('.media img');
+      const video = !img && a.querySelector('.media video');
+      if (img ? !img.complete || !img.naturalWidth : !video || video.readyState < 2) return;
+      f.pending = true;
+      perf.painted().then((at) => {
+        // (For a video, its poster stands in for the bytes it needed.)
+        f.shown = { at, id: a.dataset.id, src: img ? img.currentSrc : new URL(video.poster, location.href).href };
+      });
+      return;
+    }
+  }
+  const watch = location.hash.match(/^#watch-(\w+)$/);
+  if (watch) perf.watchFeed(watch[1], 0);
+
   window.addEventListener('resize', () => {
     if (perf.recording) perf.did.resizes = `${perf.did.resizes || ''} ${Math.round(performance.now())}:${innerWidth}x${innerHeight}`;
   });
@@ -100,6 +132,7 @@
   // viewer's own handlers; the frame it waits for comes after them.
   for (const type of ['keydown', 'click', 'pointerover', 'wheel']) {
     window.addEventListener(type, (e) => {
+      if ((type === 'click' || type === 'keydown') && perf.feed && perf.feed.t0 == null) perf.feed.t0 = e.timeStamp;
       if (!perf.recording) return;
       const t0 = e.timeStamp;
       const target = e.target && e.target.closest ? e.target.closest('.sv-peek, .sv-stage') : null;
