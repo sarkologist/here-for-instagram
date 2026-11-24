@@ -147,7 +147,8 @@ const Sinsta = (() => {
         is_async_ads_in_headload_enabled: '0',
         is_async_ads_rti: '0',
         rti_delivery_backend: '0',
-        pagination_source: variant,
+        // Instagram's own home feed sends none, and the query fails with one.
+        ...(variant === 'home' ? {} : { pagination_source: variant }),
         feed_view_info: '[]',
       },
       first: 12,
@@ -166,9 +167,15 @@ const Sinsta = (() => {
     const items = [];
     for (const e of conn.edges || []) {
       const node = e && e.node;
-      const it = node && mediaItem(node.media);
+      if (!node) continue;
+      // The home feed's suggestions come as explore stories; ads as `ad`
+      // items, which carry no media of this kind.
+      const story = node.explore_story;
+      const m = node.media || (story && story.media);
+      const it = mediaItem(m);
       if (!it) continue;
-      if (node.ad || node.media.ad_id) it.ad = true;
+      if (node.ad || (story && story.ad) || m.ad_id) it.ad = true;
+      it.suggested = !!story;
       items.push(it);
     }
     const info = conn.page_info || {};

@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, NOW, accounts, media, ad, page, freshContext, logIn, settled } from './stand-in.mjs';
+import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled } from './stand-in.mjs';
 
 const LIST = { 'sinsta-surface': { layout: 'list' } };
 const GRID = { 'sinsta-surface': { layout: 'grid', cols: { following: 3 } } };
@@ -20,9 +20,9 @@ function feeds111() {
   accounts['111'].feeds.favorites = [media('Cfav1', 'fav_of_a', { ago: 200 })];
   accounts['111'].feeds.home = [
     media('Halice', 'alice'),
-    media('Hstranger', 'stranger', { following: false }),
+    suggested(media('Hstranger', 'stranger', { following: false })),
     ad(media('Had', 'brand', { following: false })),
-    media('Hother', 'other', { following: false }),
+    suggested(media('Hother', 'other', { following: false })),
   ];
 }
 
@@ -161,4 +161,17 @@ test('The story viewer\'s videos aren\'t silenced by the surface', async () => {
     setTimeout(() => resolve(v.muted), 50);
   }));
   assert.equal(muted, false);
+});
+
+test('Algo skips past the posts of accounts you follow to Instagram\'s suggestions', async () => {
+  await freshContext(LIST);
+  await logIn('111');
+  feeds111();
+  // Three pages of followed accounts before the first suggestion.
+  accounts['111'].feeds.home = [
+    ...Array.from({ length: 30 }, (_, i) => media(`Hf${i}`, 'alice')),
+    suggested(media('Hs1', 'stranger', { following: false })),
+  ];
+  await page.goto(ORIGIN + '/');
+  assert.deepEqual(await posts(), ['stranger']);
 });

@@ -150,7 +150,9 @@
     listBtn.setAttribute('aria-pressed', String(!grid || unavailable));
     gridBtn.setAttribute('aria-pressed', String(grid && !unavailable));
     gridBtn.disabled = unavailable;
-    gridBtn.title = unavailable ? "Couldn't load this feed, so this is Instagram's own page" : 'Grid (G)';
+    gridBtn.title = !unavailable ? 'Grid (G)'
+      : feed(cur).unavailable === 'unclassified' ? "This feed doesn't say whom you follow, so this is Instagram's own page"
+        : "Couldn't load this feed, so this is Instagram's own page";
     listBtn.title = cur === 'reels' ? "List: Instagram's own player (G)" : 'List (G)';
     stepper.hidden = !(grid && active);
     // Setting text always replaces the node, which would wake the
@@ -193,15 +195,24 @@
     return belongs(view, it) && !(hidingSeen(view) && seenBefore(view, it));
   }
 
-  // Seen posts in a row at the end of what's loaded, skipped while looking
-  // for unseen ones.
+  // Posts in a row at the end of what's loaded that were skipped while
+  // looking for ones to show: seen ones (with Hide seen on) or, in Algo,
+  // ones from accounts you follow (Instagram's home feed puts its
+  // suggestions after the recent posts of people you follow).
   function seenRun(view) {
-    if (!hidingSeen(view)) return 0;
+    const algo = view === 'algo';
+    if (!algo && !hidingSeen(view)) return 0;
     const items = feed(view).items;
     let n = 0;
     for (let i = items.length - 1; i >= 0; i--) {
-      if (!belongs(view, items[i])) continue;
-      if (!seenBefore(view, items[i])) break;
+      const it = items[i];
+      if (it.ad) continue;
+      if (algo) {
+        if (belongs(view, it)) break;
+      } else {
+        if (!belongs(view, it)) continue;
+        if (!seenBefore(view, it)) break;
+      }
       n++;
     }
     return n;
@@ -645,7 +656,7 @@
     if (!page) {
       f.failed = true;
       // A home view that never loaded falls back to Instagram's page.
-      if (view !== 'reels' && !f.items.length) f.unavailable = true;
+      if (view !== 'reels' && !f.items.length) f.unavailable = 'failed';
       schedule();
       if (view === cur) syncStatus();
       return;
@@ -654,7 +665,7 @@
     // tell suggestions apart, so Instagram's page (filtered by its labels)
     // takes over.
     if (view === 'algo' && !f.items.length && page.items.length && page.items.every((it) => it.following === null)) {
-      f.unavailable = true;
+      f.unavailable = 'unclassified';
       schedule();
       return;
     }
@@ -724,12 +735,21 @@
     statusKey = key;
     status.replaceChildren();
     if (f.loading) {
-      if (run) status.append(el('p', {}, `Looking for posts you haven't seen… (skipped ${run})`));
+      if (run && cur === 'algo') status.append(el('p', {}, `Skipping posts from accounts you follow… (${run})`));
+      else if (run) status.append(el('p', {}, `Looking for posts you haven't seen… (skipped ${run})`));
       status.append(el('span', { className: 'sr-spinner' }));
     } else if (f.failed) {
       const retry = el('button', { type: 'button', className: 'sr-retry' }, 'Try again');
       retry.addEventListener('click', () => loadMore());
       status.append(el('p', {}, cur === 'reels' ? "Couldn't load reels." : "Couldn't load more posts."), retry);
+    } else if (run >= f.runLimit && cur === 'algo') {
+      const further = el('button', { type: 'button', className: 'sr-retry' }, 'Look further');
+      further.addEventListener('click', () => {
+        f.runLimit = seenRun(cur) + RUN_LIMIT;
+        syncStatus();
+        fill();
+      });
+      status.append(el('p', { className: 'sf-strong' }, `No suggestions in the last ${run} posts.`), further);
     } else if (run >= f.runLimit) {
       status.append(el('p', { className: 'sf-strong' }, `You're caught up: the last ${run} posts were ones you've seen.`), caughtUpButtons(f));
     } else if (f.ended) {

@@ -50,6 +50,8 @@ export const media = (code, username, { following = true, ago = 3600, slides = 1
   };
 };
 export const ad = (m) => ({ ad: true, media: m });
+// A suggested post, as the home feed sends it.
+export const suggested = (m) => ({ explore_story: { media: m } });
 
 // What Instagram tells each logged-in account: its stories tray, its
 // favourites and its home feeds (`feeds[variant]`: edges, newest first;
@@ -119,14 +121,21 @@ export async function freshContext(storage = {}) {
         const reels = vars.reel_ids_arr.map((id) => acc.tray.find((r) => r.id === id)).filter(Boolean);
         return json({ data: { xdt_api__v1__feed__reels_media: { reels_media: reels } } });
       }
-      if (vars.variant && vars.data && vars.data.pagination_source) {
+      if (vars.variant && vars.data) {
         const edges = acc.feeds[vars.variant];
-        if (!edges) return json({ data: null });
+        // As on Instagram: the home feed fails with a pagination source, the
+        // others need theirs.
+        const source = vars.data.pagination_source;
+        if (!edges || (vars.variant === 'home' ? source : source !== vars.variant)) return json({ data: null });
+        // Pages of 12, the cursor being the index to start at.
+        const start = Number(vars.after || 0);
+        const page = edges.slice(start, start + 12);
+        const more = start + 12 < edges.length;
         return json({
           data: {
             xdt_api__v1__feed__timeline__connection: {
-              edges: edges.map((e) => (e.media ? { node: e } : { node: { media: e } })),
-              page_info: { has_next_page: false, end_cursor: null },
+              edges: page.map((e) => (e.media || e.explore_story ? { node: e } : { node: { media: e } })),
+              page_info: { has_next_page: more, end_cursor: more ? String(start + 12) : null },
             },
           },
         });
