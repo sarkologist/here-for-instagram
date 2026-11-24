@@ -77,3 +77,16 @@ test('Profile picture without a story: the click goes on to Instagram', async ()
   assert.deepEqual(await openFromProfile('nostory'),
     { viewer: false, user: null, cards: 0, instagramGotClick: true, path: '/nostory/' });
 });
+
+test('A click outside the story closes the viewer; on the story, it does not', async () => {
+  await freshContext();
+  await logIn('111');
+  await openFromProfile('carol');
+  const isOpen = () => page.evaluate(() => !!document.querySelector('#sinsta-viewer'));
+  // The left of the story: back, which on the first story stays put.
+  const box = await page.locator('#sinsta-viewer .sv-stage').boundingBox();
+  await page.mouse.click(box.x + 10, box.y + box.height / 2);
+  assert.equal(await isOpen(), true);
+  await page.mouse.click(10, box.y + box.height / 2);
+  assert.equal(await isOpen(), false);
+});

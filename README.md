@@ -57,7 +57,7 @@ Unwatched stories come first, then fully watched ones with a grey ring, each gro
 | Hold, or `Space` | pause a video |
 | `M` | sound on/off |
 | `L` | like |
-| `Esc` | close |
+| Click outside the story, or `Esc` | close |
 
 Scrolling only moves between accounts; clicks move between an account's stories. The carousel turns as you swipe, with the trackpad's momentum, and comes to rest on an account; a mouse wheel turns it smoothly and settles on the nearest account when you stop.
 
