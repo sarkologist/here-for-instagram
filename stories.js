@@ -132,32 +132,56 @@ const Sinsta = (() => {
     return Math.max(0, (counts.total_count || 0) - listed);
   }
 
+  // One page of one of Instagram's home feeds (`variant`: following,
+  // favorites or home), as the query's connection, or null on failure.
+  // Reports nothing as viewed.
+  async function feedConnection(variant, after) {
+    const t = tokens();
+    if (!t || !t.device) return null;
+    const res = await gql(DOC_FEED, {
+      after: after || null,
+      before: null,
+      data: {
+        device_id: t.device,
+        is_async_ads_double_request: '0',
+        is_async_ads_in_headload_enabled: '0',
+        is_async_ads_rti: '0',
+        rti_delivery_backend: '0',
+        pagination_source: variant,
+        feed_view_info: '[]',
+      },
+      first: 12,
+      last: null,
+      variant,
+      ...FEED_FLAGS,
+    });
+    return (res && res.data && res.data.xdt_api__v1__feed__timeline__connection) || null;
+  }
+
+  // One page of a home feed's posts and reels, as { items, after } where
+  // `after` is null at the end, or null on failure.
+  async function feedPage(variant, after) {
+    const conn = await feedConnection(variant, after);
+    if (!conn) return null;
+    const items = [];
+    for (const e of conn.edges || []) {
+      const node = e && e.node;
+      const it = node && mediaItem(node.media);
+      if (!it) continue;
+      if (node.ad || node.media.ad_id) it.ad = true;
+      items.push(it);
+    }
+    const info = conn.page_info || {};
+    return { items, after: info.has_next_page ? info.end_cursor : null };
+  }
+
   // Posts by followed accounts published since `since` (unix seconds), newest
   // first, from the chronological Following feed. Reports nothing as viewed.
   async function recentPosts(since, maxPages = 4) {
-    const t = tokens();
-    if (!t || !t.device) return null;
     const out = [];
     let after = null;
     for (let page = 0; page < maxPages; page++) {
-      const res = await gql(DOC_FEED, {
-        after,
-        before: null,
-        data: {
-          device_id: t.device,
-          is_async_ads_double_request: '0',
-          is_async_ads_in_headload_enabled: '0',
-          is_async_ads_rti: '0',
-          rti_delivery_backend: '0',
-          pagination_source: 'following',
-          feed_view_info: '[]',
-        },
-        first: 12,
-        last: null,
-        variant: 'following',
-        ...FEED_FLAGS,
-      });
-      const conn = res && res.data && res.data.xdt_api__v1__feed__timeline__connection;
+      const conn = await feedConnection('following', after);
       if (!conn) return page ? out : null;
       let older = false;
       for (const e of conn.edges || []) {
@@ -191,28 +215,59 @@ const Sinsta = (() => {
     return String(o.pk);
   }
 
-  // A reel as the grid and player use it, from Instagram's media object.
-  function clipItem(m) {
-    const video = m && (m.video_versions || [])[0];
-    if (!m || !m.code || !m.user || !video) return null;
-    const cands = (m.image_versions2 && m.image_versions2.candidates) || [];
-    const portrait = cands.filter((c) => c.height > c.width);
+  // One photo or video of a post: its sizes of picture (largest first), its
+  // video if any, and its shape.
+  function slideOf(o) {
+    const thumbs = ((o.image_versions2 && o.image_versions2.candidates) || []).slice().sort((a, b) => b.width - a.width);
+    const video = (o.video_versions || [])[0];
+    const big = thumbs[0] || {};
+    return {
+      thumbs,
+      video: video ? video.url : null,
+      w: o.original_width || big.width || 1,
+      h: o.original_height || big.height || 1,
+    };
+  }
+
+  // A post or reel as the grids, the list and the player use it, from
+  // Instagram's media object. A carousel has a slide per photo or video;
+  // `thumbs` and `video` are the first slide's.
+  function mediaItem(m) {
+    if (!m || !m.code || !m.user || !m.user.username) return null;
+    const parts = m.carousel_media && m.carousel_media.length ? m.carousel_media : [m];
+    const slides = parts.map(slideOf).filter((s) => s.thumbs.length || s.video);
+    if (!slides.length) return null;
+    const fs = m.user.friendship_status;
     return {
       pk: idOf(m),
       code: m.code,
+      kind: m.product_type === 'clips' ? 'reel' : 'post',
       username: m.user.username,
       pic: m.user.profile_pic_url,
       caption: (m.caption && m.caption.text) || '',
-      likes: m.like_and_view_counts_disabled ? null : m.like_count,
+      likes: m.like_and_view_counts_disabled || m.like_count == null ? null : m.like_count,
       liked: !!m.has_liked,
       comments: m.comment_count || 0,
       commentsOff: !!(m.comments_disabled || m.commenting_disabled_for_viewer),
       token: m.organic_tracking_token || null,
-      // Covers, largest first: portrait ones, else the square crops.
-      thumbs: (portrait.length ? portrait : cands).sort((a, b) => b.width - a.width),
-      video: video.url,
       takenAt: m.taken_at,
+      slides,
+      thumbs: slides[0].thumbs,
+      video: slides[0].video,
+      // Whether you follow the author, when the feed says (null when not).
+      following: fs && typeof fs.following === 'boolean' ? fs.following : null,
+      ad: false,
     };
+  }
+
+  // A reel as the Reels grid and player use it.
+  function clipItem(m) {
+    const it = mediaItem(m);
+    if (!it || !it.video) return null;
+    // Covers: portrait ones, else the square crops.
+    const portrait = it.thumbs.filter((c) => c.height > c.width);
+    if (portrait.length) it.thumbs = it.slides[0].thumbs = portrait;
+    return it;
   }
 
   // Instagram's media object for a post or reel, by its shortcode, which is
@@ -263,9 +318,9 @@ const Sinsta = (() => {
   const mutated = (res) => (res && res.data && Object.values(res.data)[0]) || null;
 
   // Like or unlike a post or reel. Resolves to whether it worked.
-  async function likeMedia(pk, on, token) {
+  async function likeMedia(pk, on, token, module = 'clips_viewer_clips_tab') {
     const input = { media_id: pk, tracking_token: token || undefined };
-    if (on) input.container_module = 'clips_viewer_clips_tab';
+    if (on) input.container_module = module;
     return !!mutated(await gql(on ? DOC_LIKE : DOC_UNLIKE, { input }, true));
   }
 
@@ -1849,7 +1904,7 @@ const Sinsta = (() => {
   }
 
   return {
-    api, go, el, shadowVideo, hostOf, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, reelByCode,
+    api, go, el, shadowVideo, hostOf, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, reelByCode, feedPage,
     mark, userIds, lookUpId, ago,
     likeMedia, likeComment, comments, replies, addComment,
   };
