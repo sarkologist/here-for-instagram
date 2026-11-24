@@ -265,12 +265,12 @@ await shot("2-stories.png");
 await tab.keyboard.press("Escape");
 
 await tab.goto("https://www.instagram.com/reels/");
-await tab.waitForSelector("#sinsta-reels .sr-tile img");
+await tab.waitForSelector("#sinsta-surface .sf-tile img");
 await tab.keyboard.press("+"); // 5 columns
 await settle();
 await shot("3-reels-grid.png");
 
-await tab.locator("#sinsta-reels .sr-tile").first().click();
+await tab.locator("#sinsta-surface .sf-tile").first().click();
 await tab.waitForSelector("#sinsta-reel-player .sr-video");
 if (await tab.locator("#sinsta-reel-player .sr-comments").isHidden()) await tab.keyboard.press("c");
 await tab.waitForSelector("#sinsta-reel-player .sr-c");

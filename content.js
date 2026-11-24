@@ -5,7 +5,9 @@
   //   Algo        Instagram's home feed, keeping only its suggested posts
   //   Following   Instagram's chronological feed, minus favourites
   //   Favourites  the same, for accounts you starred
-  // Ads are hidden everywhere.
+  // Ads are hidden everywhere. Reels is a fourth tab beside them. feed.js
+  // draws these views itself; what's here filters Instagram's own page,
+  // which a view falls back to when its feed can't be loaded.
   const { api, go, el, mark, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, userIds, lookUpId } = Sinsta;
 
   const VIEWS = [
@@ -34,7 +36,15 @@
       href: '/?variant=favorites',
       icon: ['M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9 6.8 19.6l1-5.8L3.5 9.7l5.9-.8z'],
     },
+    {
+      id: 'reels',
+      label: 'Reels',
+      href: '/reels/',
+      icon: ['M7 3.5h10A3.5 3.5 0 0 1 20.5 7v10a3.5 3.5 0 0 1-3.5 3.5H7A3.5 3.5 0 0 1 3.5 17V7A3.5 3.5 0 0 1 7 3.5z', 'M3.5 8.5h17', 'M8.5 3.5l3 5', 'M14 3.5l3 5', 'M10.5 12v5l4-2.5z'],
+    },
   ];
+  const viewById = (id) => VIEWS.find((v) => v.id === id);
+  const HOME_VIEWS = new Set(['algo', 'following', 'favorites']);
 
   const HIDE = 'sinsta-hide';
   const TAIL = 'sinsta-tail';
@@ -115,6 +125,11 @@
   }
 
   function filterFeed(view) {
+    // feed.js draws this view over Instagram's page.
+    if (covered()) {
+      setNote(null);
+      return;
+    }
     // "Suggested for you" accounts are recommendations: Algo only.
     if (view !== 'algo') {
       for (const a of document.querySelectorAll('a[href="/explore/people/"]')) {
@@ -198,7 +213,7 @@
       else localStorage.removeItem(OLD_REELS_KEY);
     } catch (_) {}
     // Opening instagram.com lands on Algo; reopen the last view instead.
-    const last = VIEWS.find((v) => v.id === prefs.lastView);
+    const last = HOME_VIEWS.has(prefs.lastView) && viewById(prefs.lastView);
     if (location.pathname === '/' && !location.search && last && last.id !== 'algo') {
       location.replace(last.href);
       return;
@@ -207,6 +222,7 @@
     syncHideSeen(currentView());
     syncToggle();
     if (reels) rememberSeenReels(reels);
+    changed();
     schedule();
   }
 
@@ -234,7 +250,8 @@
 
   const timers = new WeakMap();
   const watched = new WeakSet();
-  const onScreen = (article) => !article.matches(`.${HIDE}, .${TAIL}`);
+  const covered = () => !!(Sinsta.surface && Sinsta.surface.active());
+  const onScreen = (article) => !covered() && !article.matches(`.${HIDE}, .${TAIL}`);
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
       clearTimeout(timers.get(e.target));
@@ -332,7 +349,11 @@
     runLimit = RUN_LIMIT;
     stalls = 0;
     metAtNudge = 0;
+    changed();
   }
+
+  // Tell feed.js that what shows may have changed.
+  const changed = () => Sinsta.surface && Sinsta.surface.changed();
 
   function hideSeenPosts(articles, view) {
     const shown = [];
@@ -543,6 +564,7 @@
     for (const u of before) if (!favNames.has(u)) unfavved.add(u);
     buildFavCss();
     buildUnfavCss();
+    changed();
     schedule();
   }
 
@@ -562,16 +584,21 @@
 
   // ---- Switcher and stories bar -------------------------------------------
 
-  const tabs = el('nav', { className: 'sinsta-tabs' },
-    ...VIEWS.map((v) => {
-      const tab = el('a', { className: 'sinsta-tab', href: v.href }, icon(v.icon), v.label);
-      tab.dataset.view = v.id;
-      return tab;
-    }));
+  // The tabs come in two groups: accounts you chose (Following, Favourites,
+  // with Hide seen beside them), and Instagram's picks (Algo, Reels). The
+  // slot holds feed.js's List / Grid switch and column count.
+  const tab = (v) => {
+    const a = el('a', { className: 'sinsta-tab', href: v.href }, icon(v.icon), v.label);
+    a.dataset.view = v.id;
+    return a;
+  };
+  const tabs = el('nav', { className: 'sinsta-tabs' }, tab(viewById('following')), tab(viewById('favorites')));
+  const picks = el('nav', { className: 'sinsta-tabs sinsta-picks' }, tab(viewById('algo')), tab(viewById('reels')));
   const seenToggle = el('button', { className: 'sinsta-toggle', type: 'button' }, icon(EYE_OFF), 'Hide seen');
+  const slot = el('div', { className: 'sinsta-slot' });
   const stories = el('div', { className: 'sinsta-stories', hidden: true });
   const bar = el('div', { id: 'sinsta-bar' },
-    el('div', { className: 'sinsta-controls' }, tabs, seenToggle),
+    el('div', { className: 'sinsta-controls' }, tabs, seenToggle, picks, slot),
     stories);
 
   seenToggle.addEventListener('click', (e) => {
@@ -581,9 +608,11 @@
     save(PREFS_KEY, prefs);
     syncToggle();
     newVisit();
-    window.scrollTo(0, 0);
+    toTop();
     schedule();
   });
+
+  const toTop = () => (Sinsta.surface ? Sinsta.surface.toTop() : window.scrollTo(0, 0));
 
   function syncToggle() {
     seenToggle.setAttribute('aria-pressed', String(prefs.hideSeen));
@@ -609,7 +638,7 @@
       return;
     }
     const href = a.getAttribute('href');
-    if (href === location.pathname + location.search) window.scrollTo(0, 0);
+    if (href === location.pathname + location.search) toTop();
     else go(href);
   });
 
@@ -619,11 +648,11 @@
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const a = e.target.closest && e.target.closest('a[href="/"]');
     if (!a || bar.contains(a)) return;
-    const last = VIEWS.find((v) => v.id === prefs.lastView);
+    const last = HOME_VIEWS.has(prefs.lastView) && viewById(prefs.lastView);
     if (!last || last.id === 'algo') return;
     e.preventDefault();
     e.stopPropagation();
-    if (location.pathname === '/' && currentView() === last.id) window.scrollTo(0, 0);
+    if (location.pathname === '/' && currentView() === last.id) toTop();
     else go(last.href);
   }, true);
 
@@ -678,16 +707,17 @@
     }));
   }
 
-  function mountBar() {
-    const column = feedColumn();
-    if (!column) return;
-    if (bar.parentElement !== column) column.prepend(bar);
-    const view = currentView();
+  // The bar goes atop feed.js's surface, over Instagram's Reels player, or
+  // (where Instagram's page shows) atop its feed.
+  function mountBar(view) {
+    const host = (Sinsta.surface && Sinsta.surface.barHost(view)) || (view === 'reels' ? null : feedColumn());
+    if (!host) return;
+    if (bar.parentElement !== host) host.prepend(bar);
     if (bar.dataset.view !== view) {
       bar.dataset.view = view;
-      for (const tab of tabs.children) {
-        if (tab.dataset.view === view) tab.setAttribute('aria-current', 'page');
-        else tab.removeAttribute('aria-current');
+      for (const t of bar.querySelectorAll('.sinsta-tab')) {
+        if (t.dataset.view === view) t.setAttribute('aria-current', 'page');
+        else t.removeAttribute('aria-current');
       }
     }
     // Instagram shows no stories row on these two views; Algo's is hidden.
@@ -710,10 +740,15 @@
     ensureSavedItem();
     ensureFavButtons();
     syncBadgeTip();
-    const view = location.pathname === '/' ? currentView() : null;
+    const onReels = /^\/reels(\/|$)/.test(location.pathname);
+    const view = location.pathname === '/' ? currentView() : onReels ? 'reels' : null;
     document.documentElement.toggleAttribute('data-sinsta-favourites', view === 'favorites');
     document.documentElement.toggleAttribute('data-sinsta-following', view === 'following');
     if (!view) return;
+    if (view === 'reels') {
+      mountBar(view);
+      return;
+    }
     if (view !== visitView) {
       visitView = view;
       newVisit();
@@ -723,7 +758,7 @@
       save(PREFS_KEY, prefs);
     }
     syncHideSeen(view);
-    mountBar();
+    mountBar(view);
     filterFeed(view);
   }
 
@@ -909,7 +944,7 @@
   }
 
   function favButton(user) {
-    const b = el('button', { type: 'button', className: 'sinsta-fav' }, icon(VIEWS[2].icon));
+    const b = el('button', { type: 'button', className: 'sinsta-fav' }, icon(viewById('favorites').icon));
     b.dataset.user = user;
     b.addEventListener('click', (e) => {
       e.preventDefault();
@@ -965,6 +1000,7 @@
       buildFavCss();
       buildUnfavCss();
       favReelsAt = 0; // refetch the Favourites stories row
+      changed();
     }
     syncFav(b);
     schedule();
@@ -1116,6 +1152,22 @@
       video.pause();
     }
   }, true);
+
+  // For feed.js: the bar, seen posts and favourites.
+  Sinsta.home = {
+    bar,
+    slot,
+    favNames,
+    unfavved,
+    hideSeen: () => !!(prefs.hideSeen && seen),
+    // Seen before this visit started.
+    seenBefore(code) {
+      const t = seen ? seen.get(code) : undefined;
+      return t !== undefined && t < visitStart;
+    },
+    markSeen: markPostSeen,
+    showSeen: () => showSeenBtn.click(),
+  };
 
   new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
   window.addEventListener('popstate', schedule);

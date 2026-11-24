@@ -205,14 +205,14 @@ function makeVideos() {
 const FILES = {
   '/perf/stories.js': [join(ROOT, 'stories.js'), 'text/javascript'],
   '/perf/content.js': [join(ROOT, 'content.js'), 'text/javascript'],
-  '/perf/reels.js': [join(ROOT, 'reels.js'), 'text/javascript'],
+  '/perf/feed.js': [join(ROOT, 'feed.js'), 'text/javascript'],
   '/perf/content.css': [join(ROOT, 'content.css'), 'text/css'],
   '/perf/probe.js': [join(HERE, 'probe.js'), 'text/javascript'],
   '/perf/feed-app.js': [join(HERE, 'feed-app.js'), 'text/javascript'],
 };
 // The content scripts as the manifest has Firefox load them, at document start.
 const EXTENSION = '<link rel="stylesheet" href="/perf/content.css"><script src="/perf/stories.js"></script>'
-  + '<script src="/perf/content.js"></script><script src="/perf/reels.js"></script>';
+  + '<script src="/perf/content.js"></script><script src="/perf/feed.js"></script>';
 
 // One page for the whole session (one window, so it takes the foreground only
 // once); load() reloads it with the given accounts.

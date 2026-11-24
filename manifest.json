@@ -18,7 +18,7 @@
       "js": [
         "stories.js",
         "content.js",
-        "reels.js"
+        "feed.js"
       ],
       "css": [
         "content.css"
