@@ -77,6 +77,11 @@ html[data-sinsta-caught-up] main [role="progressbar"] {
   opacity: 0.6;
 }
 
+/* Reels in Instagram's menu: it is a tab in the bar instead. */
+[data-sinsta-gone] {
+  display: none !important;
+}
+
 /* Instagram's "← Following" header: the switcher replaces it. */
 main a[href*="variant=home"] {
   display: none !important;
@@ -140,8 +145,22 @@ main a[href*="variant=home"] {
   stroke-linejoin: round;
 }
 
-#sinsta-bar[data-view="algo"] .sinsta-toggle {
-  display: none;
+#sinsta-bar:is([data-view="algo"], [data-view="reels"]) .sinsta-toggle {
+  visibility: hidden;
+}
+
+/* Instagram's picks sit apart from the accounts you chose. */
+.sinsta-picks {
+  margin-left: 10px;
+}
+
+.sinsta-slot {
+  margin-left: 10px;
+}
+
+.sinsta-controls {
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .sinsta-tabs {
@@ -233,6 +252,7 @@ main a[href*="variant=home"] {
 }
 
 .sinsta-name {
+  display: none;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -323,7 +343,7 @@ html.sinsta-viewing {
    overlays as layers covering the video: they clip the overlays' bottom and
    make them click-through. */
 html.sinsta-viewing main video,
-html[data-sinsta-reels-grid] main video {
+html[data-sinsta-surface] main video {
   display: none !important;
 }
 
@@ -938,14 +958,14 @@ html[data-sinsta-reels-grid] main video {
   }
 }
 
-/* ---- Reels grid -------------------------------------------------------- */
+/* ---- Home and Reels, drawn by feed.js ------------------------------------ */
 
-/* Instagram's own player stays mounted under the grid, hidden. */
-html[data-sinsta-reels-grid] main {
+/* Instagram's own page stays mounted under the surface, hidden. */
+html[data-sinsta-surface] main {
   visibility: hidden !important;
 }
 
-#sinsta-reels {
+#sinsta-surface {
   position: fixed;
   top: 0;
   right: 0;
@@ -953,33 +973,75 @@ html[data-sinsta-reels-grid] main {
   left: var(--sr-left, 72px);
   z-index: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   outline: none;
   background: rgb(var(--ig-primary-background, 255, 255, 255));
   color: rgb(var(--ig-primary-text, 0, 0, 0));
   font: 14px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-.sr-grid {
-  display: grid;
-  grid-template-columns: repeat(var(--sr-cols, 4), minmax(0, 1fr));
-  gap: 3px;
-  /* No cover taller than the window, however few the columns. */
-  max-width: calc(var(--sr-cols, 4) * (100vh - 76px) * 9 / 16);
-  margin: 0 auto;
-  padding: 64px 16px 0;
+.sf-header {
+  display: flex;
+  justify-content: center;
+  padding: 0 16px 16px;
 }
 
-.sr-tile {
+.sf-header #sinsta-bar {
+  width: 100%;
+  max-width: 935px;
+}
+
+/* The tab bar over Instagram's own Reels player. */
+#sinsta-float {
+  position: fixed;
+  top: 0;
+  left: var(--sr-left, 72px);
+  right: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+#sinsta-float #sinsta-bar {
+  padding: 10px 0;
+  pointer-events: auto;
+}
+
+#sinsta-float .sinsta-controls {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgb(var(--ig-primary-background, 255, 255, 255));
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* Grid: columns of tiles, uncropped (within 4:5 and 1.91:1); reels 9:16. */
+.sf-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.sf-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sf-tile {
   position: relative;
   display: block;
-  aspect-ratio: 9 / 16;
   overflow: hidden;
   border-radius: 4px;
   background: color-mix(in srgb, currentColor 8%, transparent);
   outline-offset: 2px;
 }
 
-.sr-tile img,
+.sf-tile > img,
 .sr-preview {
   position: absolute;
   inset: 0;
@@ -997,28 +1059,371 @@ html[data-sinsta-reels-grid] main {
   opacity: 1;
 }
 
-.sr-likes {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+/* Seen before this visit, when Hide seen is off. */
+.sf-seen {
+  opacity: 0.4;
+  transition: opacity 0.15s;
 }
 
-.sr-likes svg {
-  width: 15px;
-  height: 15px;
+.sf-seen:hover {
+  opacity: 1;
+}
+
+.sf-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}
+
+.sf-badge svg {
+  display: block;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
   stroke-linejoin: round;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+/* Name, likes and caption, while the pointer is on a tile. */
+.sf-tinfo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 40px 10px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  color: #fff;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.sf-tile:hover .sf-tinfo,
+.sf-tile:focus-visible .sf-tinfo {
+  opacity: 1;
+}
+
+.sf-tcap {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.sf-tcap:empty {
+  display: none;
+}
+
+.sf-trow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sf-tpic {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.sf-tuser {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sf-tlikes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.sf-tlikes svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* List: just the photos; name, buttons and caption over them on hover. */
+.sf-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+}
+
+.sf-post {
+  position: relative;
+  width: min(470px, calc((100vh - 140px) * var(--ar)), 100%);
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: #fff;
+}
+
+.sf-media {
+  position: relative;
+  aspect-ratio: var(--ar);
+}
+
+.sf-media img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sf-video .sf-media {
+  cursor: pointer;
+}
+
+.sf-head,
+.sf-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: 10px 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.sf-post:hover :is(.sf-head, .sf-foot),
+.sf-post:focus-within :is(.sf-head, .sf-foot) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sf-head {
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 28px;
+  background: linear-gradient(rgba(0, 0, 0, 0.5), transparent);
+  white-space: nowrap;
+}
+
+.sf-pic {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+#sinsta-surface .sf-post a,
+#sinsta-surface .sf-post a:visited {
+  color: #fff;
+  text-decoration: none;
+}
+
+.sf-user {
+  font-weight: 600;
+}
+
+.sf-time,
+.sf-sug {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+}
+
+.sf-time::before {
+  content: "\2022\00a0";
+}
+
+.sf-sug {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sf-foot {
+  bottom: 0;
+  max-height: 75%;
+  overflow-y: auto;
+  padding-top: 56px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 56px);
+  scrollbar-width: thin;
+}
+
+.sf-acts {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 6px -6px;
+}
+
+#sinsta-surface .sf-post button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 6px;
+  border: 0;
+  background: none;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sf-act svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sf-act[data-on] {
+  color: #ff3040 !important;
+}
+
+.sf-act[data-on] svg {
+  fill: currentColor;
+}
+
+.sf-act[data-done] {
+  color: #7ee787 !important;
+}
+
+.sf-likes {
+  font-weight: 600;
+}
+
+.sf-likes:empty {
+  display: none;
+}
+
+.sf-cap {
+  margin-top: 4px;
+  line-height: 1.35;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+#sinsta-surface .sf-cap .sr-ctag {
+  color: #e0f1ff;
+}
+
+#sinsta-surface .sf-post .sf-all {
+  margin-top: 4px;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* A carousel's arrows and dots. */
+#sinsta-surface .sf-slide {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: #000;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 0.15s;
+}
+
+.sf-prev {
+  left: 8px;
+}
+
+.sf-next {
+  right: 8px;
+}
+
+.sf-post:hover .sf-slide:not(:disabled) {
+  opacity: 1;
+}
+
+.sf-slide svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sf-dots {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.sf-post:hover .sf-dots {
+  opacity: 0;
+}
+
+.sf-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.4);
+}
+
+.sf-dots i.sf-on {
+  background: #fff;
+}
+
+.sf-burst {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sf-burst svg {
+  width: 96px;
+  height: 96px;
+  fill: #fff;
+  stroke: #fff;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+}
+
+.sf-burst.sf-go {
+  animation: sf-burst 0.8s ease-out;
+}
+
+@keyframes sf-burst {
+  0% { opacity: 0; transform: scale(0.4); }
+  25% { opacity: 1; transform: scale(1.1); }
+  60% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
 }
 
 .sr-status {
@@ -1034,6 +1439,18 @@ html[data-sinsta-reels-grid] main {
 .sr-status p {
   margin: 0;
   opacity: 0.7;
+}
+
+.sr-status p.sf-strong {
+  font-weight: 600;
+  opacity: 1;
+}
+
+.sf-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
 }
 
 .sr-retry {
@@ -1056,23 +1473,23 @@ html[data-sinsta-reels-grid] main {
   animation: sv-spin 0.8s linear infinite;
 }
 
-#sinsta-reels-controls {
-  position: fixed;
-  top: 12px;
-  right: 16px;
-  z-index: 2;
+/* List / Grid and the column count, in the tab bar. */
+.sinsta-slot,
+.sf-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgb(var(--ig-primary-background, 255, 255, 255));
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
-  color: rgb(var(--ig-primary-text, 0, 0, 0));
-  font: 14px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  gap: 8px;
 }
 
-#sinsta-reels-controls button {
+.sf-switch {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+.sf-controls button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1084,7 +1501,7 @@ html[data-sinsta-reels-grid] main {
   cursor: pointer;
 }
 
-#sinsta-reels-controls svg {
+.sf-controls svg {
   width: 18px;
   height: 18px;
   fill: none;
@@ -1094,48 +1511,54 @@ html[data-sinsta-reels-grid] main {
   stroke-linejoin: round;
 }
 
-.sr-toggle {
-  gap: 6px;
-  padding: 7px 12px;
+.sf-lay {
+  padding: 7px 10px;
   border-radius: 999px;
-  font-weight: 600;
   opacity: 0.6;
 }
 
-.sr-toggle:hover {
+.sf-lay:hover:not(:disabled) {
   opacity: 1;
 }
 
-.sr-toggle[aria-pressed="true"] {
+.sf-lay[aria-pressed="true"] {
   opacity: 1;
   background: color-mix(in srgb, currentColor 14%, transparent) !important;
 }
 
-.sr-stepper {
-  display: flex;
-  align-items: center;
+.sf-lay:disabled {
+  opacity: 0.25;
+  cursor: default !important;
 }
 
-.sr-stepper[hidden] {
+.sf-stepper {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+.sf-stepper[hidden] {
   display: none;
 }
 
-.sr-step {
+.sf-step {
   width: 32px;
   height: 32px;
   border-radius: 50%;
 }
 
-.sr-step:hover:not(:disabled) {
+.sf-step:hover:not(:disabled) {
   background: color-mix(in srgb, currentColor 10%, transparent) !important;
 }
 
-.sr-step:disabled {
+.sf-step:disabled {
   opacity: 0.3;
   cursor: default !important;
 }
 
-.sr-count {
+.sf-count {
   min-width: 1.5em;
   font-weight: 600;
   text-align: center;
@@ -1179,7 +1602,7 @@ html[data-sinsta-reels-grid] main {
 }
 
 #sinsta-reel-player [hidden] {
-  display: none;
+  display: none !important;
 }
 
 #sinsta-reel-player svg {
@@ -1214,8 +1637,6 @@ html[data-sinsta-reels-grid] main {
 .sr-stage {
   position: relative;
   flex: 0 0 auto;
-  height: min(calc(100vh - 32px), calc((100vw - 240px) * 16 / 9));
-  aspect-ratio: 9 / 16;
   overflow: hidden;
   border-radius: 8px;
   background: #000;
@@ -1331,33 +1752,117 @@ html[data-sinsta-reels-grid] main {
   color: #ff3040;
 }
 
-/* The comments panel, as tall as the video. */
-#sinsta-reel-player.sr-with-comments .sr-stage {
-  height: min(calc(100vh - 32px), calc((100vw - 640px) * 16 / 9));
+.sr-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
+/* A carousel's arrows and dots. */
+#sinsta-reel-player .sr-slide {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: #000;
+  transform: translateY(-50%);
+}
+
+#sinsta-reel-player .sr-slide:disabled {
+  opacity: 0;
+}
+
+.sr-slide-prev {
+  left: 10px;
+}
+
+.sr-slide-next {
+  right: 10px;
+}
+
+#sinsta-reel-player .sr-slide svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
+}
+
+.sr-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.sr-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.sr-dots i.sr-on {
+  background: #fff;
+}
+
+/* Beside the post: its author, caption and comments, as tall as the post.
+   A faint tint of the backdrop rather than a box. */
 .sr-comments {
   display: flex;
   flex-direction: column;
   flex: 0 0 360px;
   width: 360px;
-  height: min(calc(100vh - 32px), max(240px, calc((100vw - 640px) * 16 / 9)));
+  height: min(calc(100vh - 32px), 900px);
   overflow: hidden;
   border-radius: 8px;
-  background: #262626;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
   user-select: text;
+}
+
+.sr-cap {
+  padding: 4px 16px 14px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .sr-chead {
   display: flex;
   align-items: center;
-  padding: 6px 6px 6px 16px;
-  border-bottom: 1px solid #363636;
+  padding: 8px 6px 8px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .sr-ctitle {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
   font-weight: 600;
+}
+
+.sr-ctitle .sr-avatar {
+  width: 28px;
+  height: 28px;
+}
+
+.sr-ctime {
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 400;
 }
 
 .sr-clist {
@@ -1476,7 +1981,7 @@ html[data-sinsta-reels-grid] main {
   align-items: flex-end;
   gap: 8px;
   padding: 10px 12px 10px 16px;
-  border-top: 1px solid #363636;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .sr-cinput {
@@ -1509,7 +2014,7 @@ html[data-sinsta-reels-grid] main {
 
 .sr-coff {
   padding: 12px 16px;
-  border-top: 1px solid #363636;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   color: #a8a8a8;
   text-align: center;
 }
