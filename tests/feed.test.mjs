@@ -129,3 +129,36 @@ test('The tab bar: chosen accounts, then Instagram\'s picks, then List / Grid', 
   await page.keyboard.press('g');
   await page.waitForSelector('#sinsta-surface .sf-tile');
 });
+
+test('Space on a focused button scrolls rather than pressing it', async () => {
+  await open('following', GRID);
+  await settled(() => page.evaluate(() => document.querySelectorAll('.sf-tile').length));
+  await page.focus('.sf-step[title^="More"]');
+  await page.keyboard.press(' ');
+  await page.waitForTimeout(200);
+  assert.equal(await page.textContent('.sf-count'), '3');
+});
+
+test('Caught up at the end of the feed: no going back to its start', async () => {
+  const seen = { 'sinsta-seen': { Calice1: NOW - 86400, Ccarol1: NOW - 86400, Calice2: NOW - 86400 } };
+  await open('following', { ...LIST, ...seen });
+  const text = await settled(() => page.evaluate(() => document.querySelector('#sinsta-surface .sr-status')?.textContent || ''));
+  assert.match(text, /that's as far back as this feed goes/);
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#sinsta-surface .sr-status button')].map((b) => b.textContent)),
+    ["Show posts you've seen"]);
+});
+
+test('The story viewer\'s videos aren\'t silenced by the surface', async () => {
+  await open('following', LIST);
+  await posts();
+  const muted = await page.evaluate(() => new Promise((resolve) => {
+    const v = document.createElement('video');
+    const box = document.createElement('div');
+    box.id = 'sinsta-viewer';
+    box.append(v);
+    document.body.append(box);
+    v.dispatchEvent(new Event('play'));
+    setTimeout(() => resolve(v.muted), 50);
+  }));
+  assert.equal(muted, false);
+});

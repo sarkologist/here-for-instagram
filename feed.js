@@ -85,6 +85,7 @@
   let queued = false;
   let measuredAt = 0;
   let lastPath = null;
+  let visitAt = null; // content.js's visit start, as last seen
 
   // ---- DOM ----------------------------------------------------------------
 
@@ -398,7 +399,10 @@
     shownKey = key;
     if (!grows) {
       stopPreview();
-      for (const art of content.querySelectorAll('.sf-post')) stopListVideo(art);
+      for (const art of content.querySelectorAll('.sf-post')) {
+        stopListVideo(art);
+        listWatch.unobserve(art);
+      }
       content.replaceChildren();
       content.className = 'sf-content ' + (isGrid() ? 'sf-grid' : 'sf-list');
       columns = [];
@@ -442,6 +446,9 @@
 
   // ---- List: seen posts and videos ----------------------------------------
 
+  // The player or the story viewer is over the surface.
+  const covered = () => playerOpen || document.documentElement.classList.contains('sinsta-viewing');
+
   // A post counts as seen once half of it, or half the screen, has shown it
   // for a second, as on Instagram's page (content.js). In the grid a post
   // counts as seen when it is opened.
@@ -452,10 +459,10 @@
       clearTimeout(seenTimers.get(art));
       const enough = e.intersectionRatio >= 0.5 || e.intersectionRect.height >= window.innerHeight / 2;
       const it = itemOf(art);
-      if (enough && it && cur !== 'reels') {
+      if (enough && it && cur !== 'reels' && !covered()) {
         seenTimers.set(art, setTimeout(() => {
           const h = home();
-          if (art.isConnected && h) h.markSeen(it.code);
+          if (art.isConnected && h && !covered()) h.markSeen(it.code);
         }, SEEN_MS));
       }
       // Videos play, silently, while mostly on screen.
@@ -683,20 +690,26 @@
     if (cur === 'reels' && active) openPlayer(shown.indexOf(it));
   }
 
+  // At the end of the feed (which the query reports for sure) there is no
+  // further back to look.
   function caughtUpButtons(f) {
-    const further = el('button', { type: 'button', className: 'sr-retry' }, f.ended ? 'Try again' : 'Look further back');
-    further.addEventListener('click', () => {
-      if (f.ended) f.ended = false;
-      f.runLimit = seenRun(cur) + RUN_LIMIT;
-      syncStatus();
-      fill();
-    });
+    const row = el('div', { className: 'sf-actions-row' });
+    if (!f.ended) {
+      const further = el('button', { type: 'button', className: 'sr-retry' }, 'Look further back');
+      further.addEventListener('click', () => {
+        f.runLimit = seenRun(cur) + RUN_LIMIT;
+        syncStatus();
+        fill();
+      });
+      row.append(further);
+    }
     const all = el('button', { type: 'button', className: 'sr-retry' }, "Show posts you've seen");
     all.addEventListener('click', () => {
       const h = home();
       if (h) h.showSeen();
     });
-    return el('div', { className: 'sf-actions-row' }, further, all);
+    row.append(all);
+    return row;
   }
 
   let statusKey = '';
@@ -1328,8 +1341,11 @@
       n.scrollIntoView({ block: 'nearest' });
       n.focus({ preventScroll: true });
     }
-    // List videos on screen start again.
-    for (const art of content.querySelectorAll('.sf-post[data-on-screen]')) startListVideo(art);
+    // Posts on screen are judged afresh (seen, and their videos play again).
+    for (const art of content.querySelectorAll('.sf-post')) {
+      listWatch.unobserve(art);
+      listWatch.observe(art);
+    }
   }
 
   // Registered once, at document start, so it runs before Instagram's own
@@ -1386,21 +1402,23 @@
   // number of columns, and L and C act on the post under the pointer.
   const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
   window.addEventListener('keydown', (e) => {
-    if (playerOpen || !active || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!cur || covered() || e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     const take = () => {
       e.preventDefault();
       e.stopPropagation();
     };
+    // G also works over Instagram's own Reels player (Reels' list).
+    if ((e.key === 'g' || e.key === 'G') && (active || cur === 'reels')) {
+      take();
+      setLayout(isGrid() ? 'list' : 'grid');
+      return;
+    }
+    if (!active) return;
     if (e.key === '-' || e.key === '+' || e.key === '=') {
       take();
       if (isGrid()) setColumns(cols() + (e.key === '-' ? -1 : 1));
-      return;
-    }
-    if (e.key === 'g' || e.key === 'G') {
-      take();
-      setLayout(isGrid() ? 'list' : 'grid');
       return;
     }
     const it = hovered && hovered.isConnected ? itemOf(hovered) : null;
@@ -1416,7 +1434,9 @@
     }
     if (!SCROLL_KEYS.has(e.key)) return;
     e.stopPropagation();
-    if (!root.contains(t)) {
+    // Scroll it here unless it has the focus itself, so that Space on a
+    // focused button (the column count, a like) scrolls rather than presses.
+    if (t !== root) {
       root.focus({ preventScroll: true });
       e.preventDefault();
       const page = root.clientHeight * 0.85;
@@ -1427,10 +1447,12 @@
     }
   }, true);
 
-  // Instagram's page keeps running under the surface; keep it silent.
+  // Instagram's page keeps running under the surface; keep it silent. (Our
+  // own videos sit in closed shadow roots, so their events don't get here;
+  // the story viewer's do, and are left alone.)
   document.addEventListener('play', (e) => {
     const v = e.target;
-    if (!active || root.contains(v) || player.contains(v)) return;
+    if (!active || !v.closest || !v.closest('main')) return;
     v.muted = true;
     v.pause();
   }, true);
@@ -1553,10 +1575,13 @@
         v.pause();
       }
     } else if (!want && root.isConnected) {
-      if (cur) feed(cur).scroll = root.scrollTop;
+      if (cur && !restore) feed(cur).scroll = root.scrollTop;
       stopPreview();
       closePlayer();
-      for (const art of content.querySelectorAll('.sf-post')) stopListVideo(art);
+      for (const art of content.querySelectorAll('.sf-post')) {
+        stopListVideo(art);
+        listWatch.unobserve(art);
+      }
       content.replaceChildren();
       shownKey = '';
       root.remove();
@@ -1640,7 +1665,18 @@
     },
     // content.js changed what shows (seen posts, favourites, a new visit).
     changed() {
-      if (!active) return;
+      const h = home();
+      const visit = h && h.visitStart();
+      if (visit !== visitAt) {
+        visitAt = visit;
+        for (const f of Object.values(feeds)) f.runLimit = RUN_LIMIT;
+      }
+      // On a tab switch content.js starts the visit first; the switch
+      // itself redraws.
+      if (!active || viewOf() !== cur) {
+        schedule();
+        return;
+      }
       render();
       syncStatus();
       fill();

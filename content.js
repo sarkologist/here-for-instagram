@@ -1167,6 +1167,7 @@
     },
     markSeen: markPostSeen,
     showSeen: () => showSeenBtn.click(),
+    visitStart: () => visitStart,
   };
 
   new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
