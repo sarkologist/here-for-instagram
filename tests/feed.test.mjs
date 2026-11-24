@@ -126,8 +126,8 @@ test('The tab bar: chosen accounts, then Instagram\'s picks, then List / Grid', 
   // Story names are hidden; the ring's tooltip keeps the name.
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sinsta-name')).display), 'none');
   // Reels has left Instagram's menu; Home stays.
-  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('body > nav a')].map((a) => `${a.textContent}:${a.getClientRects().length > 0}`)),
-    ['Home:true', 'Reels:false']);
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('body > nav a')].map((a) => `${a.textContent}:${a.getClientRects().length > 0}`)
+    .filter((t) => /^(Home|Reels):/.test(t))), ['Home:true', 'Reels:false']);
   // G switches to the grid.
   await page.keyboard.press('g');
   await page.waitForSelector('#sinsta-surface .sf-tile');
@@ -177,4 +177,17 @@ test('Algo skips past the posts of accounts you follow to Instagram\'s suggestio
   ];
   await page.goto(ORIGIN + '/');
   assert.deepEqual(await posts(), ['stranger']);
+});
+
+test('Saved in the menu fades its label in and out with Profile\'s', async () => {
+  await open('following', LIST);
+  await page.waitForSelector('[data-sinsta-saved] .label', { state: 'attached' });
+  const style = () => page.evaluate(() => document.querySelector('[data-sinsta-saved] .label').getAttribute('style'));
+  assert.equal(await style(), 'display: none; opacity: 0;');
+  // Instagram animates the label's inline style as the sidebar widens.
+  await page.evaluate(() => document.querySelector('nav a[href="/me/"] .label').setAttribute('style', 'opacity: 0.4;'));
+  await page.waitForFunction(() => document.querySelector('[data-sinsta-saved] .label').getAttribute('style') === 'opacity: 0.4;');
+  await page.evaluate(() => document.querySelector('nav a[href="/me/"] .label').setAttribute('style', 'opacity: 1;'));
+  await page.waitForFunction(() => document.querySelector('[data-sinsta-saved] .label').getAttribute('style') === 'opacity: 1;');
+  assert.equal(await page.textContent('[data-sinsta-saved] .label'), 'Saved');
 });

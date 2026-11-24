@@ -75,7 +75,9 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <script>window.__tokens = ['"DTSGInitialData",[],{"token":"t-dtsg"}', '"LSD",[],{"token":"t-lsd"}', '"device_id":"t-device"'];</script>
 <link rel="stylesheet" href="/test/ext/content.css">
 <script src="/test/ext/stories.js"></script><script src="/test/ext/content.js"></script><script src="/test/ext/feed.js"></script>
-</head><body><nav><div><div><a href="/"><svg aria-label="Home"></svg>Home</a></div><div><span><a href="/reels/"><svg></svg>Reels</a></span></div></div></nav>
+</head><body><nav><div>${['Home', 'Reels', 'Explore', 'Messages', 'Notifications', 'Create']
+  .map((n) => `<div><span><a href="${{ Home: '/', Reels: '/reels/' }[n] || `/${n.toLowerCase()}/`}"><svg aria-label="${n}"></svg>${n}</a></span></div>`).join('')}
+<div><a href="/me/"><div><img src="/test/pic/me.jpg"></div><div class="label" style="display: none; opacity: 0;"><span>Profile</span></div></a></div></div></nav>
 <main><div><div class="col"><article><a href="/p/Dtest0001/">post</a></article></div></div></main></body></html>`;
 
 let browser;

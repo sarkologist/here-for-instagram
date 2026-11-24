@@ -1049,11 +1049,12 @@
     const sig = [...profile.querySelectorAll('*')].map((e) => e.getAttribute('class') || '').join('|');
     if (watchedProfile !== profile) {
       profileWatch.disconnect();
-      profileWatch.observe(profile, { attributes: true, attributeFilter: ['class'], subtree: true });
+      profileWatch.observe(profile, { attributes: true, attributeFilter: ['class', 'style'], subtree: true });
       watchedProfile = profile;
     }
     if (savedItem && savedItem.isConnected && savedItem.previousElementSibling === profile && savedSig === sig) {
       savedItem.querySelector('a').setAttribute('aria-current', String(location.pathname === href));
+      syncSavedLabel(profile);
       return;
     }
     savedSig = sig;
@@ -1085,6 +1086,27 @@
       go(href);
     });
     profile.after(savedItem);
+    syncSavedLabel(profile);
+  }
+
+  // Instagram fades the menu's labels in and out (display, opacity and a
+  // slide, as inline styles it animates) when the sidebar widens and
+  // narrows. A copy keeps the styles of the moment it was made, often
+  // mid-fade, so mirror them from Profile's label onto Saved's: the boxes
+  // between the label's text and the first one that also holds the picture.
+  function syncSavedLabel(profile) {
+    const label = [...profile.querySelectorAll('span')].find((n) => n.childElementCount === 0 && n.textContent.trim() === 'Profile');
+    for (let e = label; e && e !== profile && !e.querySelector('img, svg'); e = e.parentElement) {
+      let copy = savedItem;
+      const path = [];
+      for (let n = e; n !== profile; n = n.parentElement) path.unshift([...n.parentElement.children].indexOf(n));
+      for (const i of path) copy = copy && copy.children[i];
+      if (!copy) return;
+      const style = e.getAttribute('style');
+      if (copy.getAttribute('style') === style) continue;
+      if (style === null) copy.removeAttribute('style');
+      else copy.setAttribute('style', style);
+    }
   }
 
   // ---- Carousel scrolling -------------------------------------------------
