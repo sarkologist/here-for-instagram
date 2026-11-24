@@ -80,6 +80,15 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <div><a href="/me/"><div><img src="/test/pic/me.jpg"></div><div class="label" style="display: none; opacity: 0;"><span>Profile</span></div></a></div></div></nav>
 <main><div><div class="col"><article><a href="/p/Dtest0001/">post</a></article></div></div></main></body></html>`;
 
+// A profile, as Instagram renders its header: the picture is a button, not a
+// link. Clicks that reach the page are counted, as Instagram's own handler.
+const PROFILE = (id, username) => PAGE.replace('<main>', `<script>window.__igClicks = 0; // "profile_id":"${id}"
+document.addEventListener('click', (e) => { if (e.target.closest('[role=button]')) window.__igClicks++; });</script>
+<main><header><section><div role="button" tabindex="0"><span role="link" tabindex="-1">
+<img alt="${username}'s profile picture" src="/test/pic/${id}.jpg"></span></div></section></header>`);
+// Profiles there are pages for: alice and carol have stories, nostory doesn't.
+const PROFILES = { alice: '1', carol: '2', nostory: '9' };
+
 let browser;
 let context;
 export let page;
@@ -109,6 +118,8 @@ export async function freshContext(storage = {}) {
     const acc = accounts[me];
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
     if (path === '/' || /^\/reels\//.test(path)) return route.fulfill({ contentType: 'text/html', body: PAGE });
+    const profile = path.match(/^\/([\w.]+)\/$/);
+    if (profile && PROFILES[profile[1]]) return route.fulfill({ contentType: 'text/html', body: PROFILE(PROFILES[profile[1]], profile[1]) });
     const ext = path.match(/^\/test\/ext\/([\w.]+)$/);
     if (ext) return route.fulfill({ contentType: ext[1].endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(join(ROOT, ext[1])) });
     if (!acc) return route.fulfill({ status: 401, body: '' });

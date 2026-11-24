@@ -933,6 +933,69 @@
     }, 3000);
   }, true);
 
+  // ---- Stories from a profile ---------------------------------------------
+
+  // The profile picture at the top of a profile opens the account's story in
+  // the extension's viewer, as the stories row does: one account, so no
+  // carousel. Without a story, the click goes on to Instagram (on your own
+  // profile it changes the photo).
+  function profileAvatar(target) {
+    const user = (location.pathname.match(/^\/([\w.]+)\//) || [])[1];
+    const btn = user && target.closest && target.closest('header [role="button"]');
+    if (!btn || btn.closest('a[href]') || btn.querySelector('a[href]')) return null;
+    const img = btn.querySelector('img');
+    // "user's profile picture", in whatever language: the username as a word.
+    return img && img.alt.split(/[^\w.]+/).includes(user) ? user : null;
+  }
+
+  // The account's story, or null if it has none, or undefined if Instagram
+  // didn't answer. Asked for on hover, so it is usually there by the click.
+  const profileReels = new Map(); // username -> { at, job }
+  function profileReel(user) {
+    const got = profileReels.get(user);
+    if (got && Date.now() - got.at < 60000) return got.job;
+    const job = (async () => {
+      const id = await lookUpId(user);
+      const reels = id ? await fetchReels([id]) : null;
+      if (!reels) {
+        profileReels.delete(user);
+        return undefined;
+      }
+      return reels.find((r) => r.id === id) || null;
+    })();
+    profileReels.set(user, { at: Date.now(), job });
+    return job;
+  }
+
+  let passClick = false;
+  document.addEventListener('pointerover', (e) => {
+    const user = profileAvatar(e.target);
+    if (user) profileReel(user);
+  }, true);
+  document.addEventListener('click', async (e) => {
+    if (passClick || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const user = profileAvatar(e.target);
+    if (!user) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const target = e.target;
+    const path = location.pathname;
+    const reel = await profileReel(user);
+    if (!target.isConnected || location.pathname !== path) return;
+    if (reel) {
+      openViewer([reel], 0);
+    } else if (reel === undefined) {
+      go(`/stories/${user}/`); // Instagram's own viewer
+    } else {
+      passClick = true;
+      try {
+        target.click();
+      } finally {
+        passClick = false;
+      }
+    }
+  }, true);
+
   // ---- Favourite star on profile hover cards ------------------------------
 
   const FAV_MAX = 50; // Instagram's limit

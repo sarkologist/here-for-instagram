@@ -636,6 +636,24 @@ const Sinsta = (() => {
   stage.addEventListener('pointerleave', release);
   stage.addEventListener('pointercancel', release);
 
+  // A click outside the story and the cards closes the viewer. Not while the
+  // carousel turns (the stage is hidden then), nor at the end of a drag.
+  // While typing a reply or with a shared card's bubble up, it only leaves
+  // those, as a tap on the story does.
+  let outsideDown = null;
+  const outside = (t) => !t.closest('.sv-stage, .sv-peek, a, button, input');
+  root.addEventListener('pointerdown', (e) => {
+    outsideDown = e.button === 0 && outside(e.target) ? { x: e.clientX, y: e.clientY, typing, bubble: bubbleOn } : null;
+  });
+  root.addEventListener('click', (e) => {
+    const down = outsideDown;
+    outsideDown = null;
+    if (!down || !open || scrolling || !outside(e.target)) return;
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10 || down.typing) return;
+    if (down.bubble) return setBubble(false);
+    close();
+  });
+
   function release() {
     downAt = 0;
     holding = false;

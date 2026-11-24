@@ -1,4 +1,5 @@
-// What the stories row on Following and Favourites shows, in Playwright's
+// What the stories row on Following and Favourites shows, and what a
+// profile's picture opens, in Playwright's
 // Firefox, with the extension's content scripts on a stand-in for
 // instagram.com (stand-in.mjs).
 //
@@ -46,4 +47,46 @@ test('Switching accounts: each sees only its own stories', async () => {
   accounts['111'].tray = accounts['111'].tray.filter((r) => r.username !== 'alice');
   await logIn('111');
   assert.deepEqual(await row('following'), ['carol', 'alice (watched)']);
+});
+
+// Clicks the profile picture on a profile; what the viewer then shows.
+async function openFromProfile(username) {
+  await page.goto(`${ORIGIN}/${username}/`);
+  await page.click('header img');
+  await page.waitForTimeout(1000);
+  return page.evaluate(() => ({
+    viewer: !!document.querySelector('#sinsta-viewer'),
+    user: document.querySelector('#sinsta-viewer .sv-user')?.textContent ?? null,
+    // Cards of other accounts: the account on stage has one of its own.
+    cards: [...document.querySelectorAll('#sinsta-viewer .sv-peek-avatar')].filter((a) => a.alt !== document.querySelector('#sinsta-viewer .sv-user').textContent).length,
+    instagramGotClick: window.__igClicks > 0,
+    path: location.pathname,
+  }));
+}
+
+test('Profile picture opens the story in the extension viewer, without a carousel', async () => {
+  await freshContext();
+  await logIn('111');
+  assert.deepEqual(await openFromProfile('carol'),
+    { viewer: true, user: 'carol', cards: 0, instagramGotClick: false, path: '/carol/' });
+});
+
+test('Profile picture without a story: the click goes on to Instagram', async () => {
+  await freshContext();
+  await logIn('111');
+  assert.deepEqual(await openFromProfile('nostory'),
+    { viewer: false, user: null, cards: 0, instagramGotClick: true, path: '/nostory/' });
+});
+
+test('A click outside the story closes the viewer; on the story, it does not', async () => {
+  await freshContext();
+  await logIn('111');
+  await openFromProfile('carol');
+  const isOpen = () => page.evaluate(() => !!document.querySelector('#sinsta-viewer'));
+  // The left of the story: back, which on the first story stays put.
+  const box = await page.locator('#sinsta-viewer .sv-stage').boundingBox();
+  await page.mouse.click(box.x + 10, box.y + box.height / 2);
+  assert.equal(await isOpen(), true);
+  await page.mouse.click(10, box.y + box.height / 2);
+  assert.equal(await isOpen(), false);
 });

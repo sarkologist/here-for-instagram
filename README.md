@@ -39,7 +39,7 @@ Following and Favourites have a "Hide seen" toggle (on by default). With it on, 
 
 ## Stories on Following and Favourites
 
-Clicking a story opens the extension's own viewer, which goes through the row in order (so Favourites stays within starred accounts) and preloads the next few stories. Nothing moves on by itself: a photo stays until you click on, and a video loops. Started on an unwatched account, it closes after the last unwatched one; started on a watched one, it plays to the end of the row. Viewing marks a story as seen, as on Instagram.
+Clicking a story opens the extension's own viewer, which goes through the row in order (so Favourites stays within starred accounts) and preloads the next few stories. Nothing moves on by itself: a photo stays until you click on, and a video loops. Started on an unwatched account, it closes after the last unwatched one; started on a watched one, it plays to the end of the row. Viewing marks a story as seen, as on Instagram. The profile picture at the top of a profile opens that account's story in the same viewer, on its own.
 
 The accounts before and after the current one fan out on either side of it: the nearest ones large and flat, farther ones smaller, narrower and slightly turned, as many as the window has room for. Each shows the story you'd land on (the last one of an account behind, the first unwatched one of an account ahead) with the account's profile picture and a dot per story under it: white for that story, pink for unwatched ones, grey for watched ones. Clicking it goes there. Hovering a card fans the deck open there, like a hand of cards: the cards on top of it slide aside so more of it shows. Moving across the part that shows flips through that account's stories, and clicking lands on the one it shows. After the carousel turns, a card that stops under the pointer waits for the pointer to move before opening.
 
@@ -57,7 +57,7 @@ Unwatched stories come first, then fully watched ones with a grey ring, each gro
 | Hold, or `Space` | pause a video |
 | `M` | sound on/off |
 | `L` | like |
-| `Esc` | close |
+| Click outside the story, or `Esc` | close |
 
 Scrolling only moves between accounts; clicks move between an account's stories. The carousel turns as you swipe, with the trackpad's momentum, and comes to rest on an account; a mouse wheel turns it smoothly and settles on the nearest account when you stop.
 
@@ -95,7 +95,7 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 
 ## Tests
 
-`tests/` checks what the extension shows, in headless Firefox, with its own scripts on a stand-in instagram.com answering for made-up logged-in accounts: the stories row on Following and Favourites (including after switching accounts), and what each tab shows, in the list, the grid and the player, with Hide seen on and off, and when a feed can't be loaded. CI runs them.
+`tests/` checks what the extension shows, in headless Firefox, with its own scripts on a stand-in instagram.com answering for made-up logged-in accounts: the stories row on Following and Favourites (including after switching accounts), what a profile's picture opens, and what each tab shows, in the list, the grid and the player, with Hide seen on and off, and when a feed can't be loaded. CI runs them.
 
 ```bash
 cd tests && npm ci && npx playwright install firefox && npm test
