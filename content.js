@@ -1040,11 +1040,12 @@
 
   // ---- Carousel scrolling -------------------------------------------------
 
-  // With the cursor over a carousel's photos, scrolling steps through its
-  // slides (down or right = next) by pressing Instagram's own arrow buttons.
-  // Past the last slide (or before the first) the feed scrolls as usual. A
-  // trackpad (or Magic Mouse) is left alone: the carousel scrolls natively
-  // under it, continuously and with momentum, and up and down moves the feed.
+  // With the cursor over a carousel's photos (in the feed, or a post's window
+  // or page), scrolling steps through its slides (down or right = next) by
+  // pressing Instagram's own arrow buttons. Past the last slide (or before the
+  // first) the page scrolls as usual. A trackpad (or Magic Mouse) is left
+  // alone: the carousel scrolls natively under it, continuously and with
+  // momentum, and up and down moves the page.
   // Sideways swipes past a carousel's ends don't trigger the browser's
   // swipe-back gesture.
   const WHEEL_STEP = 30; // px of scrolling per slide
@@ -1054,15 +1055,20 @@
   let wheelActed = 0;
   let wheelLast = 0;
 
+  // A post's own page (/p/<id>/, or /<user>/p/<id>/) has no <article>: there
+  // the post is found from <main>, where it is the only one.
+  const POST_PAGE = /^\/(?:[\w.]+\/)?p\/[\w-]+\/?$/;
+
   function carouselAt(target) {
-    const article = target.closest && target.closest('article');
-    if (!article || article.closest(`.${HIDE}`)) return null;
-    const button = article.querySelector('button[aria-label="Next"], button[aria-label="Go back"]');
-    const list = article.querySelector('ul');
-    if (!button || !list) return null;
+    if (!target.closest) return null;
+    const post = target.closest('article') || (POST_PAGE.test(location.pathname) && target.closest('main'));
+    if (!post || post.closest(`.${HIDE}`)) return null;
+    const button = post.querySelector('button[aria-label="Next"], button[aria-label="Go back"]');
+    if (!button) return null;
+    // The photos and their arrows: the arrows' nearest box holding the slides.
     let area = button.parentElement;
-    while (area && area !== article && !area.contains(list)) area = area.parentElement;
-    return area && area !== article && area.contains(target) ? area : null;
+    while (area && area !== post && !area.querySelector('ul')) area = area.parentElement;
+    return area && area !== post && area.contains(target) ? area : null;
   }
 
   window.addEventListener('wheel', (e) => {
