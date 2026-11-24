@@ -77,6 +77,11 @@ html[data-sinsta-caught-up] main [role="progressbar"] {
   opacity: 0.6;
 }
 
+/* Reels in Instagram's menu: it is a tab in the bar instead. */
+[data-sinsta-gone] {
+  display: none !important;
+}
+
 /* Instagram's "← Following" header: the switcher replaces it. */
 main a[href*="variant=home"] {
   display: none !important;

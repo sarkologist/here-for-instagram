@@ -735,8 +735,21 @@
 
   // ---- Wiring -------------------------------------------------------------
 
+  // Reels is a tab in the bar now, so it leaves Instagram's menu: the
+  // largest box round the menu's Reels link holding no other link.
+  function hideReelsItem() {
+    for (const a of document.querySelectorAll('a[href="/reels/"]')) {
+      if (a.closest('main, #sinsta-bar, #sinsta-surface, #sinsta-float, [data-sinsta-gone]')) continue;
+      let item = a;
+      while (item.parentElement && item.parentElement !== document.body
+        && item.parentElement.querySelectorAll('a[href], [role="link"]').length === 1) item = item.parentElement;
+      item.setAttribute('data-sinsta-gone', '');
+    }
+  }
+
   function sweep() {
     queued = false;
+    hideReelsItem();
     ensureSavedItem();
     ensureFavButtons();
     syncBadgeTip();

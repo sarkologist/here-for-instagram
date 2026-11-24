@@ -1479,11 +1479,15 @@
 
   // ---- Wiring -------------------------------------------------------------
 
-  // The Reels link in Instagram's sidebar. Links in Instagram's own (hidden)
-  // page are skipped, though they keep their layout.
+  // The Home link in Instagram's sidebar (Reels is gone from it, see
+  // content.js). Links in Instagram's own (hidden) page are skipped, though
+  // they keep their layout.
   function navLink() {
-    return [...document.querySelectorAll('a[href="/reels/"]')]
-      .find((a) => !root.contains(a) && !float.contains(a) && !a.closest('main, #sinsta-bar') && getComputedStyle(a).visibility === 'visible');
+    for (const svg of document.querySelectorAll('svg[aria-label="Home"]')) {
+      const a = svg.closest('a');
+      if (a && !root.contains(a) && !a.closest('main, #sinsta-bar') && getComputedStyle(a).visibility === 'visible') return a;
+    }
+    return null;
   }
 
   // Where the surface goes. Instagram's sidebar widens over the page on

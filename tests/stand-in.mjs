@@ -75,7 +75,7 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <script>window.__tokens = ['"DTSGInitialData",[],{"token":"t-dtsg"}', '"LSD",[],{"token":"t-lsd"}', '"device_id":"t-device"'];</script>
 <link rel="stylesheet" href="/test/ext/content.css">
 <script src="/test/ext/stories.js"></script><script src="/test/ext/content.js"></script><script src="/test/ext/feed.js"></script>
-</head><body><nav><a href="/reels/"><svg></svg>Reels</a></nav>
+</head><body><nav><div><div><a href="/"><svg aria-label="Home"></svg>Home</a></div><div><span><a href="/reels/"><svg></svg>Reels</a></span></div></div></nav>
 <main><div><div class="col"><article><a href="/p/Dtest0001/">post</a></article></div></div></main></body></html>`;
 
 let browser;

@@ -69,7 +69,7 @@ Polls, quizzes, sliders and question stickers can't be answered: Instagram only 
 
 ## Reels
 
-Reels is a tab in the bar (and the sidebar's Reels opens it as before). In the grid, more reels load as you scroll; the player and its likes and comments work as above.
+Reels is a tab in the bar, and leaves Instagram's menu. In the grid, more reels load as you scroll; the player and its likes and comments work as above.
 
 - **Links:** opening a link to one reel (`/reels/<code>/`) puts it first in the grid and plays it.
 - **List** is Instagram's own player, with the tab bar floating above it.

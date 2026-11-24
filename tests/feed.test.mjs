@@ -125,6 +125,9 @@ test('The tab bar: chosen accounts, then Instagram\'s picks, then List / Grid', 
   assert.deepEqual(groups, ['Following+Favourites', 'sinsta-toggle', 'Algo+Reels', 'sinsta-slot']);
   // Story names are hidden; the ring's tooltip keeps the name.
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sinsta-name')).display), 'none');
+  // Reels has left Instagram's menu; Home stays.
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('body > nav a')].map((a) => `${a.textContent}:${a.getClientRects().length > 0}`)),
+    ['Home:true', 'Reels:false']);
   // G switches to the grid.
   await page.keyboard.press('g');
   await page.waitForSelector('#sinsta-surface .sf-tile');
