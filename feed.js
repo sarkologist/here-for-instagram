@@ -1556,6 +1556,33 @@
     }
   }
 
+  // The surface usually goes up before Instagram has drawn its sidebar, so
+  // into <body>, where it would cover the sidebar when it widens. Move it
+  // into the sidebar's stacking context once that's there (checked at most
+  // once a second), keeping its place.
+  let hostedAt = 0;
+  let rehostTimer = 0;
+  function rehost() {
+    const wait = hostedAt + 1000 - Date.now();
+    if (wait > 0) {
+      // Look again then, in case nothing else wakes the sync.
+      if (!rehostTimer) rehostTimer = setTimeout(() => {
+        rehostTimer = 0;
+        schedule();
+      }, wait);
+      return;
+    }
+    hostedAt = Date.now();
+    if (!navLink()) return;
+    const host = surfaceHost();
+    if (host === root.parentElement) return;
+    const top = root.scrollTop;
+    const focused = root.contains(document.activeElement);
+    host.append(root);
+    root.scrollTop = top;
+    if (focused) root.focus({ preventScroll: true });
+  }
+
   // Whether the surface shows this view: home views unless their feed
   // couldn't be loaded, Reels in the grid layout.
   function wants(view) {
@@ -1612,6 +1639,7 @@
       active = false;
     } else if (want) {
       active = true;
+      rehost();
       measure();
       render();
       if (restore) root.scrollTop = feed(view).scroll;

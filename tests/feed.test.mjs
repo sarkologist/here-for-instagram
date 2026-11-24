@@ -191,3 +191,22 @@ test('Saved in the menu fades its label in and out with Profile\'s', async () =>
   await page.waitForFunction(() => document.querySelector('[data-sinsta-saved] .label').getAttribute('style') === 'opacity: 1;');
   assert.equal(await page.textContent('[data-sinsta-saved] .label'), 'Saved');
 });
+
+test('The surface stays under Instagram\'s sidebar when the sidebar comes after it', async () => {
+  await open('following', LIST);
+  await posts();
+  // Instagram's app: its own stacking context, with the sidebar in a fixed
+  // layer above the page. Drawn after the surface went up (in <body>).
+  await page.evaluate(() => {
+    document.querySelector('#sinsta-surface').scrollTop = 40;
+    const app = document.createElement('div');
+    app.id = 'app';
+    app.style.cssText = 'position: relative; z-index: 0';
+    const layer = document.createElement('div');
+    layer.style.cssText = 'position: fixed; z-index: 10; top: 0; left: 0; bottom: 0; width: 72px';
+    document.body.prepend(app);
+    app.append(layer);
+    layer.append(document.querySelector('body > nav'));
+  });
+  await page.waitForFunction(() => document.querySelector('#sinsta-surface').parentElement.id === 'app', null, { timeout: 4000 });
+});
