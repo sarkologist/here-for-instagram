@@ -34,7 +34,9 @@ Each tab keeps its place while you visit the others, until the page reloads. The
 Following and Favourites have a "Hide seen" toggle (on by default). With it on, posts you saw before this visit are removed from the feed, so it shows only what you haven't seen. Turn it off for the strict, complete timeline, where posts seen before this visit are dimmed.
 
 - In the list, a post counts as seen once half of it (or half the screen) has shown it for a second, in any of the three views. In the grid, a post counts as seen when you open it.
+- A post that counts as seen gets a tick in its corner, so you can see the rule at work; hovering the tick says when. Clicking it marks the post as not seen (it isn't counted again this visit), and clicking a post's empty tick, shown while the pointer is on it, marks it as seen.
 - A visit starts when the page loads, when you switch view, and when you flip the toggle. Posts you see during a visit stay put until the next one.
+- The toggle shows how many seen posts it has left out of what's loaded.
 - When the visible posts run out, the extension keeps loading older posts to find unseen ones, showing how many it has skipped. After 120 seen posts in a row it pauses with "You're caught up" and offers "Look further back" (another 120) or "Show posts you've seen". At the real end of the feed it says so.
 - Seen posts are remembered in the extension's own storage for 60 days. Nothing is sent to Instagram.
 

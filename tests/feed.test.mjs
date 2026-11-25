@@ -85,6 +85,54 @@ test('Hide seen leaves out posts seen before this visit; off, they show dimmed',
   assert.equal(await page.evaluate(() => document.querySelectorAll('.sf-post.sf-seen').length), 1);
 });
 
+test('Hide seen counts the posts it leaves out', async () => {
+  const seen = { 'sinsta-seen': { Ccarol1: NOW - 86400 } };
+  await open('following', { ...LIST, ...seen });
+  await posts();
+  await page.waitForFunction(() => document.querySelector('.sinsta-toggle .sinsta-count').textContent === '1');
+  assert.match(await page.getAttribute('.sinsta-toggle', 'title'), /Hiding 1 post you saw/);
+  // Off, nothing is left out.
+  await page.click('.sinsta-toggle');
+  await page.waitForFunction(() => document.querySelector('.sinsta-toggle .sinsta-count').hidden);
+});
+
+test('A post\'s seen mark comes on once it counts as seen, and marks it either way', async () => {
+  await open('following', LIST);
+  await posts();
+  const first = '.sf-post[data-pk]:first-child .sf-mark';
+  // On screen for a second: seen.
+  await page.waitForSelector(`${first}[data-on]`, { state: 'attached', timeout: 4000 });
+  assert.match(await page.getAttribute(first, 'title'), /^Seen \d+m ago/);
+  const stored = () => page.evaluate(() => new Promise((r) => setTimeout(() => r(JSON.parse(localStorage.getItem('sinsta-seen') || '{}')), 2500)));
+  assert.ok((await stored()).Calice1);
+  // Clicking it marks the post as not seen, which stays while it's on screen.
+  await page.hover('.sf-post[data-pk]:first-child');
+  await page.click(first);
+  assert.equal(await page.evaluate((s) => document.querySelector(s).hasAttribute('data-on'), first), false);
+  await page.mouse.wheel(0, 40);
+  await page.mouse.wheel(0, -40);
+  assert.equal((await stored()).Calice1, undefined);
+  assert.equal(await page.evaluate((s) => document.querySelector(s).hasAttribute('data-on'), first), false);
+  assert.equal(await page.evaluate(() => document.querySelectorAll('#sinsta-reel-player').length), 0);
+  // And back.
+  await page.click(first);
+  assert.ok((await stored()).Calice1);
+});
+
+test('Grid: a seen post\'s tile shows the mark; clicking it doesn\'t open the post', async () => {
+  const seen = { 'sinsta-seen': { Ccarol1: NOW - 86400 } };
+  await open('following', { ...GRID, ...seen, 'sinsta-prefs': { hideSeen: false } });
+  await settled(() => page.evaluate(() => document.querySelectorAll('.sf-tile').length));
+  const mark = '.sf-tile[href="/p/Ccarol1/"] .sf-mark';
+  assert.equal(await page.evaluate((s) => document.querySelector(s).hasAttribute('data-on'), mark), true);
+  assert.equal(await page.evaluate(() => document.querySelector('.sf-tile[href="/p/Ccarol1/"]').classList.contains('sf-seen')), true);
+  await page.hover('.sf-tile[href="/p/Ccarol1/"]');
+  await page.click(mark);
+  assert.equal(await page.evaluate(() => document.querySelector('.sf-tile[href="/p/Ccarol1/"]').classList.contains('sf-seen')), false);
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => document.querySelectorAll('#sinsta-reel-player').length), 0);
+});
+
 test('List: name, buttons and caption appear only while hovered', async () => {
   await open('following', LIST);
   await posts();

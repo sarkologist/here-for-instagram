@@ -45,6 +45,7 @@
   const SOUND_OFF = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 9.5l5 5M21.5 9.5l-5 5'];
   const SOUND_ON = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 8.5a5 5 0 0 1 0 7'];
   const PLAY = ['M8 5v14l11-7z'];
+  const CHECK = ['M6.5 12.5l3.5 3.5 7.5-8'];
 
   const VIEWS = ['following', 'favorites', 'algo', 'reels'];
   const SEEN_VIEWS = new Set(['following', 'favorites']); // where "Hide seen" applies
@@ -190,6 +191,28 @@
     return SEEN_VIEWS.has(view) && !!h && h.hideSeen();
   }
 
+  // A post's seen mark: on once it counts as seen, and a button to mark it
+  // either way. Not in Reels, which doesn't track it.
+  function seenMark() {
+    if (cur === 'reels') return [];
+    const b = button('sf-mark', '', CHECK);
+    b.dataset.act = 'seen';
+    return [b];
+  }
+
+  function syncSeen(node, it) {
+    if (!node || !it) return;
+    node.classList.toggle('sf-seen', seenBefore(cur, it));
+    const mark = node.querySelector('.sf-mark');
+    if (!mark) return;
+    const h = home();
+    const at = h ? h.seenAt(it.code) : undefined;
+    mark.toggleAttribute('data-on', at !== undefined);
+    const title = at === undefined ? 'Not seen yet. Click to mark as seen.'
+      : `Seen ${ago(at)} ago. Click to mark as not seen.`;
+    if (mark.title !== title) mark.title = title;
+  }
+
   function visible(view, it) {
     return belongs(view, it) && !(hidingSeen(view) && seenBefore(view, it));
   }
@@ -289,11 +312,12 @@
     const a = el('a', { className: 'sf-tile', href: link(it) });
     a.dataset.pk = it.pk;
     a.style.aspectRatio = String(shape(it));
-    if (seenBefore(cur, it)) a.classList.add('sf-seen');
     a.append(trackOf(it, picture(it.slides[0], tileWidth())));
     if (cur !== 'reels' && it.slides.some((s) => s.video)) {
       a.append(el('span', { className: 'sf-badge', hidden: !it.video }, icon(PLAY)));
     }
+    a.append(...seenMark());
+    syncSeen(a, it);
     if (it.slides.length > 1) a.append(dotsOf(it));
     const likes = el('span', { className: 'sf-tlikes' });
     if (it.likes != null) likes.append(icon(HEART), compact(it.likes));
@@ -327,7 +351,6 @@
     const art = el('article', { className: 'sf-post' });
     art.dataset.pk = it.pk;
     art.style.setProperty('--ar', String(shape(it)));
-    if (seenBefore(cur, it)) art.classList.add('sf-seen');
     art.append(el('div', { className: 'sf-media' }, trackOf(it, picture(it.slides[0], LIST_SIZES))));
 
     const user = el('a', { className: 'sf-user', href: `/${it.username}/` }, it.username);
@@ -351,6 +374,8 @@
     }
     art.append(head, foot);
     if (it.slides.length > 1) art.append(dotsOf(it));
+    art.append(...seenMark());
+    syncSeen(art, it);
     syncPost(art, it);
     return art;
   }
@@ -623,7 +648,9 @@
       if (enough && it && cur !== 'reels' && !covered()) {
         seenTimers.set(art, setTimeout(() => {
           const h = home();
-          if (art.isConnected && h && !covered()) h.markSeen(it.code);
+          if (!art.isConnected || !h || covered()) return;
+          h.markSeen(it.code);
+          syncSeen(art, it);
         }, SEEN_MS));
       }
       // Videos play, silently, while mostly on screen.
@@ -675,7 +702,12 @@
       e.stopPropagation();
       const a = act.dataset.act;
       if (a === 'like') toggleLike(it, () => syncEverywhere(it));
-      else if (a === 'comments') openPlayer(shown.indexOf(it), { comments: true });
+      else if (a === 'seen') {
+        const h = home();
+        if (h) h.setSeen(it.code, h.seenAt(it.code) === undefined);
+        syncSeen(node, it);
+        syncStatus();
+      } else if (a === 'comments') openPlayer(shown.indexOf(it), { comments: true });
       return;
     }
     // Links (names, tags) open in place, through Instagram's router.
@@ -730,6 +762,7 @@
   content.addEventListener('pointerover', (e) => {
     const node = e.target.closest('[data-pk]');
     hovered = node;
+    if (node && e.target.closest('.sf-mark')) syncSeen(node, itemOf(node)); // "seen 5m ago" moves on
     if (scrub && scrub.node !== node) endScrub();
     const a = node && node.classList.contains('sf-tile') ? node : null;
     if (a === previewTile) return;
@@ -849,7 +882,10 @@
     if (!cur) return;
     const f = feed(cur);
     const run = seenRun(cur);
-    const hidden = hidingSeen(cur) && f.items.some((it) => belongs(cur, it) && seenBefore(cur, it));
+    const h = home();
+    const count = hidingSeen(cur) ? f.items.filter((it) => belongs(cur, it) && seenBefore(cur, it)).length : 0;
+    if (h) h.setHiddenCount(count);
+    const hidden = count > 0;
     // Redrawing it would wake the MutationObserver, which runs this again.
     const key = [cur, f.loading, f.failed, f.ended, run, f.runLimit, hidden].join('|');
     if (key === statusKey) return;
@@ -1405,7 +1441,10 @@
     syncPlayerArrows();
     // Opening a post counts as seeing it.
     const h = home();
-    if (h && cur !== 'reels') h.markSeen(it.code);
+    if (h && cur !== 'reels') {
+      h.setSeen(it.code, true);
+      syncSeen(nodeOf(it.pk), it);
+    }
 
     const next = list()[pi + 1];
     if (next && next.slides[0].video) preload = { index: pi + 1, video: makeVideo(next.slides[0]) };

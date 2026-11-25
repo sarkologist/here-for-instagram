@@ -144,6 +144,7 @@
       hideSeenPosts(articles, view);
     } else {
       setNote(null);
+      setHiddenCount(0);
       hideExcluded(articles, view);
     }
   }
@@ -179,6 +180,8 @@
   // for a second, in any view. Following and Favourites can then hide posts
   // seen before the current visit (Algo does this on Instagram's side). A
   // visit starts on page load, on switching view and on flipping the toggle.
+  // feed.js shows which posts count as seen, and lets you mark one either
+  // way: one marked as not seen isn't counted again until the next visit.
   const SEEN_KEY = 'sinsta-seen';
   const PREFS_KEY = 'sinsta-prefs';
   const REELS_KEY = 'sinsta-seen-reels-by-account';
@@ -192,6 +195,8 @@
   let visitStart = Date.now() / 1000;
   let visitView = null;
   let saveTimer = 0;
+  const unmarked = new Set(); // post ids marked as not seen this visit
+  let hiddenCount = 0; // seen posts the current view leaves out, for the toggle
 
   async function loadState() {
     let data = {};
@@ -241,11 +246,31 @@
     return null;
   }
 
-  function markPostSeen(id) {
-    if (!seen || seen.has(id)) return;
-    seen.set(id, Math.floor(Date.now() / 1000));
+  const saveSeen = () => {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => save(SEEN_KEY, Object.fromEntries(seen)), 2000);
+  };
+
+  // Counted as seen by being on screen (or opened): not if marked as not seen.
+  function markPostSeen(id) {
+    if (!seen || seen.has(id) || unmarked.has(id)) return;
+    seen.set(id, Math.floor(Date.now() / 1000));
+    saveSeen();
+  }
+
+  // Marked by hand, either way.
+  function setPostSeen(id, on) {
+    if (!seen) return;
+    if (on) {
+      unmarked.delete(id);
+      if (seen.has(id)) return;
+      seen.set(id, Math.floor(Date.now() / 1000));
+    } else {
+      unmarked.add(id);
+      if (!seen.delete(id)) return;
+      buildSeenCss();
+    }
+    saveSeen();
   }
 
   const timers = new WeakMap();
@@ -343,6 +368,7 @@
 
   function newVisit() {
     visitStart = Date.now() / 1000;
+    unmarked.clear();
     buildSeenCss();
     met.clear();
     hiddenRun = 0;
@@ -358,10 +384,13 @@
   function hideSeenPosts(articles, view) {
     const shown = [];
     let hidden = 0;
+    let hiddenSeen = 0;
     for (const article of articles) {
       const id = postId(article);
       const t = id ? seen.get(id) : undefined;
-      const hide = (t !== undefined && t < visitStart) || excluded(article, view);
+      const wasSeen = t !== undefined && t < visitStart;
+      if (wasSeen) hiddenSeen++;
+      const hide = wasSeen || excluded(article, view);
       article.classList.toggle(HIDE, !!hide);
       article.classList.toggle(TAIL, false);
       article.classList.toggle(END, false);
@@ -372,6 +401,7 @@
       if (hide) hidden++;
       else shown.push(article);
     }
+    setHiddenCount(hiddenSeen);
     loadMore(shown, hidden);
   }
 
@@ -594,7 +624,8 @@
   };
   const tabs = el('nav', { className: 'sinsta-tabs' }, tab(viewById('following')), tab(viewById('favorites')));
   const picks = el('nav', { className: 'sinsta-tabs sinsta-picks' }, tab(viewById('algo')), tab(viewById('reels')));
-  const seenToggle = el('button', { className: 'sinsta-toggle', type: 'button' }, icon(EYE_OFF), 'Hide seen');
+  const seenCount = el('span', { className: 'sinsta-count' });
+  const seenToggle = el('button', { className: 'sinsta-toggle', type: 'button' }, icon(EYE_OFF), 'Hide seen', seenCount);
   const slot = el('div', { className: 'sinsta-slot' });
   const stories = el('div', { className: 'sinsta-stories', hidden: true });
   const bar = el('div', { id: 'sinsta-bar' },
@@ -615,12 +646,23 @@
   const toTop = () => (Sinsta.surface ? Sinsta.surface.toTop() : window.scrollTo(0, 0));
 
   function syncToggle() {
+    const n = prefs.hideSeen ? hiddenCount : 0;
     seenToggle.setAttribute('aria-pressed', String(prefs.hideSeen));
-    seenToggle.title = prefs.hideSeen
-      ? 'Hiding posts you saw before this visit. Click for the full timeline.'
-      : 'Showing the full timeline. Click to hide posts you have seen.';
+    seenToggle.title = !prefs.hideSeen ? 'Showing the full timeline. Click to hide posts you have seen.'
+      : n ? `Hiding ${n} post${n === 1 ? '' : 's'} you saw before this visit. Click for the full timeline.`
+        : 'Hiding posts you saw before this visit. Click for the full timeline.';
+    const text = n ? String(n) : '';
+    if (seenCount.textContent !== text) seenCount.textContent = text;
+    seenCount.hidden = !n;
   }
   syncToggle();
+
+  // How many seen posts the view on screen leaves out (of those loaded).
+  function setHiddenCount(n) {
+    if (n === hiddenCount) return;
+    hiddenCount = n;
+    syncToggle();
+  }
 
   bar.addEventListener('click', (e) => {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -1263,7 +1305,11 @@
       const t = seen ? seen.get(code) : undefined;
       return t !== undefined && t < visitStart;
     },
+    // When a post was counted as seen (unix seconds), if it was.
+    seenAt: (code) => (seen ? seen.get(code) : undefined),
     markSeen: markPostSeen,
+    setSeen: setPostSeen,
+    setHiddenCount,
     showSeen: () => showSeenBtn.click(),
     visitStart: () => visitStart,
   };

@@ -145,6 +145,21 @@ main a[href*="variant=home"] {
   stroke-linejoin: round;
 }
 
+/* How many seen posts the view leaves out. */
+.sinsta-count {
+  min-width: 1.6em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.sinsta-count[hidden] {
+  display: none;
+}
+
 #sinsta-bar:is([data-view="algo"], [data-view="reels"]) .sinsta-toggle {
   visibility: hidden;
 }
@@ -1082,6 +1097,71 @@ html[data-sinsta-surface] main {
   opacity: 1;
 }
 
+/* Seen mark, top right: on once a post counts as seen; while the pointer is
+   on the post, a button to mark it either way. */
+.sf-mark {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.2);
+  color: #fff;
+  cursor: pointer;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, background 0.2s;
+}
+
+.sf-mark svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.5;
+}
+
+.sf-mark[data-on] {
+  border-color: transparent;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sf-mark[data-on] svg {
+  opacity: 1;
+}
+
+:is(.sf-post, .sf-tile):is(:hover, :focus-within) .sf-mark {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sf-mark:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+/* Beside a tile's video badge. */
+.sf-tile:has(.sf-badge:not([hidden])) .sf-mark {
+  right: 34px;
+}
+
+.sf-post .sf-head {
+  padding-right: 44px;
+}
+
 .sf-badge {
   position: absolute;
   top: 8px;
@@ -1303,7 +1383,7 @@ html[data-sinsta-surface] main {
   margin: 0 0 6px -6px;
 }
 
-#sinsta-surface .sf-post button {
+#sinsta-surface .sf-post button:where(:not(.sf-mark)) {
   display: flex;
   align-items: center;
   justify-content: center;
