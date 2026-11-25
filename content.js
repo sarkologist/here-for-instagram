@@ -158,7 +158,7 @@
       if (excluded(a, view)) return true;
       const id = hiding && postId(a);
       const t = id ? seen.get(id) : undefined;
-      if (t === undefined || t >= visitStart) return false;
+      if (t === undefined || t >= visitSec()) return false;
       hiddenSeen++;
       return true;
     });
@@ -206,6 +206,9 @@
   let seen = null; // Map post id -> unix seconds; null until loaded
   let prefs = { hideSeen: true };
   let visitStart = Date.now() / 1000;
+  // Seen times are whole seconds: one in the second the visit started is
+  // this visit's.
+  const visitSec = () => Math.floor(visitStart);
   let visitView = null;
   let saveTimer = 0;
   const unmarked = new Set(); // post ids marked as not seen this visit
@@ -319,7 +322,7 @@
   function buildSeenCss() {
     if (!seen) return;
     const ids = [...seen]
-      .filter(([id, t]) => t < visitStart && /^[\w-]+$/.test(id))
+      .filter(([id, t]) => t < visitSec() && /^[\w-]+$/.test(id))
       .sort((a, b) => b[1] - a[1])
       .slice(0, MAX_CSS_IDS)
       .map(([id]) => `[href*="/${id}/"]`);
@@ -401,7 +404,7 @@
     for (const article of articles) {
       const id = postId(article);
       const t = id ? seen.get(id) : undefined;
-      const wasSeen = t !== undefined && t < visitStart;
+      const wasSeen = t !== undefined && t < visitSec();
       if (wasSeen) hiddenSeen++;
       const hide = wasSeen || excluded(article, view);
       article.classList.toggle(HIDE, !!hide);
@@ -1330,7 +1333,7 @@
     // Seen before this visit started.
     seenBefore(code) {
       const t = seen ? seen.get(code) : undefined;
-      return t !== undefined && t < visitStart;
+      return t !== undefined && t < visitSec();
     },
     // When a post was counted as seen (unix seconds), if it was.
     seenAt: (code) => (seen ? seen.get(code) : undefined),
