@@ -3,14 +3,14 @@
 // Following, Favourites and Algo show Instagram's home feeds, Reels its
 // Reels feed and Explore the grid under its search box, read with the
 // queries Instagram's own pages use, as a list or as a grid (one choice for
-// all five). The list shows just the photos: a
-// post's name, buttons and caption appear over it while the pointer is on
-// it. Clicking a tile, or a post's comments button, opens the player, which
+// all five). The list shows just the photos: a post's name, buttons and
+// caption appear over it while the pointer is on it. Clicking a tile, or a post's comments button, opens the player, which
 // goes through the view in order with the caption and comments beside it.
 // Instagram's own page stays underneath, hidden and paused.
 //
 // If a home feed or Explore can't be loaded, that view falls back to
-// Instagram's page, which content.js filters (Home's). Reels in the list layout is Instagram's player.
+// Instagram's page, which content.js filters (Home's). Reels in the list
+// layout is Instagram's player.
 (() => {
   'use strict';
 
@@ -1849,7 +1849,6 @@
       if (root.style.getPropertyValue('--sr-top') !== top) root.style.setProperty('--sr-top', top);
     } else root.style.removeProperty('--sr-top');
   }
-
 
   function sync() {
     queued = false;
