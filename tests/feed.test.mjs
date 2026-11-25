@@ -315,9 +315,10 @@ test('List: clicking a post opens the player; each post links to itself', async 
   assert.equal(await page.getAttribute('#sinsta-reel-player a.sr-act', 'href'), '/p/Calice1/');
 });
 
-test('Carousels: moving the pointer across one flips through it; leaving puts it back', async () => {
-  for (const [storage, node] of [[GRID, '.sf-tile[href="/p/Ccarol1/"]'], [LIST, '.sf-post:has(.sf-dots)']]) {
-    await open('following', storage);
+test('Grid: moving the pointer across a carousel flips through it; leaving puts it back', async () => {
+  {
+    const node = '.sf-tile[href="/p/Ccarol1/"]';
+    await open('following', GRID);
     await page.waitForSelector(`${node} .sf-dots`);
     await page.locator(node).scrollIntoViewIfNeeded();
     const box = await page.locator(node).boundingBox();
@@ -342,4 +343,13 @@ test('Carousels: moving the pointer across one flips through it; leaving puts it
     });
     assert.equal(await page.textContent('#sinsta-reel-player .sr-cuser'), 'carol');
   }
+  // Not in the list.
+  await open('following', LIST);
+  const node = '.sf-post:has(.sf-dots)';
+  await page.waitForSelector(`${node} .sf-dots`);
+  await page.locator(node).scrollIntoViewIfNeeded();
+  const box = await page.locator(node).boundingBox();
+  await page.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2, { steps: 3 });
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate((s) => document.querySelector(`${s} .sf-track`).scrollLeft, node), 0);
 });

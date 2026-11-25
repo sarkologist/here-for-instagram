@@ -444,14 +444,15 @@
   }
 
   // As with the story viewer's side cards, moving the pointer across a
-  // carousel in the list or the grid flips through its photos, clicking opens
-  // the one it shows, and leaving puts back the one it rested on (where a
-  // swipe while there leaves it).
+  // carousel in the grid flips through its photos, clicking opens the one it
+  // shows, and leaving puts back the one it rested on (where a swipe while
+  // there leaves it). Not in the list, where the pointer crosses the photos
+  // on its way to the buttons over them.
   let scrub = null; // { node, rest, swiped }
 
   content.addEventListener('pointermove', (e) => {
     if (e.pointerType === 'touch') return;
-    const node = e.target.closest('.sf-post, .sf-tile');
+    const node = e.target.closest('.sf-tile');
     const it = itemOf(node);
     const t = node && node.querySelector('.sf-track');
     if (!it || !t || it.slides.length < 2) return;
