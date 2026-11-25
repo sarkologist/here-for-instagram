@@ -509,6 +509,24 @@ const Sinsta = (() => {
     return !!mutated(await gql(on ? DOC_STORY_LIKE : DOC_STORY_UNLIKE, { input: { media_id: pk } }, true));
   }
 
+  // Who has seen one of your own stories, a page at a time, as Instagram's
+  // viewer list shows them: { count, viewers, next }, or null on failure.
+  async function storyViewers(pk, after) {
+    const data = await api(`/api/v1/media/${pk}/list_reel_media_viewer/${after ? `?max_id=${encodeURIComponent(after)}` : ''}`);
+    if (!data || !Array.isArray(data.viewers)) return null;
+    const viewers = data.viewers.filter((v) => v.user && v.user.username).map((v) => ({
+      username: v.user.username,
+      name: v.user.full_name || '',
+      pic: v.user.profile_pic_url || '',
+      liked: !!v.has_liked,
+      reply: v.reply_text || '',
+    }));
+    return { count: data.total_viewer_count ?? data.user_count ?? viewers.length, viewers, next: data.next_max_id || null };
+  }
+
+  // The logged-in account's id.
+  const me = () => (document.cookie.match(/(?:^|; )ds_user_id=(\d+)/) || [])[1] || '';
+
   // Reply to a story in the author's DMs, with text or a reaction emoji,
   // as Instagram's own viewer does. Resolves to whether it was sent.
   async function replyToStory(pk, reelId, userId, text, emoji) {
@@ -703,6 +721,7 @@ const Sinsta = (() => {
   let hovering = false; // pointer on a sticker
   let card = null; // the current story's shared card: { href, label }
   let bubbleOn = false; // its "Name ›" bubble is showing
+  let listing = false; // the list of who has seen your story is open
   let downAt = 0;
   let typing = false; // the reply box has focus
   let sending = false; // a reply or reaction is on its way
@@ -739,7 +758,18 @@ const Sinsta = (() => {
   const reactions = el('div', { className: 'sv-reactions', hidden: true },
     ...REACTIONS.map((emoji) => el('button', { type: 'button', className: 'sv-emoji', title: `React with ${emoji}` }, emoji)));
   const toast = el('div', { className: 'sv-toast', hidden: true });
-  const foot = el('div', { className: 'sv-foot' }, seek.row, reactions, el('div', { className: 'sv-reply-row' }, replyInput, likeBtn));
+  // On your own stories: who has seen it, in place of the reply box, and
+  // their list, opened from it.
+  const seenFaces = el('span', { className: 'sv-seen-faces' });
+  const seenText = el('span');
+  const seenLikes = el('span', { className: 'sv-seen-likes' });
+  const seenBtn = el('button', { className: 'sv-seen', type: 'button', title: 'Viewers (V)', hidden: true }, seenFaces, seenText, seenLikes);
+  const viewersTitle = el('span', { className: 'sv-viewers-title' });
+  const viewersClose = el('button', { type: 'button', title: 'Close (Esc)' }, icon(['M6 6l12 12M18 6L6 18']));
+  const viewersList = el('div', { className: 'sv-viewers-list' });
+  const viewersBox = el('div', { className: 'sv-viewers', hidden: true },
+    el('div', { className: 'sv-viewers-head' }, viewersTitle, viewersClose), viewersList);
+  const foot = el('div', { className: 'sv-foot' }, seek.row, reactions, el('div', { className: 'sv-reply-row' }, replyInput, seenBtn, likeBtn));
   const stage = el('div', { className: 'sv-stage' },
     mediaBox,
     stickerBox,
@@ -750,7 +780,8 @@ const Sinsta = (() => {
       sub),
     note,
     toast,
-    foot);
+    foot,
+    viewersBox);
   const closeBtn = el('button', { className: 'sv-close', type: 'button', title: 'Close (Esc)' }, icon(['M6 6l12 12M18 6L6 18']));
   // The viewer scrolls sideways, one snap point per account (see Scrolling
   // the carousel): `view` stays put while `wide` gives it room to scroll.
@@ -783,7 +814,7 @@ const Sinsta = (() => {
   // it instead, and the next tap anywhere else dismisses the bubble.
   stage.addEventListener('pointerdown', (e) => {
     // While typing a reply, a tap on the story only leaves the reply box.
-    if (e.button !== 0 || typing || e.target.closest('a, button, input, .sv-foot')) return;
+    if (e.button !== 0 || typing || e.target.closest('a, button, input, .sv-foot, .sv-viewers')) return;
     downAt = Date.now();
     holding = true;
     syncPause();
@@ -793,6 +824,7 @@ const Sinsta = (() => {
     const held = Date.now() - downAt;
     release();
     if (held >= 250) return;
+    if (listing) return setListing(false);
     if (bubbleOn) return setBubble(false);
     if (card && onCard(e)) return setBubble(true);
     const box = stage.getBoundingClientRect();
@@ -823,13 +855,14 @@ const Sinsta = (() => {
   let outsideDown = null;
   const outside = (t) => !t.closest('.sv-stage, .sv-peek, a, button, input');
   root.addEventListener('pointerdown', (e) => {
-    outsideDown = e.button === 0 && outside(e.target) ? { x: e.clientX, y: e.clientY, typing, bubble: bubbleOn } : null;
+    outsideDown = e.button === 0 && outside(e.target) ? { x: e.clientX, y: e.clientY, typing, bubble: bubbleOn, listing } : null;
   });
   root.addEventListener('click', (e) => {
     const down = outsideDown;
     outsideDown = null;
     if (!down || !open || scrolling || !outside(e.target)) return;
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10 || down.typing) return;
+    if (down.listing) return setListing(false);
     if (down.bubble) return setBubble(false);
     close();
   });
@@ -861,12 +894,13 @@ const Sinsta = (() => {
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const actions = {
-      Escape: () => close(),
+      Escape: () => (listing ? setListing(false) : close()),
       ArrowRight: () => (e.shiftKey ? jump(1) : step(1)),
       ArrowLeft: () => (e.shiftKey ? jump(-1) : step(-1)),
       ' ': () => { spacePaused = !spacePaused; syncPause(); },
       m: () => setMuted(!muted),
       l: toggleLike,
+      v: () => setListing(!listing),
       '<': () => setSpeed(shiftSpeed(speed, -1)),
       '>': () => setSpeed(shiftSpeed(speed, 1)),
     };
@@ -948,7 +982,7 @@ const Sinsta = (() => {
 
   async function toggleLike() {
     const cur = currentItem();
-    if (!cur || liking.has(cur.item)) return;
+    if (!cur || liking.has(cur.item) || cur.reel.id === me()) return;
     const { item } = cur;
     const flip = (v) => {
       item.liked = v;
@@ -978,11 +1012,106 @@ const Sinsta = (() => {
       replyInput.value = '';
     }
     replyInput.placeholder = `Reply to ${reel.username}…`;
-    replyInput.hidden = !item.canReply;
-    if (!item.canReply && typing) replyInput.blur();
+    const own = reel.id === me();
+    replyInput.hidden = own || !item.canReply;
+    if (replyInput.hidden && typing) replyInput.blur();
+    likeBtn.hidden = own;
+    seenBtn.hidden = !own;
     foot.hidden = false;
     syncLike();
+    if (own) {
+      const s = seenBy.get(item.pk);
+      if (!s || (!s.busy && Date.now() - (s.at || 0) > VIEWERS_TTL)) loadViewers(item.pk, false);
+      renderSeen();
+    } else if (listing) {
+      setListing(false);
+    }
   }
+
+  // ---- Who has seen your story --------------------------------------------
+
+  const VIEWERS_TTL = 60000; // asked again when shown after this long
+  const seenBy = new Map(); // story pk -> { at, count, viewers, next, busy, failed }
+
+  // The first page afresh, or (`more`) the next one.
+  async function loadViewers(pk, more) {
+    const old = seenBy.get(pk);
+    if (old && old.busy) return;
+    if (more && !(old && old.next)) return;
+    const s = old || { at: 0, count: null, viewers: [], next: null, busy: false, failed: false };
+    seenBy.set(pk, s);
+    s.busy = true;
+    const page = await storyViewers(pk, more ? s.next : null);
+    s.busy = false;
+    if (page) {
+      s.at = Date.now();
+      s.failed = false;
+      s.count = page.count;
+      s.viewers = more ? s.viewers.concat(page.viewers) : page.viewers;
+      s.next = page.next;
+    } else {
+      s.failed = s.count === null;
+    }
+    const cur = currentItem();
+    if (open && cur && cur.item.pk === pk) renderSeen();
+  }
+
+  function setListing(on) {
+    const cur = currentItem();
+    on = !!(on && cur && cur.reel.id === me());
+    if (on === listing) return;
+    listing = on;
+    viewersBox.hidden = !on;
+    if (on) {
+      viewersList.scrollTop = 0;
+      renderSeen();
+    }
+    syncPause();
+  }
+
+  // The "Seen by" button and, while open, the list.
+  function renderSeen() {
+    const cur = currentItem();
+    if (!cur) return;
+    const s = seenBy.get(cur.item.pk);
+    const viewers = (s && s.viewers) || [];
+    const count = s && s.count;
+    const likes = viewers.filter((v) => v.liked).length;
+    seenFaces.replaceChildren(...viewers.slice(0, 3).map((v) => el('img', { src: v.pic, alt: '' })));
+    seenText.textContent = count == null ? (s && s.failed ? 'Viewers unavailable' : 'Seen by …')
+      : count ? `Seen by ${count}` : 'No viewers yet';
+    seenLikes.replaceChildren(...(likes ? [icon(HEART), `${likes}${s.next ? '+' : ''}`] : []));
+    if (!listing) return;
+    viewersTitle.textContent = count ? `Viewers · ${count}` : 'Viewers';
+    const rows = viewers.map((v) => el('div', { className: 'sv-viewer' },
+      el('img', { src: v.pic, alt: '' }),
+      el('div', { className: 'sv-viewer-who' },
+        el('a', { href: `/${v.username}/` }, v.username),
+        v.name ? el('span', {}, v.name) : '',
+        v.reply ? el('span', { className: 'sv-viewer-reply' }, `Replied: ${v.reply}`) : ''),
+      v.liked ? el('span', { className: 'sv-viewer-liked', title: 'Liked' }, icon(HEART)) : ''));
+    const end = s && s.failed ? 'Couldn\'t load who has seen it'
+      : !s || s.busy ? 'Loading…'
+      : !viewers.length ? 'No one has seen it yet' : '';
+    viewersList.replaceChildren(...rows, ...(end ? [el('div', { className: 'sv-viewers-end' }, end)] : []));
+    if (viewersList.dataset.pk !== cur.item.pk) {
+      viewersList.dataset.pk = cur.item.pk;
+      viewersList.scrollTop = 0;
+    }
+    moreViewers();
+  }
+
+  // More as the list nears its end, or if it doesn't fill its box.
+  function moreViewers() {
+    const cur = currentItem();
+    if (!listing || !cur) return;
+    const s = seenBy.get(cur.item.pk);
+    if (!s || s.busy || !s.next) return;
+    if (viewersList.scrollHeight - viewersList.scrollTop - viewersList.clientHeight < 200) loadViewers(cur.item.pk, true);
+  }
+  viewersList.addEventListener('scroll', moreViewers, { passive: true });
+  viewersClose.addEventListener('click', () => setListing(false));
+  seenBtn.addEventListener('click', () => setListing(!listing));
 
   // ---- Data ---------------------------------------------------------------
 
@@ -1749,6 +1878,7 @@ const Sinsta = (() => {
   // scroller.
   window.addEventListener('wheel', (e) => {
     if (!open || e.ctrlKey || e.metaKey) return; // zoom
+    if (e.target.closest && e.target.closest('.sv-viewers')) return; // scrolls the list
     const mode = e.deltaMode;
     if (mode === 0) {
       if (wheelTimer) {
@@ -1787,7 +1917,7 @@ const Sinsta = (() => {
 
   // ---- Playback -----------------------------------------------------------
 
-  const paused = () => spacePaused || holding || hovering || bubbleOn || typing || sending || turning || scrolling;
+  const paused = () => spacePaused || holding || hovering || bubbleOn || listing || typing || sending || turning || scrolling;
 
   // Clickable areas over the stickers, on a layer matching the media's own
   // box within the 9:16 stage (the media is shown uncropped).
@@ -2116,6 +2246,8 @@ const Sinsta = (() => {
     clearDeck();
     replyInput.blur();
     typing = false;
+    listing = false;
+    viewersBox.hidden = true;
     root.remove();
     document.documentElement.classList.remove('sinsta-viewing');
     if (onClose) onClose();

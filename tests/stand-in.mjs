@@ -79,8 +79,11 @@ export const suggested = (m) => ({ explore_story: { media: m } });
 // { ad: media }; null fails).
 export const accounts = {};
 export const songLookups = []; // pks of the posts asked for their song
+// Who has seen each of your own stories (by pk): { username, liked, reply }.
+export const storyViewers = {};
 function reset() {
   songLookups.length = 0;
+  for (const k of Object.keys(storyViewers)) delete storyViewers[k];
   for (const k of Object.keys(accounts)) delete accounts[k];
   accounts['111'] = {
     tray: [reel('1', 'alice', { watched: true }), reel('2', 'carol', { ago: 600 }), reel('3', 'fav_of_a', { ago: 900 })],
@@ -185,6 +188,21 @@ export async function freshContext(storage = {}) {
       return json({ items: [{ pk: info[1], media_type: 1, music_metadata: songs[info[1]] || null }] });
     }
     if (path === '/api/v1/feed/reels_tray/') return json({ tray: acc.tray });
+    const seenBy = path.match(/^\/api\/v1\/media\/(\d+)\/list_reel_media_viewer\/$/);
+    if (seenBy) {
+      // Pages of 20, max_id being the index to start at.
+      const all = storyViewers[seenBy[1]] || [];
+      const start = Number(new URL(req.url()).searchParams.get('max_id') || 0);
+      const more = start + 20 < all.length;
+      return json({
+        total_viewer_count: all.length,
+        next_max_id: more ? String(start + 20) : null,
+        viewers: all.slice(start, start + 20).map((v) => ({
+          user: { pk: `u-${v.username}`, username: v.username, full_name: v.username.toUpperCase(), profile_pic_url: `${ORIGIN}/test/pic/${v.username}.jpg` },
+          has_liked: !!v.liked, reply_text: v.reply || '',
+        })),
+      });
+    }
     if (path === '/api/v1/friendships/feed_favorites/') {
       const all = Object.values(accounts).flatMap((a) => a.tray);
       return json({ users: acc.favourites.map((id) => all.find((r) => r.id === id).user) });

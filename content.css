@@ -941,6 +941,134 @@ html[data-sinsta-surface] main video {
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 30%);
 }
 
+/* Your own story: who has seen it, in place of the reply box. */
+#sinsta-viewer .sv-seen {
+  gap: 8px;
+  height: 44px;
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.sv-seen-faces {
+  display: flex;
+}
+
+.sv-seen-faces img {
+  width: 26px;
+  height: 26px;
+  margin-left: -8px;
+  border: 2px solid #000;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.sv-seen-faces img:first-child {
+  margin-left: 0;
+}
+
+.sv-seen-likes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #ff3040;
+}
+
+#sinsta-viewer .sv-seen-likes svg,
+#sinsta-viewer .sv-viewer-liked svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  stroke: none;
+}
+
+/* Their list, over the bottom of the story; the story pauses meanwhile. */
+.sv-viewers {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 65%;
+  border-radius: 12px 12px 0 0;
+  background: rgba(24, 24, 24, 0.96);
+  cursor: auto;
+}
+
+.sv-viewers-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 8px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-weight: 600;
+}
+
+.sv-viewers-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0 8px;
+}
+
+.sv-viewer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+}
+
+.sv-viewer img {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.sv-viewer-who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sv-viewer-who > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sv-viewer-who a {
+  font-weight: 600;
+}
+
+.sv-viewer-who span {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+#sinsta-viewer .sv-viewer-who .sv-viewer-reply {
+  opacity: 0.9;
+  user-select: text;
+}
+
+.sv-viewer-liked {
+  display: flex;
+  color: #ff3040;
+}
+
+#sinsta-viewer .sv-viewer-liked svg {
+  width: 20px;
+  height: 20px;
+}
+
+.sv-viewers-end {
+  padding: 16px;
+  text-align: center;
+  opacity: 0.7;
+}
+
 .sv-toast {
   position: absolute;
   bottom: 84px;

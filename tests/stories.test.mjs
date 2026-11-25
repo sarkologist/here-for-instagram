@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, accounts, videoReel, page, freshContext, logIn, settled } from './stand-in.mjs';
+import { ORIGIN, accounts, reel, videoReel, storyViewers, page, freshContext, logIn, settled } from './stand-in.mjs';
 
 // The usernames in the stories row once it has settled, watched ones marked.
 async function row(view) {
@@ -133,4 +133,59 @@ test('Video story: seekbar and playback speed', async () => {
   // Seeking doesn't move on to another story or close the viewer.
   assert.equal(await page.locator('#sinsta-viewer').count(), 1);
   await clock.filter({ hasText: /^0:0[23] \/ 0:04$/ }).waitFor({ timeout: 1000 });
+});
+
+test('Your own story: who has seen it, and their list', async () => {
+  await freshContext();
+  await logIn('111');
+  accounts['111'].tray = [reel('111', 'me_myself', { ago: 120 }), reel('2', 'carol', { ago: 600 })];
+  accounts['111'].favourites = [];
+  storyViewers['111001'] = [
+    { username: 'bob', liked: true },
+    { username: 'eve', reply: 'nice' },
+    ...Array.from({ length: 23 }, (_, i) => ({ username: `v${i}` })),
+  ];
+  assert.deepEqual(await row('following'), ['me_myself', 'carol']);
+  await page.click('.sinsta-story');
+  const seen = page.locator('#sinsta-viewer .sv-seen');
+  await seen.filter({ hasText: 'Seen by 25' }).waitFor();
+  const foot = () => page.evaluate(() => ({
+    reply: !document.querySelector('#sinsta-viewer .sv-reply').hidden,
+    like: !document.querySelector('#sinsta-viewer .sv-like').hidden,
+    seen: !document.querySelector('#sinsta-viewer .sv-seen').hidden,
+    faces: document.querySelectorAll('#sinsta-viewer .sv-seen-faces img').length,
+    likes: document.querySelector('#sinsta-viewer .sv-seen-likes').textContent,
+  }));
+  // One like among the first page of 20, with more to come.
+  assert.deepEqual(await foot(), { reply: false, like: false, seen: true, faces: 3, likes: '1+' });
+
+  // V opens the list; scrolling down loads the rest.
+  await page.keyboard.press('v');
+  const rows = page.locator('#sinsta-viewer .sv-viewer');
+  await rows.first().waitFor();
+  assert.equal(await page.locator('#sinsta-viewer .sv-viewers-title').textContent(), 'Viewers · 25');
+  assert.equal(await rows.first().locator('.sv-viewer-liked').count(), 1);
+  assert.equal(await rows.nth(1).locator('.sv-viewer-reply').textContent(), 'Replied: nice');
+  await page.evaluate(() => { const l = document.querySelector('#sinsta-viewer .sv-viewers-list'); l.scrollTop = l.scrollHeight; });
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-viewer .sv-viewer').length === 25);
+  assert.equal(await page.locator('#sinsta-viewer .sv-seen-likes').textContent(), '1');
+
+  // A click on the story closes the list, not the viewer, and doesn't move on.
+  const box = await page.locator('#sinsta-viewer .sv-stage').boundingBox();
+  await page.mouse.click(box.x + box.width * 0.8, box.y + 100);
+  assert.equal(await page.locator('#sinsta-viewer .sv-viewers').isHidden(), true);
+  assert.equal(await page.locator('#sinsta-viewer .sv-user').textContent(), 'me_myself');
+  // Clicking "Seen by" opens it again; Esc closes only the list.
+  await page.hover('#sinsta-viewer .sv-stage');
+  await seen.click();
+  assert.equal(await page.locator('#sinsta-viewer .sv-viewers').isVisible(), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#sinsta-viewer .sv-viewers').isHidden(), true);
+  assert.equal(await page.locator('#sinsta-viewer').count(), 1);
+
+  // Someone else's story: the reply box and the heart, as before.
+  await page.keyboard.press('ArrowRight');
+  await page.locator('#sinsta-viewer .sv-user', { hasText: 'carol' }).waitFor();
+  const theirs = await foot();
+  assert.deepEqual([theirs.like, theirs.seen], [true, false]);
 });
