@@ -941,80 +941,130 @@ html[data-sinsta-surface] main video {
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 30%);
 }
 
-/* Your own story: who has seen it, in place of the reply box. */
+/* Your own story: how many have seen it, liked it and replied, in a pill
+   in place of the reply box. */
 #sinsta-viewer .sv-seen {
-  gap: 8px;
-  height: 44px;
-  padding: 0 4px;
+  gap: 14px;
+  width: fit-content;
+  margin: 0 auto 2px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  font-size: 13px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.sv-seen-faces {
-  display: flex;
+#sinsta-viewer .sv-seen:hover {
+  background: rgba(0, 0, 0, 0.6);
 }
 
-.sv-seen-faces img {
-  width: 26px;
-  height: 26px;
-  margin-left: -8px;
-  border: 2px solid #000;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.sv-seen-faces img:first-child {
-  margin-left: 0;
-}
-
-.sv-seen-likes {
-  display: flex;
+.sv-stat {
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  color: #ff3040;
+  gap: 5px;
 }
 
-#sinsta-viewer .sv-seen-likes svg,
-#sinsta-viewer .sv-viewer-liked svg {
-  width: 16px;
-  height: 16px;
+#sinsta-viewer .sv-stat svg {
+  width: 17px;
+  height: 17px;
+}
+
+#sinsta-viewer .sv-stat-likes svg {
+  color: #ff3040;
   fill: currentColor;
   stroke: none;
 }
 
-/* Their list, over the bottom of the story; the story pauses meanwhile. */
+/* While the list is open, the story's controls stay up. */
+#sinsta-viewer.sv-listing .sv-stage :is(.sv-top, .sv-foot) {
+  opacity: 1;
+}
+
+/* Who: a panel beside the story, over the cards on its right, as tall as
+   the story. Kept on screen where there's no room beside it. */
 .sv-viewers {
+  --h: min(89vh, calc((100vw - 32px) * 16 / 9));
   position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  z-index: 102;
+  top: calc(50% - var(--h) / 2);
+  left: min(calc(50% + var(--h) * 9 / 32 + 16px), calc(100% - 356px));
   display: flex;
   flex-direction: column;
-  max-height: 65%;
-  border-radius: 12px 12px 0 0;
-  background: rgba(24, 24, 24, 0.96);
+  width: 340px;
+  height: var(--h);
+  border-radius: 8px;
+  background: #262626;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
   cursor: auto;
+  animation: sv-viewers-in 0.2s ease-out;
+}
+
+@keyframes sv-viewers-in {
+  from { transform: translateX(-12px); opacity: 0; }
 }
 
 .sv-viewers-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 8px 8px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 12px 8px 10px 16px;
+}
+
+.sv-viewers-title {
+  font-size: 15px;
   font-weight: 600;
 }
 
+.sv-viewers-title small {
+  margin-left: 6px;
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+.sv-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+#sinsta-viewer .sv-tab {
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#sinsta-viewer .sv-tab[data-on] {
+  background: #fff;
+  color: #000;
+}
+
+#sinsta-viewer .sv-tab svg {
+  width: 14px;
+  height: 14px;
+}
+
 .sv-viewers-list {
+  flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 4px 0 8px;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
 }
 
 .sv-viewer {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 7px 16px;
+}
+
+.sv-viewer:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .sv-viewer img {
@@ -1022,6 +1072,7 @@ html[data-sinsta-surface] main video {
   height: 40px;
   flex: none;
   border-radius: 50%;
+  background: #333;
   object-fit: cover;
 }
 
@@ -1029,7 +1080,7 @@ html[data-sinsta-surface] main video {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -1043,13 +1094,20 @@ html[data-sinsta-surface] main video {
   font-weight: 600;
 }
 
-.sv-viewer-who span {
-  font-size: 12px;
-  opacity: 0.7;
+.sv-viewer-name {
+  font-size: 13px;
+  opacity: 0.6;
 }
 
-#sinsta-viewer .sv-viewer-who .sv-viewer-reply {
-  opacity: 0.9;
+/* A reply, as a chat bubble under the name. */
+.sv-viewer-who .sv-viewer-reply {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 5px 10px;
+  border-radius: 14px 14px 14px 4px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 13px;
   user-select: text;
 }
 
@@ -1059,14 +1117,16 @@ html[data-sinsta-surface] main video {
 }
 
 #sinsta-viewer .sv-viewer-liked svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  stroke: none;
 }
 
 .sv-viewers-end {
-  padding: 16px;
+  padding: 28px 16px;
   text-align: center;
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
 .sv-toast {

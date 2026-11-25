@@ -758,18 +758,33 @@ const Sinsta = (() => {
   const reactions = el('div', { className: 'sv-reactions', hidden: true },
     ...REACTIONS.map((emoji) => el('button', { type: 'button', className: 'sv-emoji', title: `React with ${emoji}` }, emoji)));
   const toast = el('div', { className: 'sv-toast', hidden: true });
-  // On your own stories: who has seen it, in place of the reply box, and
-  // their list, opened from it.
-  const seenFaces = el('span', { className: 'sv-seen-faces' });
-  const seenText = el('span');
-  const seenLikes = el('span', { className: 'sv-seen-likes' });
-  const seenBtn = el('button', { className: 'sv-seen', type: 'button', title: 'Viewers (V)', hidden: true }, seenFaces, seenText, seenLikes);
-  const viewersTitle = el('span', { className: 'sv-viewers-title' });
+  // On your own stories: how many have seen it, liked it and replied, in
+  // place of the reply box, and beside the story the list of who, opened
+  // from it.
+  const EYE = ['M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z', 'M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6'];
+  const BUBBLE = ['M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12z'];
+  const stat = (className, title, paths) => {
+    const n = el('b');
+    return [el('span', { className, title }, icon(paths), n), n];
+  };
+  const [seenViews, seenViewsN] = stat('sv-stat', 'Viewers', EYE);
+  const [seenLikes, seenLikesN] = stat('sv-stat sv-stat-likes', 'Likes', HEART);
+  const [seenReplies, seenRepliesN] = stat('sv-stat', 'Replies', BUBBLE);
+  const seenBtn = el('button', { className: 'sv-seen', type: 'button', title: 'Viewers (V)', hidden: true }, seenViews, seenLikes, seenReplies);
+  const viewersCount = el('small');
   const viewersClose = el('button', { type: 'button', title: 'Close (Esc)' }, icon(['M6 6l12 12M18 6L6 18']));
+  const tabN = { all: el('b'), likes: el('b'), replies: el('b') };
+  const tabs = {
+    all: el('button', { type: 'button', className: 'sv-tab' }, 'All', tabN.all),
+    likes: el('button', { type: 'button', className: 'sv-tab sv-stat-likes', title: 'Liked it' }, icon(HEART), tabN.likes),
+    replies: el('button', { type: 'button', className: 'sv-tab', title: 'Replied' }, icon(BUBBLE), tabN.replies),
+  };
   const viewersList = el('div', { className: 'sv-viewers-list' });
   const viewersBox = el('div', { className: 'sv-viewers', hidden: true },
-    el('div', { className: 'sv-viewers-head' }, viewersTitle, viewersClose), viewersList);
-  const foot = el('div', { className: 'sv-foot' }, seek.row, reactions, el('div', { className: 'sv-reply-row' }, replyInput, seenBtn, likeBtn));
+    el('div', { className: 'sv-viewers-head' }, el('span', { className: 'sv-viewers-title' }, 'Viewers', viewersCount), viewersClose),
+    el('div', { className: 'sv-tabs' }, tabs.all, tabs.likes, tabs.replies),
+    viewersList);
+  const foot = el('div', { className: 'sv-foot' }, seek.row, reactions, seenBtn, el('div', { className: 'sv-reply-row' }, replyInput, likeBtn));
   const stage = el('div', { className: 'sv-stage' },
     mediaBox,
     stickerBox,
@@ -780,12 +795,11 @@ const Sinsta = (() => {
       sub),
     note,
     toast,
-    foot,
-    viewersBox);
+    foot);
   const closeBtn = el('button', { className: 'sv-close', type: 'button', title: 'Close (Esc)' }, icon(['M6 6l12 12M18 6L6 18']));
   // The viewer scrolls sideways, one snap point per account (see Scrolling
   // the carousel): `view` stays put while `wide` gives it room to scroll.
-  const view = el('div', { className: 'sv-view' }, closeBtn, stage);
+  const view = el('div', { className: 'sv-view' }, closeBtn, stage, viewersBox);
   const stops = el('div'); // a snap point per account, placed by sizeScroller
   const wide = el('div', { className: 'sv-wide' }, view, stops);
   const root = el('div', { id: 'sinsta-viewer' }, wide);
@@ -853,7 +867,7 @@ const Sinsta = (() => {
   // While typing a reply or with a shared card's bubble up, it only leaves
   // those, as a tap on the story does.
   let outsideDown = null;
-  const outside = (t) => !t.closest('.sv-stage, .sv-peek, a, button, input');
+  const outside = (t) => !t.closest('.sv-stage, .sv-peek, .sv-viewers, a, button, input');
   root.addEventListener('pointerdown', (e) => {
     outsideDown = e.button === 0 && outside(e.target) ? { x: e.clientX, y: e.clientY, typing, bubble: bubbleOn, listing } : null;
   });
@@ -1021,7 +1035,7 @@ const Sinsta = (() => {
     syncLike();
     if (own) {
       const s = seenBy.get(item.pk);
-      if (!s || (!s.busy && Date.now() - (s.at || 0) > VIEWERS_TTL)) loadViewers(item.pk, false);
+      if (!s || (!s.busy && Date.now() - s.at > VIEWERS_TTL)) loadViewers(item.pk);
       renderSeen();
     } else if (listing) {
       setListing(false);
@@ -1031,29 +1045,40 @@ const Sinsta = (() => {
   // ---- Who has seen your story --------------------------------------------
 
   const VIEWERS_TTL = 60000; // asked again when shown after this long
-  const seenBy = new Map(); // story pk -> { at, count, viewers, next, busy, failed }
+  const VIEWER_PAGES = 30; // at most this many pages of viewers
+  const seenBy = new Map(); // story pk -> { at, count, viewers, more, busy, failed }
+  let viewersTab = 'all'; // all, likes or replies
 
-  // The first page afresh, or (`more`) the next one.
-  async function loadViewers(pk, more) {
-    const old = seenBy.get(pk);
-    if (old && old.busy) return;
-    if (more && !(old && old.next)) return;
-    const s = old || { at: 0, count: null, viewers: [], next: null, busy: false, failed: false };
+  // Every page, so the likes and replies can be counted and the likers put
+  // first. The first time, the counts fill in as the pages come; after
+  // that, the new list replaces the old one when it is complete.
+  async function loadViewers(pk) {
+    const s = seenBy.get(pk) || { at: 0, count: null, viewers: [], more: false, busy: false, failed: false };
+    if (s.busy) return;
     seenBy.set(pk, s);
     s.busy = true;
-    const page = await storyViewers(pk, more ? s.next : null);
+    const first = s.count === null;
+    const shown = () => {
+      const cur = currentItem();
+      if (open && cur && cur.item.pk === pk) renderSeen();
+    };
+    let viewers = [];
+    let count = null;
+    let after = null;
+    let pages = 0;
+    do {
+      const page = await storyViewers(pk, after);
+      if (!page) break;
+      count = page.count;
+      viewers = viewers.concat(page.viewers);
+      after = page.next;
+      if (first) Object.assign(s, { count, viewers, more: !!after });
+      if (first && after) shown();
+    } while (after && ++pages < VIEWER_PAGES);
     s.busy = false;
-    if (page) {
-      s.at = Date.now();
-      s.failed = false;
-      s.count = page.count;
-      s.viewers = more ? s.viewers.concat(page.viewers) : page.viewers;
-      s.next = page.next;
-    } else {
-      s.failed = s.count === null;
-    }
-    const cur = currentItem();
-    if (open && cur && cur.item.pk === pk) renderSeen();
+    if (count !== null) Object.assign(s, { at: Date.now(), failed: false, count, viewers, more: !!after });
+    else s.failed = s.count === null;
+    shown();
   }
 
   function setListing(on) {
@@ -1062,6 +1087,7 @@ const Sinsta = (() => {
     if (on === listing) return;
     listing = on;
     viewersBox.hidden = !on;
+    root.classList.toggle('sv-listing', on);
     if (on) {
       viewersList.scrollTop = 0;
       renderSeen();
@@ -1069,47 +1095,56 @@ const Sinsta = (() => {
     syncPause();
   }
 
-  // The "Seen by" button and, while open, the list.
+  // The counts and, while open, the list: likers first, then the rest, in
+  // Instagram's order.
   function renderSeen() {
     const cur = currentItem();
     if (!cur) return;
     const s = seenBy.get(cur.item.pk);
-    const viewers = (s && s.viewers) || [];
-    const count = s && s.count;
-    const likes = viewers.filter((v) => v.liked).length;
-    seenFaces.replaceChildren(...viewers.slice(0, 3).map((v) => el('img', { src: v.pic, alt: '' })));
-    seenText.textContent = count == null ? (s && s.failed ? 'Viewers unavailable' : 'Seen by …')
-      : count ? `Seen by ${count}` : 'No viewers yet';
-    seenLikes.replaceChildren(...(likes ? [icon(HEART), `${likes}${s.next ? '+' : ''}`] : []));
+    const all = (s && s.viewers) || [];
+    const likers = all.filter((v) => v.liked);
+    const repliers = all.filter((v) => v.reply);
+    const plus = s && s.more ? '+' : '';
+    const known = !!(s && s.count !== null);
+    seenViewsN.textContent = known ? s.count : s && s.failed ? '–' : '…';
+    seenLikesN.textContent = likers.length + plus;
+    seenRepliesN.textContent = repliers.length + plus;
+    seenLikes.hidden = !likers.length;
+    seenReplies.hidden = !repliers.length;
+    seenBtn.title = s && s.failed ? 'Couldn\'t load who has seen it' : 'Viewers (V)';
     if (!listing) return;
-    viewersTitle.textContent = count ? `Viewers · ${count}` : 'Viewers';
-    const rows = viewers.map((v) => el('div', { className: 'sv-viewer' },
+    viewersCount.textContent = known && s.count ? s.count : '';
+    tabN.all.textContent = known ? s.count : '';
+    tabN.likes.textContent = likers.length + plus;
+    tabN.replies.textContent = repliers.length + plus;
+    for (const [k, b] of Object.entries(tabs)) b.toggleAttribute('data-on', k === viewersTab);
+    const picked = { all, likes: likers, replies: repliers }[viewersTab];
+    const shown = [...picked.filter((v) => v.liked), ...picked.filter((v) => !v.liked)];
+    const rows = shown.map((v) => el('div', { className: 'sv-viewer' },
       el('img', { src: v.pic, alt: '' }),
       el('div', { className: 'sv-viewer-who' },
         el('a', { href: `/${v.username}/` }, v.username),
-        v.name ? el('span', {}, v.name) : '',
-        v.reply ? el('span', { className: 'sv-viewer-reply' }, `Replied: ${v.reply}`) : ''),
+        v.name ? el('span', { className: 'sv-viewer-name' }, v.name) : '',
+        v.reply ? el('span', { className: 'sv-viewer-reply' }, v.reply) : ''),
       v.liked ? el('span', { className: 'sv-viewer-liked', title: 'Liked' }, icon(HEART)) : ''));
     const end = s && s.failed ? 'Couldn\'t load who has seen it'
-      : !s || s.busy ? 'Loading…'
-      : !viewers.length ? 'No one has seen it yet' : '';
+      : !known || (s.busy && all.length < s.count) ? 'Loading…'
+      : shown.length ? ''
+      : { all: 'No one has seen it yet', likes: 'No likes yet', replies: 'No replies yet' }[viewersTab];
     viewersList.replaceChildren(...rows, ...(end ? [el('div', { className: 'sv-viewers-end' }, end)] : []));
     if (viewersList.dataset.pk !== cur.item.pk) {
       viewersList.dataset.pk = cur.item.pk;
       viewersList.scrollTop = 0;
     }
-    moreViewers();
   }
 
-  // More as the list nears its end, or if it doesn't fill its box.
-  function moreViewers() {
-    const cur = currentItem();
-    if (!listing || !cur) return;
-    const s = seenBy.get(cur.item.pk);
-    if (!s || s.busy || !s.next) return;
-    if (viewersList.scrollHeight - viewersList.scrollTop - viewersList.clientHeight < 200) loadViewers(cur.item.pk, true);
+  for (const [k, b] of Object.entries(tabs)) {
+    b.addEventListener('click', () => {
+      viewersTab = k;
+      viewersList.scrollTop = 0;
+      renderSeen();
+    });
   }
-  viewersList.addEventListener('scroll', moreViewers, { passive: true });
   viewersClose.addEventListener('click', () => setListing(false));
   seenBtn.addEventListener('click', () => setListing(!listing));
 
@@ -2248,6 +2283,7 @@ const Sinsta = (() => {
     typing = false;
     listing = false;
     viewersBox.hidden = true;
+    root.classList.remove('sv-listing');
     root.remove();
     document.documentElement.classList.remove('sinsta-viewing');
     if (onClose) onClose();
