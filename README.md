@@ -23,7 +23,7 @@ Explore (Search in Instagram's menu) gets the same list or grid, player and Hide
 
 ## Profiles
 
-A profile's Posts tab shows the same list or grid, with the player, in place of Instagram's grid: the profile's header, highlights and tabs stay above it, and the page scrolls as usual. Posts you've seen show their tick (and are dimmed if seen before this visit), but stay: Hide seen doesn't apply to profiles. Reels and Tagged are Instagram's own, as is the Posts tab if its posts can't be loaded. All profiles share one column count.
+A profile's Posts tab shows the same list or grid, with the player and Hide seen, in place of Instagram's grid: the profile's header, highlights and tabs stay above it, and the page scrolls as usual. The grid takes the page's whole width beside the sidebar, not just Instagram's profile column. Looking at a profile doesn't start a new visit. Reels and Tagged are Instagram's own, as is the Posts tab if its posts can't be loaded. All profiles share one column count.
 
 ## List and grid
 
@@ -39,7 +39,7 @@ Each tab keeps its place while you visit the others, until the page reloads. The
 
 ## Hide seen
 
-Following, Favourites, Algo and Explore share a "Hide seen" toggle (on by default). With it on, posts you saw before this visit are removed from the feed, so it shows only what you haven't seen. Turn it off for the strict, complete timeline, where posts seen before this visit are dimmed.
+Following, Favourites, Algo, Explore and profiles share a "Hide seen" toggle (on by default). With it on, posts you saw before this visit are removed from the feed, so it shows only what you haven't seen. Turn it off for the strict, complete timeline, where posts seen before this visit are dimmed.
 
 - In the list, a post counts as seen once half of it (or half the screen) has shown it for a second, in any of the three views. In the grid, where a screen holds many posts, a post counts as seen once it has been wholly on screen for a second and you scroll past it, or once the pointer has rested on it for a second. Opening a post counts too.
 - A post that counts as seen gets a tick in its corner, so you can see the rule at work; hovering the tick says when. Clicking it marks the post as not seen (it isn't counted again this visit), and clicking a post's empty tick, shown while the pointer is on it, marks it as seen.

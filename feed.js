@@ -49,7 +49,7 @@
   const CHECK = ['M6.5 12.5l3.5 3.5 7.5-8'];
 
   const VIEWS = ['following', 'favorites', 'algo', 'reels', 'explore'];
-  const SEEN_VIEWS = new Set(['following', 'favorites', 'algo', 'explore']); // where "Hide seen" applies
+  const SEEN_VIEWS = new Set(['following', 'favorites', 'algo', 'explore']); // where "Hide seen" applies, with profiles
 
   let prefs = {
     layout: 'grid',
@@ -200,7 +200,7 @@
 
   function hidingSeen(view) {
     const h = home();
-    return SEEN_VIEWS.has(view) && !!h && h.hideSeen();
+    return (SEEN_VIEWS.has(view) || isProfile(view)) && !!h && h.hideSeen();
   }
 
   // A post's seen mark: on once it counts as seen, and a button to mark it
@@ -993,7 +993,10 @@
     } else if (run >= f.runLimit) {
       status.append(el('p', { className: 'sf-strong' }, `You're caught up: the last ${run} posts were ones you've seen.`), caughtUpButtons(f));
     } else if (f.ended) {
-      if (hidden) status.append(el('p', { className: 'sf-strong' }, "You're caught up: that's as far back as this feed goes."), caughtUpButtons(f));
+      if (hidden) {
+        status.append(el('p', { className: 'sf-strong' }, inline() ? "You're caught up: you've seen the rest of their posts."
+          : "You're caught up: that's as far back as this feed goes."), caughtUpButtons(f));
+      }
       else status.append(el('p', {}, cur === 'reels' || cur === 'explore' ? "That's all Instagram has for now."
         : inline() ? "That's all of their posts." : "That's as far back as this feed goes."));
     }
@@ -1892,11 +1895,24 @@
     if (!block) return;
     block.setAttribute('data-sinsta-replaced', '');
     if (block.nextElementSibling !== root) block.after(root);
+    // Instagram's profile column is narrower than the page: reach out of it
+    // to the room beside the sidebar, as the surface has elsewhere.
+    // (Until the sidebar has been measured, it stays in the column.)
+    measure();
+    const measured = root.style.getPropertyValue('--sr-left');
+    if (!measured) return;
+    const left = parseFloat(measured);
+    const shift = `${Math.round(left - root.parentElement.getBoundingClientRect().left)}px`;
+    const width = `${Math.round(document.documentElement.clientWidth - left)}px`;
+    if (root.style.marginLeft !== shift) root.style.marginLeft = shift;
+    if (root.style.width !== width) root.style.width = width;
   }
 
   function unplaceInline() {
     if (replaced) replaced.removeAttribute('data-sinsta-replaced');
     replaced = null;
+    root.style.marginLeft = '';
+    root.style.width = '';
   }
 
   // On Explore the surface leaves Instagram's search box in sight above it.

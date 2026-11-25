@@ -814,9 +814,9 @@
     const view = location.pathname === '/' ? currentView() : onReels ? 'reels' : onExplore ? 'explore' : null;
     document.documentElement.toggleAttribute('data-sinsta-favourites', view === 'favorites');
     document.documentElement.toggleAttribute('data-sinsta-following', view === 'following');
-    // A profile's Posts tab, when feed.js draws its grid: the bar (only the
-    // layout controls) goes atop it. Seen posts show there, but stay; the
-    // visit is Home's, which a look at a profile doesn't end.
+    // A profile's Posts tab, when feed.js draws its grid: the bar (Hide
+    // seen and the layout controls) goes atop it. The visit is Home's, which
+    // a look at a profile doesn't end.
     if (!view && Sinsta.surface && Sinsta.surface.inline()) {
       mountBar('profile');
       return;
