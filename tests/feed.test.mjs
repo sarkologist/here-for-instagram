@@ -248,14 +248,19 @@ test('Carousels: dots along the bottom without hovering; a sideways swipe scroll
       return { count: d.children.length, opacity: getComputedStyle(d).opacity, nearBottom: box.bottom - r.bottom < 20 && r.top > box.top + box.height / 2 };
     }, node);
     assert.deepEqual(dots, { count: 3, opacity: '1', nearBottom: true });
-    // Native scrolling, snapping to a photo: past halfway goes on to the next.
+    // Native scrolling, coming to rest on the nearest photo: a long swipe
+    // carries on past several, a short one goes on to the next past halfway.
     const width = await page.evaluate((s) => document.querySelector(`${s} .sf-track`).clientWidth, node);
-    await page.hover(node);
-    await page.mouse.wheel(width * 0.6, 0);
-    await page.waitForFunction((s) => {
+    const rest = (i) => page.waitForFunction(([s, i]) => {
       const t = document.querySelector(`${s} .sf-track`);
-      return t.scrollLeft === t.clientWidth && document.querySelector(s).dataset.slide === '1';
-    }, node);
+      return t.scrollLeft === i * t.clientWidth && document.querySelector(s).dataset.slide === String(i);
+    }, [node, i]);
+    await page.hover(node);
+    await page.mouse.wheel(width * 1.6, 0);
+    await rest(2);
+    await page.waitForTimeout(300);
+    await page.mouse.wheel(-width * 0.6, 0);
+    await rest(1);
     assert.equal(await at(`${node} .sf-dots i`), 1);
     assert.match(await src(`${node} .sf-cell:nth-child(2) img`), /Ccarol1-1\.jpg/);
     // Clicking it opens the player on that photo.
@@ -299,10 +304,12 @@ test('Player: in a carousel, clicking goes through its photos as in the story vi
   await page.waitForFunction(() => document.querySelector('#sinsta-reel-player .sr-cuser').textContent === 'alice');
 });
 
-test('List: clicking a post opens the player', async () => {
+test('List: clicking a post opens the player; each post links to itself', async () => {
   await open('following', LIST);
   await posts();
+  assert.equal(await page.getAttribute('.sf-post .sf-acts a.sf-act', 'href'), '/p/Calice1/');
   await page.click('.sf-post[data-pk] .sf-media');
   await page.waitForSelector('#sinsta-reel-player .sr-photo');
   assert.equal(await page.textContent('#sinsta-reel-player .sr-cuser'), 'alice');
+  assert.equal(await page.getAttribute('#sinsta-reel-player a.sr-act', 'href'), '/p/Calice1/');
 });

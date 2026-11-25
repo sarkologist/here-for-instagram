@@ -327,9 +327,8 @@
     like.dataset.act = 'like';
     const cmt = button('sf-act', 'Comments (C)', COMMENT);
     cmt.dataset.act = 'comments';
-    const copy = button('sf-act', 'Copy link', LINK);
-    copy.dataset.act = 'link';
-    const acts = el('div', { className: 'sf-acts' }, like, cmt, copy);
+    const open = el('a', { className: 'sf-act', href: link(it), title: 'Open post' }, icon(LINK));
+    const acts = el('div', { className: 'sf-acts' }, like, cmt, open);
     const likes = el('div', { className: 'sf-likes' });
     const foot = el('div', { className: 'sf-foot' }, acts, likes);
     if (it.caption) foot.append(el('div', { className: 'sf-cap' }, ...richText(it.caption)));
@@ -363,8 +362,9 @@
   const LIST_SIZES = 'min(470px, 100vw)';
 
   // A post's photos side by side, in a track that scrolls sideways natively
-  // (a trackpad's two-finger swipe, a finger, Shift + mouse wheel) and snaps
-  // to each in turn. A cell gets its photo once the track comes near it.
+  // (a trackpad's two-finger swipe, a finger, Shift + mouse wheel), with
+  // momentum, coming to rest on a photo. A cell gets its photo once the track
+  // comes near it.
   function trackOf(it, first) {
     const t = el('div', { className: 'sf-track' }, ...it.slides.map(() => el('div', { className: 'sf-cell' })));
     t.firstChild.append(first);
@@ -374,10 +374,10 @@
   // The cell a track is (nearest to) showing.
   const cellAt = (t) => Math.max(0, Math.min(t.children.length - 1, Math.round(t.scrollLeft / (t.clientWidth || 1))));
 
-  // Cell i and its neighbours get their photo, `make(slide)`, loaded now
-  // (lazily they would wait until scrolled into view).
-  function fillCells(t, it, i, make) {
-    for (let j = Math.max(0, i - 1); j <= Math.min(it.slides.length - 1, i + 1); j++) {
+  // Cell i and `span` cells either side get their photo, `make(slide)`,
+  // loaded now (lazily they would wait until scrolled into view).
+  function fillCells(t, it, i, make, span = 1) {
+    for (let j = Math.max(0, i - span); j <= Math.min(it.slides.length - 1, i + span); j++) {
       const c = t.children[j];
       if (c.firstChild) continue;
       const img = make(it.slides[j]);
@@ -411,13 +411,14 @@
     }, true);
   }
 
-  // A list post's or grid tile's neighbouring photos, ready to swipe to.
-  function nearCells(node) {
+  // A list post's or grid tile's neighbouring photos, ready to swipe to;
+  // once it is being swiped (`all`), every one, as a swipe can cross several.
+  function nearCells(node, all) {
     const it = itemOf(node);
     const t = node && node.querySelector('.sf-track');
     if (!it || !t || it.slides.length < 2) return;
     const sizes = node.classList.contains('sf-tile') ? tileWidth() : LIST_SIZES;
-    fillCells(t, it, cellAt(t), (sl) => picture(sl, sizes));
+    fillCells(t, it, cellAt(t), (sl) => picture(sl, sizes), all ? it.slides.length : 1);
   }
 
   // A list post or grid tile at rest on photo i: its video plays there.
@@ -441,7 +442,7 @@
   watchTracks(content, (t, i) => {
     const node = t.closest('[data-pk]');
     syncDots(node.querySelector('.sf-dots'), i, 'sf-on');
-    nearCells(node);
+    nearCells(node, true);
   }, (t, i) => landOn(t.closest('[data-pk]'), i));
 
   const listVideos = new WeakMap(); // article -> its playing video
@@ -607,22 +608,6 @@
     if (playerOpen && list()[pi] === it) syncActions();
   }
 
-  async function copyLink(it, btn) {
-    let ok = true;
-    try {
-      await navigator.clipboard.writeText(`https://www.instagram.com${link(it)}`);
-    } catch (_) {
-      ok = false;
-    }
-    btn.title = ok ? 'Copied' : "Couldn't copy";
-    btn.toggleAttribute('data-done', ok);
-    clearTimeout(btn.timer);
-    btn.timer = setTimeout(() => {
-      btn.title = 'Copy link';
-      btn.removeAttribute('data-done');
-    }, 1500);
-  }
-
   const plainClick = (e) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 
   content.addEventListener('click', (e) => {
@@ -636,7 +621,6 @@
       const a = act.dataset.act;
       if (a === 'like') toggleLike(it, () => syncEverywhere(it));
       else if (a === 'comments') openPlayer(shown.indexOf(it), { comments: true });
-      else if (a === 'link') copyLink(it, act);
       return;
     }
     // Links (names, tags) open in place, through Instagram's router.
@@ -883,7 +867,7 @@
   const dots = el('div', { className: 'sr-dots' });
   stage.append(head, foot, dots);
 
-  // Like, comments and copy link, beside the post as in the app.
+  // Like, comments and a link to the post, beside it as in the app.
   function action(title, paths) {
     const b = button('sr-act', title, paths);
     b.append(el('span'));
@@ -891,7 +875,7 @@
   }
   const likeBtn = action('Like (L)', HEART);
   const commentBtn = action('Comments (C)', COMMENT);
-  const linkBtn = action('Copy link', LINK);
+  const linkBtn = el('a', { className: 'sr-act', title: 'Open post' }, icon(LINK));
   const actions = el('div', { className: 'sr-actions' }, likeBtn, commentBtn, linkBtn);
 
   // Beside the post: its author, its caption in full, then the comments.
@@ -930,7 +914,7 @@
   });
   slider.addEventListener('input', () => setVolume(Number(slider.value)));
   slider.addEventListener('click', (e) => e.stopPropagation());
-  for (const a of [userLink, cUser]) {
+  for (const a of [userLink, cUser, linkBtn]) {
     a.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!plainClick(e)) return;
@@ -957,7 +941,7 @@
   watchTracks(stage, (t, i) => {
     const it = list()[pi];
     syncDots(dots, i, 'sr-on');
-    if (it) fillCells(t, it, i, bigPhoto);
+    if (it) fillCells(t, it, i, bigPhoto, it.slides.length);
   }, (t, i) => {
     slideTarget = null;
     if (i === si) return;
@@ -991,20 +975,6 @@
   });
   commentBtn.addEventListener('click', toggleComments);
   cClose.addEventListener('click', toggleComments);
-  linkBtn.addEventListener('click', async () => {
-    const it = list()[pi];
-    if (!it) return;
-    let ok = true;
-    try {
-      await navigator.clipboard.writeText(`https://www.instagram.com${link(it)}`);
-    } catch (_) {
-      ok = false;
-    }
-    linkBtn.lastChild.textContent = ok ? 'Copied' : 'Failed';
-    clearTimeout(linkBtn.timer);
-    linkBtn.timer = setTimeout(() => { linkBtn.lastChild.textContent = ''; }, 1500);
-  });
-
   function syncActions() {
     const it = list()[pi];
     if (!it) return;
@@ -1365,6 +1335,7 @@
     stageAvatar.src = it.pic || '';
     userLink.textContent = it.username;
     userLink.href = `/${it.username}/`;
+    linkBtn.href = link(it);
     cPic.src = it.pic || '';
     cUser.textContent = it.username;
     cUser.href = `/${it.username}/`;
