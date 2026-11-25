@@ -2005,5 +2005,8 @@
   syncControls();
   new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
   window.addEventListener('popstate', schedule);
+  // Explore's search box taking or losing the focus (see syncSearch).
+  document.addEventListener('focusin', schedule);
+  document.addEventListener('focusout', schedule);
   load();
 })();
