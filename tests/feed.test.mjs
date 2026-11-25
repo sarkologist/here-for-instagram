@@ -253,9 +253,10 @@ test('Carousels: dots along the bottom without hovering; a sideways swipe scroll
     const width = await page.evaluate((s) => document.querySelector(`${s} .sf-track`).clientWidth, node);
     const rest = (i) => page.waitForFunction(([s, i]) => {
       const t = document.querySelector(`${s} .sf-track`);
-      return t.scrollLeft === i * t.clientWidth && document.querySelector(s).dataset.slide === String(i);
+      return t.scrollLeft === i * t.clientWidth && (document.querySelector(s).dataset.slide || '0') === String(i);
     }, [node, i]);
-    await page.hover(node);
+    await page.hover(node, { position: { x: 5, y: 100 } }); // over its first photo
+    await rest(0);
     await page.mouse.wheel(width * 1.6, 0);
     await rest(2);
     await page.waitForTimeout(300);
@@ -277,7 +278,7 @@ test('Carousels: dots along the bottom without hovering; a sideways swipe scroll
 
 test('Player: in a carousel, clicking goes through its photos as in the story viewer', async () => {
   await open('following', GRID);
-  await page.click('.sf-tile[href="/p/Ccarol1/"]');
+  await page.click('.sf-tile[href="/p/Ccarol1/"]', { position: { x: 5, y: 100 } }); // on its first photo
   await page.waitForSelector('#sinsta-reel-player .sr-photo');
   const at = (i) => page.waitForFunction((i) => {
     const t = document.querySelector('#sinsta-reel-player .sr-track');
@@ -312,4 +313,33 @@ test('List: clicking a post opens the player; each post links to itself', async 
   await page.waitForSelector('#sinsta-reel-player .sr-photo');
   assert.equal(await page.textContent('#sinsta-reel-player .sr-cuser'), 'alice');
   assert.equal(await page.getAttribute('#sinsta-reel-player a.sr-act', 'href'), '/p/Calice1/');
+});
+
+test('Carousels: moving the pointer across one flips through it; leaving puts it back', async () => {
+  for (const [storage, node] of [[GRID, '.sf-tile[href="/p/Ccarol1/"]'], [LIST, '.sf-post:has(.sf-dots)']]) {
+    await open('following', storage);
+    await page.waitForSelector(`${node} .sf-dots`);
+    await page.locator(node).scrollIntoViewIfNeeded();
+    const box = await page.locator(node).boundingBox();
+    const at = (i) => page.waitForFunction(([s, i]) => {
+      const t = document.querySelector(`${s} .sf-track`);
+      return Math.round(t.scrollLeft / t.clientWidth) === i && document.querySelector(s).dataset.slide === String(i);
+    }, [node, i]);
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width * 0.9, y, { steps: 3 });
+    await at(2);
+    await page.mouse.move(box.x + box.width * 0.5, y, { steps: 3 });
+    await at(1);
+    await page.mouse.move(box.x - 40, y, { steps: 3 });
+    await at(0);
+    // Clicking opens the player on the one it shows.
+    await page.mouse.move(box.x + box.width * 0.9, y, { steps: 3 });
+    await at(2);
+    await page.mouse.click(box.x + box.width * 0.9, y);
+    await page.waitForFunction(() => {
+      const t = document.querySelector('#sinsta-reel-player .sr-track');
+      return t && Math.round(t.scrollLeft / t.clientWidth) === 2;
+    });
+    assert.equal(await page.textContent('#sinsta-reel-player .sr-cuser'), 'carol');
+  }
 });

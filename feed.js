@@ -424,6 +424,10 @@
   // A list post or grid tile at rest on photo i: its video plays there.
   function landOn(node, i) {
     const it = itemOf(node);
+    if (scrub && scrub.node === node && scrub.swiped) {
+      scrub.rest = i;
+      scrub.swiped = false;
+    }
     if (!it || i === slideOf(node)) return;
     node.dataset.slide = i;
     if (node.classList.contains('sf-tile')) {
@@ -437,6 +441,41 @@
     }
     stopListVideo(node);
     if (node.dataset.onScreen) startListVideo(node);
+  }
+
+  // As with the story viewer's side cards, moving the pointer across a
+  // carousel in the list or the grid flips through its photos, clicking opens
+  // the one it shows, and leaving puts back the one it rested on (where a
+  // swipe while there leaves it).
+  let scrub = null; // { node, rest, swiped }
+
+  content.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;
+    const node = e.target.closest('.sf-post, .sf-tile');
+    const it = itemOf(node);
+    const t = node && node.querySelector('.sf-track');
+    if (!it || !t || it.slides.length < 2) return;
+    if (!scrub || scrub.node !== node) {
+      endScrub();
+      scrub = { node, rest: cellAt(t), swiped: false };
+    }
+    const r = node.getBoundingClientRect();
+    const j = Math.min(it.slides.length - 1, Math.max(0, Math.floor(((e.clientX - r.left) / Math.max(1, r.width)) * it.slides.length)));
+    if (j === cellAt(t)) return;
+    nearCells(node, true);
+    t.scrollLeft = j * t.clientWidth;
+  });
+
+  // A swipe (sideways wheel events) while scrubbing moves where it rests.
+  content.addEventListener('wheel', (e) => {
+    if (scrub && Math.abs(e.deltaX) > Math.abs(e.deltaY) && scrub.node.contains(e.target)) scrub.swiped = true;
+  }, { passive: true });
+
+  function endScrub() {
+    const s = scrub;
+    scrub = null;
+    const t = s && s.node.isConnected && s.node.querySelector('.sf-track');
+    if (t && cellAt(t) !== s.rest) t.scrollLeft = s.rest * t.clientWidth;
   }
 
   watchTracks(content, (t, i) => {
@@ -675,6 +714,7 @@
   content.addEventListener('pointerover', (e) => {
     const node = e.target.closest('[data-pk]');
     hovered = node;
+    if (scrub && scrub.node !== node) endScrub();
     const a = node && node.classList.contains('sf-tile') ? node : null;
     if (a === previewTile) return;
     stopPreview();
@@ -685,6 +725,7 @@
 
   content.addEventListener('pointerleave', () => {
     hovered = null;
+    endScrub();
     stopPreview();
   });
 
@@ -1398,12 +1439,14 @@
     // It opens on the photo the tile or post shows, carrying on with the
     // video playing there.
     const tileNode = nodeOf(it.pk);
-    const start = tileNode ? slideOf(tileNode) : 0;
-    const host = tileNode && previewTile === tileNode && tileNode.querySelector('.sr-preview');
+    const start = tileNode ? cellAt(tileNode.querySelector('.sf-track')) : 0;
+    // (Not if scrubbing has just moved on and the video is still the last one's.)
+    const same = tileNode && slideOf(tileNode) === start;
+    const host = same && previewTile === tileNode && tileNode.querySelector('.sr-preview');
     let preview = host && previews.get(host);
     if (host) host.remove();
     stopPreview();
-    if (!preview && tileNode && listVideos.has(tileNode)) {
+    if (!preview && same && listVideos.has(tileNode)) {
       preview = listVideos.get(tileNode);
       listVideos.delete(tileNode);
       hostOf(preview).remove();
