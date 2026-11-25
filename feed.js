@@ -306,9 +306,21 @@
 
   function place(it) {
     const c = columns.reduce((a, b) => (b.h < a.h - 1e-6 ? b : a));
-    c.node.append(tile(it));
+    const a = tile(it);
+    c.node.append(a);
     c.h += 1 / shape(it);
+    if (it.slides.length > 1) nearWatch.observe(a);
   }
+
+  // A carousel tile gets all its photos as it comes near the screen, so that
+  // scrubbing through them (see scrub) has them ready.
+  const nearWatch = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      nearWatch.unobserve(e.target);
+      nearCells(e.target, true);
+    }
+  }, { root, rootMargin: '50% 0px' });
 
   // List: the photos, with their name, buttons and caption over them.
   function post(it) {
@@ -375,7 +387,8 @@
   const cellAt = (t) => Math.max(0, Math.min(t.children.length - 1, Math.round(t.scrollLeft / (t.clientWidth || 1))));
 
   // Cell i and `span` cells either side get their photo, `make(slide)`,
-  // loaded now (lazily they would wait until scrolled into view).
+  // loaded and decoded now (lazily they would wait until scrolled into view,
+  // and show blank while they load).
   function fillCells(t, it, i, make, span = 1) {
     for (let j = Math.max(0, i - span); j <= Math.min(it.slides.length - 1, i + span); j++) {
       const c = t.children[j];
@@ -383,6 +396,7 @@
       const img = make(it.slides[j]);
       img.loading = 'eager';
       c.append(img);
+      if (img.decode) img.decode().catch(() => {});
     }
   }
 
@@ -549,6 +563,7 @@
         stopListVideo(art);
         listWatch.unobserve(art);
       }
+      nearWatch.disconnect();
       content.replaceChildren();
       content.className = 'sf-content ' + (isGrid() ? 'sf-grid' : 'sf-list');
       columns = [];
@@ -615,7 +630,7 @@
       if (e.intersectionRatio >= 0.6 && !playerOpen) {
         art.dataset.onScreen = '1';
         startListVideo(art);
-        nearCells(art);
+        nearCells(art, true);
       } else if (e.intersectionRatio < 0.6) {
         delete art.dataset.onScreen;
         stopListVideo(art);

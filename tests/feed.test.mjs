@@ -353,3 +353,11 @@ test('Grid: moving the pointer across a carousel flips through it; leaving puts 
   await page.waitForTimeout(400);
   assert.equal(await page.evaluate((s) => document.querySelector(`${s} .sf-track`).scrollLeft, node), 0);
 });
+
+test('Grid: a carousel tile has all its photos ready before it is hovered', async () => {
+  await open('following', GRID);
+  await page.waitForFunction(() => {
+    const cells = [...document.querySelectorAll('.sf-tile[href="/p/Ccarol1/"] .sf-cell')];
+    return cells.length === 3 && cells.every((c) => c.querySelector('img'));
+  });
+});
