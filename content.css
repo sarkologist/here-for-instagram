@@ -1209,8 +1209,8 @@ html[data-sinsta-surface] main {
   cursor: pointer;
 }
 
-/* A post's photos side by side, scrolled sideways natively and snapping to
-   each, one per swipe. Its edges hold rather than go back a page. */
+/* A post's photos side by side, scrolled sideways natively, with momentum,
+   coming to rest on a photo. Its edges hold rather than go back a page. */
 .sf-track {
   position: absolute;
   inset: 0;
@@ -1226,7 +1226,6 @@ html[data-sinsta-surface] main {
   position: relative;
   flex: 0 0 100%;
   scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 
 .sf-head,
@@ -1335,8 +1334,12 @@ html[data-sinsta-surface] main {
   fill: currentColor;
 }
 
-.sf-act[data-done] {
-  color: #7ee787 !important;
+#sinsta-surface a.sf-act,
+#sinsta-reel-player a.sr-act {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
 }
 
 .sf-likes {
@@ -1683,7 +1686,7 @@ html[data-sinsta-surface] main {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-/* Like, comments and copy link, beside the video. */
+/* Like, comments and a link to the post, beside the video. */
 .sr-actions {
   display: flex;
   flex-direction: column;

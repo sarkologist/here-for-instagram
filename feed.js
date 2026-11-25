@@ -306,9 +306,21 @@
 
   function place(it) {
     const c = columns.reduce((a, b) => (b.h < a.h - 1e-6 ? b : a));
-    c.node.append(tile(it));
+    const a = tile(it);
+    c.node.append(a);
     c.h += 1 / shape(it);
+    if (it.slides.length > 1) nearWatch.observe(a);
   }
+
+  // A carousel tile gets all its photos as it comes near the screen, so that
+  // scrubbing through them (see scrub) has them ready.
+  const nearWatch = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      nearWatch.unobserve(e.target);
+      nearCells(e.target, true);
+    }
+  }, { root, rootMargin: '50% 0px' });
 
   // List: the photos, with their name, buttons and caption over them.
   function post(it) {
@@ -327,9 +339,8 @@
     like.dataset.act = 'like';
     const cmt = button('sf-act', 'Comments (C)', COMMENT);
     cmt.dataset.act = 'comments';
-    const copy = button('sf-act', 'Copy link', LINK);
-    copy.dataset.act = 'link';
-    const acts = el('div', { className: 'sf-acts' }, like, cmt, copy);
+    const open = el('a', { className: 'sf-act', href: link(it), title: 'Open post' }, icon(LINK));
+    const acts = el('div', { className: 'sf-acts' }, like, cmt, open);
     const likes = el('div', { className: 'sf-likes' });
     const foot = el('div', { className: 'sf-foot' }, acts, likes);
     if (it.caption) foot.append(el('div', { className: 'sf-cap' }, ...richText(it.caption)));
@@ -363,8 +374,9 @@
   const LIST_SIZES = 'min(470px, 100vw)';
 
   // A post's photos side by side, in a track that scrolls sideways natively
-  // (a trackpad's two-finger swipe, a finger, Shift + mouse wheel) and snaps
-  // to each in turn. A cell gets its photo once the track comes near it.
+  // (a trackpad's two-finger swipe, a finger, Shift + mouse wheel), with
+  // momentum, coming to rest on a photo. A cell gets its photo once the track
+  // comes near it.
   function trackOf(it, first) {
     const t = el('div', { className: 'sf-track' }, ...it.slides.map(() => el('div', { className: 'sf-cell' })));
     t.firstChild.append(first);
@@ -374,15 +386,17 @@
   // The cell a track is (nearest to) showing.
   const cellAt = (t) => Math.max(0, Math.min(t.children.length - 1, Math.round(t.scrollLeft / (t.clientWidth || 1))));
 
-  // Cell i and its neighbours get their photo, `make(slide)`, loaded now
-  // (lazily they would wait until scrolled into view).
-  function fillCells(t, it, i, make) {
-    for (let j = Math.max(0, i - 1); j <= Math.min(it.slides.length - 1, i + 1); j++) {
+  // Cell i and `span` cells either side get their photo, `make(slide)`,
+  // loaded and decoded now (lazily they would wait until scrolled into view,
+  // and show blank while they load).
+  function fillCells(t, it, i, make, span = 1) {
+    for (let j = Math.max(0, i - span); j <= Math.min(it.slides.length - 1, i + span); j++) {
       const c = t.children[j];
       if (c.firstChild) continue;
       const img = make(it.slides[j]);
       img.loading = 'eager';
       c.append(img);
+      if (img.decode) img.decode().catch(() => {});
     }
   }
 
@@ -411,18 +425,23 @@
     }, true);
   }
 
-  // A list post's or grid tile's neighbouring photos, ready to swipe to.
-  function nearCells(node) {
+  // A list post's or grid tile's neighbouring photos, ready to swipe to;
+  // once it is being swiped (`all`), every one, as a swipe can cross several.
+  function nearCells(node, all) {
     const it = itemOf(node);
     const t = node && node.querySelector('.sf-track');
     if (!it || !t || it.slides.length < 2) return;
     const sizes = node.classList.contains('sf-tile') ? tileWidth() : LIST_SIZES;
-    fillCells(t, it, cellAt(t), (sl) => picture(sl, sizes));
+    fillCells(t, it, cellAt(t), (sl) => picture(sl, sizes), all ? it.slides.length : 1);
   }
 
   // A list post or grid tile at rest on photo i: its video plays there.
   function landOn(node, i) {
     const it = itemOf(node);
+    if (scrub && scrub.node === node && scrub.swiped) {
+      scrub.rest = i;
+      scrub.swiped = false;
+    }
     if (!it || i === slideOf(node)) return;
     node.dataset.slide = i;
     if (node.classList.contains('sf-tile')) {
@@ -438,10 +457,46 @@
     if (node.dataset.onScreen) startListVideo(node);
   }
 
+  // As with the story viewer's side cards, moving the pointer across a
+  // carousel in the grid flips through its photos, clicking opens the one it
+  // shows, and leaving puts back the one it rested on (where a swipe while
+  // there leaves it). Not in the list, where the pointer crosses the photos
+  // on its way to the buttons over them.
+  let scrub = null; // { node, rest, swiped }
+
+  content.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;
+    const node = e.target.closest('.sf-tile');
+    const it = itemOf(node);
+    const t = node && node.querySelector('.sf-track');
+    if (!it || !t || it.slides.length < 2) return;
+    if (!scrub || scrub.node !== node) {
+      endScrub();
+      scrub = { node, rest: cellAt(t), swiped: false };
+    }
+    const r = node.getBoundingClientRect();
+    const j = Math.min(it.slides.length - 1, Math.max(0, Math.floor(((e.clientX - r.left) / Math.max(1, r.width)) * it.slides.length)));
+    if (j === cellAt(t)) return;
+    nearCells(node, true);
+    t.scrollLeft = j * t.clientWidth;
+  });
+
+  // A swipe (sideways wheel events) while scrubbing moves where it rests.
+  content.addEventListener('wheel', (e) => {
+    if (scrub && Math.abs(e.deltaX) > Math.abs(e.deltaY) && scrub.node.contains(e.target)) scrub.swiped = true;
+  }, { passive: true });
+
+  function endScrub() {
+    const s = scrub;
+    scrub = null;
+    const t = s && s.node.isConnected && s.node.querySelector('.sf-track');
+    if (t && cellAt(t) !== s.rest) t.scrollLeft = s.rest * t.clientWidth;
+  }
+
   watchTracks(content, (t, i) => {
     const node = t.closest('[data-pk]');
     syncDots(node.querySelector('.sf-dots'), i, 'sf-on');
-    nearCells(node);
+    nearCells(node, true);
   }, (t, i) => landOn(t.closest('[data-pk]'), i));
 
   const listVideos = new WeakMap(); // article -> its playing video
@@ -508,6 +563,7 @@
         stopListVideo(art);
         listWatch.unobserve(art);
       }
+      nearWatch.disconnect();
       content.replaceChildren();
       content.className = 'sf-content ' + (isGrid() ? 'sf-grid' : 'sf-list');
       columns = [];
@@ -574,7 +630,7 @@
       if (e.intersectionRatio >= 0.6 && !playerOpen) {
         art.dataset.onScreen = '1';
         startListVideo(art);
-        nearCells(art);
+        nearCells(art, true);
       } else if (e.intersectionRatio < 0.6) {
         delete art.dataset.onScreen;
         stopListVideo(art);
@@ -607,22 +663,6 @@
     if (playerOpen && list()[pi] === it) syncActions();
   }
 
-  async function copyLink(it, btn) {
-    let ok = true;
-    try {
-      await navigator.clipboard.writeText(`https://www.instagram.com${link(it)}`);
-    } catch (_) {
-      ok = false;
-    }
-    btn.title = ok ? 'Copied' : "Couldn't copy";
-    btn.toggleAttribute('data-done', ok);
-    clearTimeout(btn.timer);
-    btn.timer = setTimeout(() => {
-      btn.title = 'Copy link';
-      btn.removeAttribute('data-done');
-    }, 1500);
-  }
-
   const plainClick = (e) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 
   content.addEventListener('click', (e) => {
@@ -636,7 +676,6 @@
       const a = act.dataset.act;
       if (a === 'like') toggleLike(it, () => syncEverywhere(it));
       else if (a === 'comments') openPlayer(shown.indexOf(it), { comments: true });
-      else if (a === 'link') copyLink(it, act);
       return;
     }
     // Links (names, tags) open in place, through Instagram's router.
@@ -691,6 +730,7 @@
   content.addEventListener('pointerover', (e) => {
     const node = e.target.closest('[data-pk]');
     hovered = node;
+    if (scrub && scrub.node !== node) endScrub();
     const a = node && node.classList.contains('sf-tile') ? node : null;
     if (a === previewTile) return;
     stopPreview();
@@ -701,6 +741,7 @@
 
   content.addEventListener('pointerleave', () => {
     hovered = null;
+    endScrub();
     stopPreview();
   });
 
@@ -883,7 +924,7 @@
   const dots = el('div', { className: 'sr-dots' });
   stage.append(head, foot, dots);
 
-  // Like, comments and copy link, beside the post as in the app.
+  // Like, comments and a link to the post, beside it as in the app.
   function action(title, paths) {
     const b = button('sr-act', title, paths);
     b.append(el('span'));
@@ -891,7 +932,7 @@
   }
   const likeBtn = action('Like (L)', HEART);
   const commentBtn = action('Comments (C)', COMMENT);
-  const linkBtn = action('Copy link', LINK);
+  const linkBtn = el('a', { className: 'sr-act', title: 'Open post' }, icon(LINK));
   const actions = el('div', { className: 'sr-actions' }, likeBtn, commentBtn, linkBtn);
 
   // Beside the post: its author, its caption in full, then the comments.
@@ -930,7 +971,7 @@
   });
   slider.addEventListener('input', () => setVolume(Number(slider.value)));
   slider.addEventListener('click', (e) => e.stopPropagation());
-  for (const a of [userLink, cUser]) {
+  for (const a of [userLink, cUser, linkBtn]) {
     a.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!plainClick(e)) return;
@@ -957,7 +998,7 @@
   watchTracks(stage, (t, i) => {
     const it = list()[pi];
     syncDots(dots, i, 'sr-on');
-    if (it) fillCells(t, it, i, bigPhoto);
+    if (it) fillCells(t, it, i, bigPhoto, it.slides.length);
   }, (t, i) => {
     slideTarget = null;
     if (i === si) return;
@@ -991,20 +1032,6 @@
   });
   commentBtn.addEventListener('click', toggleComments);
   cClose.addEventListener('click', toggleComments);
-  linkBtn.addEventListener('click', async () => {
-    const it = list()[pi];
-    if (!it) return;
-    let ok = true;
-    try {
-      await navigator.clipboard.writeText(`https://www.instagram.com${link(it)}`);
-    } catch (_) {
-      ok = false;
-    }
-    linkBtn.lastChild.textContent = ok ? 'Copied' : 'Failed';
-    clearTimeout(linkBtn.timer);
-    linkBtn.timer = setTimeout(() => { linkBtn.lastChild.textContent = ''; }, 1500);
-  });
-
   function syncActions() {
     const it = list()[pi];
     if (!it) return;
@@ -1365,6 +1392,7 @@
     stageAvatar.src = it.pic || '';
     userLink.textContent = it.username;
     userLink.href = `/${it.username}/`;
+    linkBtn.href = link(it);
     cPic.src = it.pic || '';
     cUser.textContent = it.username;
     cUser.href = `/${it.username}/`;
@@ -1427,12 +1455,14 @@
     // It opens on the photo the tile or post shows, carrying on with the
     // video playing there.
     const tileNode = nodeOf(it.pk);
-    const start = tileNode ? slideOf(tileNode) : 0;
-    const host = tileNode && previewTile === tileNode && tileNode.querySelector('.sr-preview');
+    const start = tileNode ? cellAt(tileNode.querySelector('.sf-track')) : 0;
+    // (Not if scrubbing has just moved on and the video is still the last one's.)
+    const same = tileNode && slideOf(tileNode) === start;
+    const host = same && previewTile === tileNode && tileNode.querySelector('.sr-preview');
     let preview = host && previews.get(host);
     if (host) host.remove();
     stopPreview();
-    if (!preview && tileNode && listVideos.has(tileNode)) {
+    if (!preview && same && listVideos.has(tileNode)) {
       preview = listVideos.get(tileNode);
       listVideos.delete(tileNode);
       hostOf(preview).remove();
