@@ -210,3 +210,26 @@ test('The surface stays under Instagram\'s sidebar when the sidebar comes after 
   });
   await page.waitForFunction(() => document.querySelector('#sinsta-surface').parentElement.id === 'app', null, { timeout: 4000 });
 });
+
+test('Player: a video\'s seekbar and playback speed, the speed remembered', async () => {
+  await open('following', GRID);
+  await page.click('.sf-tile[href*="Calice2"]');
+  const clock = page.locator('#sinsta-reel-player .sinsta-clock');
+  await clock.filter({ hasText: '/ 0:04' }).waitFor();
+  const speed = page.locator('#sinsta-reel-player .sinsta-speed');
+  assert.equal(await speed.textContent(), '1×');
+  await speed.click();
+  await page.keyboard.press('>');
+  assert.equal(await speed.textContent(), '1.5×');
+  assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('sinsta-surface'))).speed, 1.5);
+  // Clicking the seekbar at three quarters seeks there, staying on the post.
+  const box = await page.locator('#sinsta-reel-player .sinsta-seek').boundingBox();
+  await page.mouse.click(box.x + box.width * 0.75, box.y + box.height / 2);
+  await clock.filter({ hasText: /^0:0[23] \/ 0:04$/ }).waitFor({ timeout: 1000 });
+  assert.equal(await page.textContent('#sinsta-reel-player .sr-cuser'), 'alice');
+  // A photo has neither.
+  await page.keyboard.press('ArrowUp');
+  await page.waitForFunction(() => document.querySelector('#sinsta-reel-player .sr-cuser').textContent === 'carol');
+  assert.equal(await speed.isVisible(), false);
+  assert.equal(await page.locator('#sinsta-reel-player .sinsta-seek').isVisible(), false);
+});

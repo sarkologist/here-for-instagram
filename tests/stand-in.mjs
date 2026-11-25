@@ -11,6 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { firefox } from 'playwright';
 
+const VIDEO = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/story.webm');
 const ROOT = resolve(process.env.EXT_SRC || join(dirname(fileURLToPath(import.meta.url)), '..'));
 export const ORIGIN = 'https://www.instagram.com';
 export const NOW = Math.floor(Date.now() / 1000);
@@ -26,6 +27,13 @@ export const reel = (id, username, { watched = false, ago = 3600 } = {}) => {
       image_versions2: { candidates: [{ width: 1080, height: 1920, url: `${ORIGIN}/test/pic/${id}001.jpg` }] },
     }],
   };
+};
+
+// An account whose one story is a 4-second video.
+export const videoReel = (id, username) => {
+  const r = reel(id, username, { ago: 300 });
+  Object.assign(r.items[0], { media_type: 2, video_versions: [{ width: 90, height: 160, url: `${ORIGIN}/test/vid/story-${id}.mp4` }] });
+  return r;
 };
 
 // A post as Instagram's feed query returns it. `following`: whether you
@@ -122,6 +130,8 @@ export async function freshContext(storage = {}) {
     if (profile && PROFILES[profile[1]]) return route.fulfill({ contentType: 'text/html', body: PROFILE(PROFILES[profile[1]], profile[1]) });
     const ext = path.match(/^\/test\/ext\/([\w.]+)$/);
     if (ext) return route.fulfill({ contentType: ext[1].endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(join(ROOT, ext[1])) });
+    // Every video is the same 4 seconds (VP9: Playwright's Firefox has no H.264).
+    if (path.startsWith('/test/vid/')) return route.fulfill({ contentType: 'video/webm', body: readFileSync(VIDEO) });
     if (!acc) return route.fulfill({ status: 401, body: '' });
     if (path === '/api/v1/feed/reels_tray/') return json({ tray: acc.tray });
     if (path === '/api/v1/friendships/feed_favorites/') {
