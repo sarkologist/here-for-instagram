@@ -602,6 +602,11 @@ test('Profile and back to Home, within the page: the grid moves between the page
   await page.waitForFunction(() => document.querySelector('main #sinsta-surface.sf-inline .sf-post'));
   assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-sinsta-surface')), false);
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('main')).visibility), 'visible');
+  // Instagram's next page takes the grid away with the profile's.
+  await nav('/p/Pa1/', '<main><div>a post</div></main>');
+  await page.waitForFunction(() => !Sinsta.surface.active());
+  await nav('/alice/', profileMain);
+  await page.waitForFunction(() => document.querySelector('main #sinsta-surface.sf-inline .sf-post'));
   await nav('/?variant=following', homeMain);
   assert.deepEqual(await posts(), ['alice', 'carol', 'alice']);
   const back = await page.evaluate(() => ({

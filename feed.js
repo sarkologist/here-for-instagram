@@ -1976,7 +1976,8 @@
           v.pause();
         }
       }
-    } else if (!want && root.isConnected) {
+    } else if (!want && (root.isConnected || active)) {
+      // (Inline, Instagram may have taken the box away with its page.)
       if (cur && !restore) feed(cur).scroll = root.scrollTop;
       stopPreview();
       closePlayer();
