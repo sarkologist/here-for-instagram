@@ -27,6 +27,7 @@
   const PREVIEW_MS = 250; // hover this long before a cover starts playing
   const WHEEL_STEP = 40; // px of scrolling that moves the player one post
   const WHEEL_IDLE = 200; // ms without scroll events that ends a gesture
+  const SETTLE_MS = 150; // ms without scrolling after which a carousel has come to rest
   const SEEN_MS = 1000; // as in content.js: on screen this long counts as seen
   const RUN_LIMIT = 120; // seen posts in a row before pausing, as in content.js
   const storage = typeof browser === 'object' && browser.storage && browser.storage.local;
@@ -39,13 +40,10 @@
   const CLOSE = ['M6 6l12 12M18 6L6 18'];
   const UP = ['M6 15l6-6 6 6'];
   const DOWN = ['M6 9l6 6 6-6'];
-  const LEFT = ['M15 6l-6 6 6 6'];
-  const RIGHT = ['M9 6l6 6-6 6'];
   const COMMENT = ['M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z'];
   const LINK = ['M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1', 'M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1'];
   const SOUND_OFF = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 9.5l5 5M21.5 9.5l-5 5'];
   const SOUND_ON = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 8.5a5 5 0 0 1 0 7'];
-  const STACK = ['M8 8h12v12H8z', 'M4 16V5a1 1 0 0 1 1-1h11'];
   const PLAY = ['M8 5v14l11-7z'];
 
   const VIEWS = ['following', 'favorites', 'algo', 'reels'];
@@ -219,6 +217,34 @@
     return n;
   }
 
+  // One wheel gesture, a trackpad's momentum tail included, acts once: `act`
+  // gets the direction once it has gone far enough. A gesture keeps the `key`
+  // it started with (an axis), which it returns; events for another key are
+  // ignored.
+  function wheelGesture() {
+    let sum = 0;
+    let last = 0;
+    let acted = false;
+    let key = null;
+    return (delta, k, act) => {
+      const now = Date.now();
+      if (now - last > WHEEL_IDLE) {
+        sum = 0;
+        acted = false;
+        key = k;
+      }
+      last = now;
+      if (acted || k !== key || !act) return key;
+      sum += delta;
+      if (Math.abs(sum) < WHEEL_STEP) return key;
+      acted = true;
+      act(Math.sign(sum));
+      return key;
+    };
+  }
+
+  const wheelScale = (e) => (e.deltaMode === 1 ? 16 : 1); // lines to px
+
   // ---- Rendering --------------------------------------------------------------
 
   const link = (it) => `/${it.kind === 'reel' ? 'reel' : 'p'}/${it.code}/`;
@@ -264,10 +290,11 @@
     a.dataset.pk = it.pk;
     a.style.aspectRatio = String(shape(it));
     if (seenBefore(cur, it)) a.classList.add('sf-seen');
-    a.append(picture(it.slides[0], tileWidth()));
-    if (cur !== 'reels' && (it.slides.length > 1 || it.video)) {
-      a.append(el('span', { className: 'sf-badge' }, icon(it.slides.length > 1 ? STACK : PLAY)));
+    a.append(trackOf(it, picture(it.slides[0], tileWidth())));
+    if (cur !== 'reels' && it.slides.some((s) => s.video)) {
+      a.append(el('span', { className: 'sf-badge', hidden: !it.video }, icon(PLAY)));
     }
+    if (it.slides.length > 1) a.append(dotsOf(it));
     const likes = el('span', { className: 'sf-tlikes' });
     if (it.likes != null) likes.append(icon(HEART), compact(it.likes));
     const info = el('div', { className: 'sf-tinfo' },
@@ -289,9 +316,7 @@
     art.dataset.pk = it.pk;
     art.style.setProperty('--ar', String(shape(it)));
     if (seenBefore(cur, it)) art.classList.add('sf-seen');
-    const media = el('div', { className: 'sf-media' });
-    art.append(media);
-    showSlide(art, it, 0);
+    art.append(el('div', { className: 'sf-media' }, trackOf(it, picture(it.slides[0], LIST_SIZES))));
 
     const user = el('a', { className: 'sf-user', href: `/${it.username}/` }, it.username);
     const head = el('div', { className: 'sf-head' }, avatar(it, 'sf-pic'), user,
@@ -314,14 +339,7 @@
       foot.append(all);
     }
     art.append(head, foot);
-    if (it.slides.length > 1) {
-      const prev = button('sf-slide sf-prev', 'Previous photo', LEFT);
-      prev.dataset.act = 'prev';
-      const next = button('sf-slide sf-next', 'Next photo', RIGHT);
-      next.dataset.act = 'next';
-      art.append(prev, next, el('div', { className: 'sf-dots' }, ...it.slides.map(() => el('i'))));
-    }
-    art.append(el('div', { className: 'sf-burst' }, icon(HEART)));
+    if (it.slides.length > 1) art.append(dotsOf(it));
     syncPost(art, it);
     return art;
   }
@@ -333,36 +351,111 @@
     const likes = art.querySelector('.sf-likes');
     const text = it.likes != null ? `${it.likes.toLocaleString('en')} like${it.likes === 1 ? '' : 's'}` : '';
     if (likes.textContent !== text) likes.textContent = text;
-    const si = Number(art.dataset.slide || 0);
-    const prev = art.querySelector('.sf-prev');
-    if (prev) {
-      prev.disabled = si === 0;
-      art.querySelector('.sf-next').disabled = si === it.slides.length - 1;
-      [...art.querySelector('.sf-dots').children].forEach((d, i) => d.classList.toggle('sf-on', i === si));
+  }
+
+  // A carousel's dots, along the bottom of a list post or a grid tile.
+  function dotsOf(it) {
+    return el('div', { className: 'sf-dots' }, ...it.slides.map((_, i) => el('i', { className: i ? '' : 'sf-on' })));
+  }
+
+  const slideOf = (node) => Number(node.dataset.slide || 0);
+
+  const LIST_SIZES = 'min(470px, 100vw)';
+
+  // A post's photos side by side, in a track that scrolls sideways natively
+  // (a trackpad's two-finger swipe, a finger, Shift + mouse wheel) and snaps
+  // to each in turn. A cell gets its photo once the track comes near it.
+  function trackOf(it, first) {
+    const t = el('div', { className: 'sf-track' }, ...it.slides.map(() => el('div', { className: 'sf-cell' })));
+    t.firstChild.append(first);
+    return t;
+  }
+
+  // The cell a track is (nearest to) showing.
+  const cellAt = (t) => Math.max(0, Math.min(t.children.length - 1, Math.round(t.scrollLeft / (t.clientWidth || 1))));
+
+  // Cell i and its neighbours get their photo, `make(slide)`, loaded now
+  // (lazily they would wait until scrolled into view).
+  function fillCells(t, it, i, make) {
+    for (let j = Math.max(0, i - 1); j <= Math.min(it.slides.length - 1, i + 1); j++) {
+      const c = t.children[j];
+      if (c.firstChild) continue;
+      const img = make(it.slides[j]);
+      img.loading = 'eager';
+      c.append(img);
     }
   }
 
-  // A list post's photo, or (while on screen) its video.
-  function showSlide(art, it, si) {
-    const media = art.querySelector('.sf-media');
-    art.dataset.slide = si;
-    stopListVideo(art);
-    media.replaceChildren(picture(it.slides[si], 'min(470px, 100vw)'));
-    if (art.dataset.onScreen) startListVideo(art);
+  function syncDots(dots, i, cls) {
+    if (dots) [...dots.children].forEach((d, k) => d.classList.toggle(cls, k === i));
   }
+
+  // The carousels under `root`: `move(track, i)` as one scrolls, `land(track,
+  // i)` once it comes to rest on cell i.
+  function watchTracks(root, move, land) {
+    const timers = new WeakMap();
+    const isTrack = (t) => t.classList && t.classList.contains('sf-track');
+    const settle = (t) => {
+      clearTimeout(timers.get(t));
+      land(t, cellAt(t));
+    };
+    root.addEventListener('scroll', (e) => {
+      const t = e.target;
+      if (!isTrack(t)) return;
+      move(t, cellAt(t));
+      clearTimeout(timers.get(t));
+      timers.set(t, setTimeout(() => settle(t), SETTLE_MS));
+    }, true);
+    root.addEventListener('scrollend', (e) => {
+      if (isTrack(e.target)) settle(e.target);
+    }, true);
+  }
+
+  // A list post's or grid tile's neighbouring photos, ready to swipe to.
+  function nearCells(node) {
+    const it = itemOf(node);
+    const t = node && node.querySelector('.sf-track');
+    if (!it || !t || it.slides.length < 2) return;
+    const sizes = node.classList.contains('sf-tile') ? tileWidth() : LIST_SIZES;
+    fillCells(t, it, cellAt(t), (sl) => picture(sl, sizes));
+  }
+
+  // A list post or grid tile at rest on photo i: its video plays there.
+  function landOn(node, i) {
+    const it = itemOf(node);
+    if (!it || i === slideOf(node)) return;
+    node.dataset.slide = i;
+    if (node.classList.contains('sf-tile')) {
+      const badge = node.querySelector('.sf-badge');
+      if (badge) badge.hidden = !it.slides[i].video;
+      if (previewTile === node) {
+        stopPreview();
+        startPreview(node, 0);
+      }
+      return;
+    }
+    stopListVideo(node);
+    if (node.dataset.onScreen) startListVideo(node);
+  }
+
+  watchTracks(content, (t, i) => {
+    const node = t.closest('[data-pk]');
+    syncDots(node.querySelector('.sf-dots'), i, 'sf-on');
+    nearCells(node);
+  }, (t, i) => landOn(t.closest('[data-pk]'), i));
 
   const listVideos = new WeakMap(); // article -> its playing video
 
   function startListVideo(art) {
     const it = itemOf(art);
-    const slide = it && it.slides[Number(art.dataset.slide || 0)];
+    const slide = it && it.slides[slideOf(art)];
     if (!slide || !slide.video || listVideos.has(art)) return;
     const v = shadowVideo({ muted: true, loop: true, autoplay: true, playsInline: true, src: slide.video }, 'cover');
     const host = hostOf(v);
     host.className = 'sr-preview';
     v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
     listVideos.set(art, v);
-    art.querySelector('.sf-media').append(host);
+    art.querySelector('.sf-track').children[slideOf(art)].append(host);
     art.classList.add('sf-video');
   }
 
@@ -371,7 +464,7 @@
     if (!v) return;
     listVideos.delete(art);
     unload(v);
-    art.classList.remove('sf-video', 'sf-sound');
+    art.classList.remove('sf-video');
   }
 
   // Comment and caption text with @mentions and #hashtags as links.
@@ -481,6 +574,7 @@
       if (e.intersectionRatio >= 0.6 && !playerOpen) {
         art.dataset.onScreen = '1';
         startListVideo(art);
+        nearCells(art);
       } else if (e.intersectionRatio < 0.6) {
         delete art.dataset.onScreen;
         stopListVideo(art);
@@ -543,11 +637,6 @@
       if (a === 'like') toggleLike(it, () => syncEverywhere(it));
       else if (a === 'comments') openPlayer(shown.indexOf(it), { comments: true });
       else if (a === 'link') copyLink(it, act);
-      else if (a === 'prev' || a === 'next') {
-        const si = Number(node.dataset.slide || 0) + (a === 'next' ? 1 : -1);
-        if (si >= 0 && si < it.slides.length) showSlide(node, it, si);
-        syncPost(node, it);
-      }
       return;
     }
     // Links (names, tags) open in place, through Instagram's router.
@@ -565,26 +654,8 @@
       openPlayer(shown.indexOf(it));
       return;
     }
-    // A list post's video: sound on or off.
-    if (e.target.closest('.sf-media')) {
-      const v = listVideos.get(node);
-      if (!v) return;
-      v.muted = !v.muted;
-      node.classList.toggle('sf-sound', !v.muted);
-    }
-  });
-
-  // Double-clicking a photo likes it, as on Instagram.
-  content.addEventListener('dblclick', (e) => {
-    const node = e.target.closest('.sf-post');
-    if (!node || !e.target.closest('.sf-media')) return;
-    const it = itemOf(node);
-    if (!it) return;
-    if (!it.liked) toggleLike(it, () => syncEverywhere(it));
-    const burst = node.querySelector('.sf-burst');
-    burst.classList.remove('sf-go');
-    void burst.offsetWidth;
-    burst.classList.add('sf-go');
+    // A list post opens in the player too (unless that click selected text).
+    if (!String(getSelection())) openPlayer(shown.indexOf(it));
   });
 
   // Hovering a grid tile plays it silently, as the app's grids do.
@@ -601,25 +672,33 @@
     previewTile = null;
   }
 
+  // The tile under the pointer, playing its photo's video if it has one.
+  function startPreview(a, delay = PREVIEW_MS) {
+    previewTile = a;
+    const it = itemOf(a);
+    const src = it && it.slides[slideOf(a)].video;
+    if (!src) return;
+    previewTimer = setTimeout(() => {
+      const v = shadowVideo({ muted: true, loop: true, autoplay: true, playsInline: true, src }, 'cover');
+      const host = hostOf(v);
+      host.className = 'sr-preview';
+      previews.set(host, v);
+      v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
+      a.querySelector('.sf-track').children[slideOf(a)].append(host);
+    }, delay);
+  }
+
   content.addEventListener('pointerover', (e) => {
     const node = e.target.closest('[data-pk]');
     hovered = node;
     const a = node && node.classList.contains('sf-tile') ? node : null;
     if (a === previewTile) return;
     stopPreview();
-    if (!a || e.pointerType === 'touch') return;
-    const it = itemOf(a);
-    if (!it || !it.video) return;
-    previewTile = a;
-    previewTimer = setTimeout(() => {
-      const v = shadowVideo({ muted: true, loop: true, autoplay: true, playsInline: true, src: it.video }, 'cover');
-      const host = hostOf(v);
-      host.className = 'sr-preview';
-      previews.set(host, v);
-      v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
-      a.insertBefore(host, a.querySelector('.sf-tinfo'));
-    }, PREVIEW_MS);
+    if (!a) return;
+    nearCells(a);
+    if (e.pointerType !== 'touch') startPreview(a);
   });
+
   content.addEventListener('pointerleave', () => {
     hovered = null;
     stopPreview();
@@ -782,11 +861,10 @@
   let pi = 0; // index into list()
   let si = 0; // slide of the post on screen
   let video = null;
-  let picture0 = null; // the photo on screen
+  let strack = null; // the post's photos, side by side (see trackOf)
+  let slideTarget = null; // the photo a click or key is scrolling to
   let preload = null; // { index, video } for the next post
-  let wheelSum = 0;
-  let wheelLast = 0;
-  let wheelActed = false;
+  const playerWheel = wheelGesture();
   let playing = []; // what the player goes through: the view's posts as they were when it opened
 
   const list = () => playing;
@@ -802,10 +880,8 @@
   const head = el('div', { className: 'sr-head' }, stageAvatar, userLink, el('span', { className: 'sr-gap' }), speedBtn, volumeBox);
   const caption = el('div', { className: 'sr-caption' });
   const foot = el('div', { className: 'sr-foot' }, caption, seek.row);
-  const slidePrev = button('sr-slide sr-slide-prev', 'Previous photo (←)', LEFT);
-  const slideNext = button('sr-slide sr-slide-next', 'Next photo (→)', RIGHT);
   const dots = el('div', { className: 'sr-dots' });
-  stage.append(head, foot, slidePrev, slideNext, dots);
+  stage.append(head, foot, dots);
 
   // Like, comments and copy link, beside the post as in the app.
   function action(title, paths) {
@@ -844,14 +920,6 @@
   closeBtn.addEventListener('click', closePlayer);
   prevBtn.addEventListener('click', () => step(-1));
   nextBtn.addEventListener('click', () => step(1));
-  slidePrev.addEventListener('click', (e) => {
-    e.stopPropagation();
-    slide(-1);
-  });
-  slideNext.addEventListener('click', (e) => {
-    e.stopPropagation();
-    slide(1);
-  });
   muteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleMute();
@@ -872,41 +940,47 @@
       go(href);
     });
   }
+  // In a carousel, as in the story viewer, a click on the left third goes
+  // back a photo and elsewhere on to the next. Otherwise a click pauses a
+  // video.
   stage.addEventListener('click', (e) => {
-    if (e.target.closest('a, button, input') || !video) return;
-    if (video.paused) video.play().catch(() => {});
-    else video.pause();
-  });
-  stage.addEventListener('dblclick', (e) => {
-    if (e.target.closest('a, button, input')) return;
+    if (e.target.closest('a, button, input, .sr-caption, .sinsta-seekrow')) return;
     const it = list()[pi];
-    if (it && !it.liked) toggleLike(it, () => syncEverywhere(it));
+    if (it && it.slides.length > 1) {
+      const box = stage.getBoundingClientRect();
+      slide(e.clientX - box.left < box.width * 0.3 ? -1 : 1);
+    } else if (video) {
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    }
+  });
+  watchTracks(stage, (t, i) => {
+    const it = list()[pi];
+    syncDots(dots, i, 'sr-on');
+    if (it) fillCells(t, it, i, bigPhoto);
+  }, (t, i) => {
+    slideTarget = null;
+    if (i === si) return;
+    si = i;
+    showMedia(null);
   });
   player.addEventListener('click', (e) => {
     if (e.target === player) closePlayer();
   });
   player.addEventListener('wheel', (e) => {
     if (panel.contains(e.target)) return; // scrolls the comments
-    e.preventDefault();
     // Over the volume control, scrolling sets the volume instead.
     if (volumeBox.contains(e.target)) {
+      e.preventDefault();
       const v = prefs.muted ? 0 : prefs.volume;
       setVolume(Math.round((v - Math.sign(e.deltaY) * 0.05) * 20) / 20);
       return;
     }
-    const now = Date.now();
-    const gap = now - wheelLast;
-    wheelLast = now;
-    // One gesture (including a trackpad's momentum tail) moves one post.
-    if (gap > WHEEL_IDLE) {
-      wheelSum = 0;
-      wheelActed = false;
-    }
-    if (wheelActed) return;
-    wheelSum += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
-    if (Math.abs(wheelSum) < WHEEL_STEP) return;
-    wheelActed = true;
-    step(Math.sign(wheelSum));
+    // Up and down moves between posts; sideways, a carousel scrolls itself.
+    const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    const key = playerWheel(e.deltaY * wheelScale(e), sideways ? 'x' : 'y', sideways ? null : step);
+    const it = list()[pi];
+    if (key !== 'x' || !it || it.slides.length < 2) e.preventDefault();
   }, { passive: false });
 
   // ---- Like and comments ----------------------------------------------------
@@ -1237,8 +1311,7 @@
     const s = it.slides[si];
     if (video) unload(video);
     video = null;
-    if (picture0) picture0.remove();
-    picture0 = null;
+    fillCells(strack, it, si, bigPhoto);
     if (s.video) {
       video = handoff || (preload && preload.index === pi && si === 0 ? preload.video : makeVideo(s));
       if (preload && preload.video === video) preload = null;
@@ -1247,7 +1320,7 @@
       video.autoplay = false;
       syncSound();
       syncSpeed();
-      stage.prepend(hostOf(video));
+      strack.children[si].append(hostOf(video));
       const started = video.play();
       // Sound needs a recent click or key press; without one, play muted.
       if (started) started.catch(() => {
@@ -1256,30 +1329,37 @@
         syncSound();
         video.play().catch(() => {});
       });
-    } else {
-      picture0 = el('img', { className: 'sr-photo', alt: '', decoding: 'async' });
-      const big = s.thumbs[0];
-      if (big) picture0.src = big.url;
-      stage.prepend(picture0);
     }
     seek.attach(video);
     seek.row.hidden = volumeBox.hidden = speedBtn.hidden = !s.video;
     syncFoot();
     const many = it.slides.length > 1;
-    slidePrev.hidden = slideNext.hidden = dots.hidden = !many;
-    slidePrev.disabled = si === 0;
-    slideNext.disabled = si === it.slides.length - 1;
+    dots.hidden = !many;
     if (many) dots.replaceChildren(...it.slides.map((_, i) => el('i', { className: i === si ? 'sr-on' : '' })));
   }
 
-  function show(handoff) {
+  function bigPhoto(sl) {
+    const img = el('img', { className: 'sr-photo', alt: '', decoding: 'async' });
+    if (sl.thumbs[0]) img.src = sl.thumbs[0].url;
+    return img;
+  }
+
+  function show(handoff, start = 0) {
     const it = list()[pi];
-    si = 0;
+    si = start;
+    slideTarget = null;
     if (preload && preload.index !== pi) {
       unload(preload.video);
       preload = null;
     }
     sizeStage();
+    if (video) unload(video);
+    video = null;
+    if (strack) strack.remove();
+    strack = trackOf(it, bigPhoto(it.slides[0]));
+    strack.classList.add('sr-track');
+    stage.prepend(strack);
+    strack.scrollLeft = si * strack.clientWidth;
     showMedia(handoff);
 
     stageAvatar.src = it.pic || '';
@@ -1316,12 +1396,14 @@
     syncPlayerArrows();
   }
 
+  // Scrolls the carousel there; it plays once it lands (see watchTracks).
   function slide(delta) {
     const it = list()[pi];
-    const n = si + delta;
+    const n = (slideTarget == null ? si : slideTarget) + delta;
     if (!it || n < 0 || n >= it.slides.length) return false;
-    si = n;
-    showMedia(null);
+    slideTarget = n;
+    fillCells(strack, it, n, bigPhoto);
+    strack.scrollTo({ left: n * strack.clientWidth, behavior: 'smooth' });
     return true;
   }
 
@@ -1342,11 +1424,20 @@
   function openPlayer(index, opts = {}) {
     const it = shown[index];
     if (!it) return;
+    // It opens on the photo the tile or post shows, carrying on with the
+    // video playing there.
     const tileNode = nodeOf(it.pk);
+    const start = tileNode ? slideOf(tileNode) : 0;
     const host = tileNode && previewTile === tileNode && tileNode.querySelector('.sr-preview');
-    const preview = host && previews.get(host);
+    let preview = host && previews.get(host);
     if (host) host.remove();
     stopPreview();
+    if (!preview && tileNode && listVideos.has(tileNode)) {
+      preview = listVideos.get(tileNode);
+      listVideos.delete(tileNode);
+      hostOf(preview).remove();
+      tileNode.classList.remove('sf-video');
+    }
     for (const art of content.querySelectorAll('.sf-post')) stopListVideo(art);
     playing = shown.slice();
     pi = index;
@@ -1356,7 +1447,7 @@
     player.classList.toggle('sr-with-comments', !panel.hidden);
     document.documentElement.classList.add('sinsta-viewing');
     onTop(player);
-    show(preview || null);
+    show(preview || null, start);
     grow();
   }
 

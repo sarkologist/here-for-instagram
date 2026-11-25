@@ -1054,7 +1054,7 @@ html[data-sinsta-surface] main {
   outline-offset: 2px;
 }
 
-.sf-tile > img,
+.sf-cell > img,
 .sr-preview {
   position: absolute;
   inset: 0;
@@ -1205,8 +1205,28 @@ html[data-sinsta-surface] main {
   object-fit: cover;
 }
 
-.sf-video .sf-media {
+.sf-post {
   cursor: pointer;
+}
+
+/* A post's photos side by side, scrolled sideways natively and snapping to
+   each, one per swipe. Its edges hold rather than go back a page. */
+.sf-track {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.sf-cell {
+  position: relative;
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .sf-head,
@@ -1344,99 +1364,37 @@ html[data-sinsta-surface] main {
   color: rgba(255, 255, 255, 0.75);
 }
 
-/* A carousel's arrows and dots. */
-#sinsta-surface .sf-slide {
-  position: absolute;
-  top: 50%;
-  z-index: 3;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
-  color: #000;
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity 0.15s;
-}
-
-.sf-prev {
-  left: 8px;
-}
-
-.sf-next {
-  right: 8px;
-}
-
-.sf-post:hover .sf-slide:not(:disabled) {
-  opacity: 1;
-}
-
-.sf-slide svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
+/* A carousel's dots, always showing, along the bottom of a post or tile.
+   The name, likes and caption, while showing, go above them. */
 .sf-dots {
   position: absolute;
-  top: 12px;
-  left: 0;
-  right: 0;
-  z-index: 1;
+  bottom: 8px;
+  left: 6px;
+  right: 6px;
+  z-index: 3;
   display: flex;
   justify-content: center;
   gap: 4px;
+  overflow: hidden;
   pointer-events: none;
 }
 
-.sf-post:hover .sf-dots {
-  opacity: 0;
+.sf-post:has(.sf-dots) .sf-foot,
+.sf-tile:has(.sf-dots) .sf-tinfo {
+  padding-bottom: 22px;
 }
 
 .sf-dots i {
+  flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.5);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
 }
 
 .sf-dots i.sf-on {
   background: #fff;
-}
-
-.sf-burst {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.sf-burst svg {
-  width: 96px;
-  height: 96px;
-  fill: #fff;
-  stroke: #fff;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
-}
-
-.sf-burst.sf-go {
-  animation: sf-burst 0.8s ease-out;
-}
-
-@keyframes sf-burst {
-  0% { opacity: 0; transform: scale(0.4); }
-  25% { opacity: 1; transform: scale(1.1); }
-  60% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1); }
 }
 
 .sr-status {
@@ -1765,7 +1723,7 @@ html[data-sinsta-surface] main {
   color: #ff3040;
 }
 
-.sr-photo {
+.sr-track .sr-photo {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1773,38 +1731,7 @@ html[data-sinsta-surface] main {
   object-fit: contain;
 }
 
-/* A carousel's arrows and dots. */
-#sinsta-reel-player .sr-slide {
-  position: absolute;
-  top: 50%;
-  z-index: 2;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
-  color: #000;
-  transform: translateY(-50%);
-}
-
-#sinsta-reel-player .sr-slide:disabled {
-  opacity: 0;
-}
-
-.sr-slide-prev {
-  left: 10px;
-}
-
-.sr-slide-next {
-  right: 10px;
-}
-
-#sinsta-reel-player .sr-slide svg {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2.4;
-}
-
+/* A carousel's dots. */
 .sr-dots {
   position: absolute;
   left: 0;
