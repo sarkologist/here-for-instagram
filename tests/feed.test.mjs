@@ -56,6 +56,18 @@ test('Algo: only accounts you don\'t follow, no ads', async () => {
   assert.deepEqual(await posts(), ['stranger', 'other']);
 });
 
+test('Algo: Hide seen leaves out suggestions seen before this visit', async () => {
+  const seen = { 'sinsta-seen': { Hstranger: NOW - 86400 } };
+  await open('', { ...LIST, ...seen });
+  assert.deepEqual(await posts(), ['other']);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sinsta-toggle')).visibility), 'visible');
+  await page.waitForFunction(() => document.querySelector('.sinsta-toggle .sinsta-count').textContent === '1');
+  // Off, it shows dimmed.
+  await page.click('.sinsta-toggle');
+  assert.deepEqual(await posts(), ['stranger', 'other']);
+  assert.equal(await page.evaluate(() => document.querySelectorAll('.sf-post.sf-seen').length), 1);
+});
+
 test('Algo falls back to Instagram\'s page when the feed doesn\'t say whom you follow', async () => {
   await freshContext(LIST);
   await logIn('111');
