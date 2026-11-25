@@ -443,3 +443,82 @@ test('Grid: a carousel tile has all its photos ready before it is hovered', asyn
     return cells.length === 3 && cells.every((c) => c.querySelector('img'));
   });
 });
+
+// ---- Explore ---------------------------------------------------------------
+
+async function openExplore(storage = GRID) {
+  await freshContext(storage);
+  await logIn('111');
+  accounts['111'].explore = [
+    media('Ea', 'ann', { following: false }),
+    media('Eb', 'bob', { following: false, video: true }),
+    { ad: media('Ead', 'brand', { following: false }) },
+    media('Ec', 'cat', { following: false, slides: 3 }),
+    ...Array.from({ length: 14 }, (_, i) => media(`Ex${i}`, `user${i}`, { following: false })),
+  ];
+  await page.goto(`${ORIGIN}/explore/`);
+}
+
+const tiles = () => settled(() => page.evaluate(() => [...document.querySelectorAll('#sinsta-surface .sf-tile')]
+  .map((a) => a.getAttribute('href'))));
+
+test('Explore: its grid in the same tiles as Home, under Instagram\'s search box', async () => {
+  await openExplore({ ...GRID, 'sinsta-prefs': { lastView: 'following' } });
+  const got = await tiles();
+  assert.ok(got.length >= 6, `tiles: ${got}`);
+  assert.ok(got.includes('/p/Ea/') && got.includes('/reel/Eb/') && got.includes('/p/Ec/'));
+  assert.ok(!got.includes('/p/Ead/'), 'no ads');
+  // The search box shows, above the surface; Instagram's grid doesn't.
+  const box = await page.evaluate(() => {
+    const input = document.querySelector('main input');
+    const surface = document.querySelector('#sinsta-surface').getBoundingClientRect();
+    return {
+      visible: getComputedStyle(input).visibility,
+      native: getComputedStyle(document.querySelector('main .results')).visibility,
+      above: input.getBoundingClientRect().bottom <= surface.top,
+    };
+  });
+  assert.deepEqual(box, { visible: 'visible', native: 'hidden', above: true });
+  // Hide seen and the layout controls, but not Home's tabs.
+  const bar = await page.evaluate(() => ({
+    tabs: [...document.querySelectorAll('#sinsta-surface .sinsta-tab')].filter((t) => t.offsetParent).length,
+    toggle: !!document.querySelector('#sinsta-surface .sinsta-toggle').offsetParent,
+    layout: !!document.querySelector('#sinsta-surface .sf-switch').offsetParent,
+  }));
+  assert.deepEqual(bar, { tabs: 0, toggle: true, layout: true });
+  // More loads as you scroll.
+  await page.evaluate(() => document.querySelector('#sinsta-surface').scrollTo(0, 1e6));
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length >= 17);
+  // Visiting Explore leaves the Home view to reopen as it was.
+  const prefs = await page.evaluate(() => new Promise((r) => setTimeout(() => r(JSON.parse(localStorage.getItem('sinsta-prefs'))), 300)));
+  assert.equal(prefs.lastView, 'following');
+});
+
+test('Explore: Hide seen leaves out posts seen before this visit', async () => {
+  await openExplore({ ...GRID, 'sinsta-seen': { Ea: NOW - 86400 } });
+  const got = await tiles();
+  assert.ok(!got.includes('/p/Ea/'));
+  await page.waitForFunction(() => document.querySelector('.sinsta-toggle .sinsta-count').textContent === '1');
+});
+
+test('Explore: the surface makes way for search results until Back', async () => {
+  await openExplore();
+  await tiles();
+  await page.click('main input');
+  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-sinsta-surface'));
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('main .results')).visibility), 'visible');
+  await page.keyboard.type('cats');
+  assert.equal(await page.inputValue('main input'), 'cats');
+  await page.click('main [role="button"]');
+  await page.locator('main input').blur();
+  await page.waitForFunction(() => document.documentElement.hasAttribute('data-sinsta-surface'));
+  assert.ok((await tiles()).length >= 6);
+});
+
+test('Explore falls back to Instagram\'s page when its grid can\'t be loaded', async () => {
+  await freshContext(GRID);
+  await logIn('111');
+  await page.goto(`${ORIGIN}/explore/`);
+  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-sinsta-surface')
+    && getComputedStyle(document.querySelector('main .results')).visibility === 'visible', null, { timeout: 8000 });
+});

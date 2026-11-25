@@ -62,8 +62,9 @@ export const ad = (m) => ({ ad: true, media: m });
 export const suggested = (m) => ({ explore_story: { media: m } });
 
 // What Instagram tells each logged-in account: its stories tray, its
-// favourites and its home feeds (`feeds[variant]`: edges, newest first;
-// null makes the query fail).
+// favourites, its home feeds (`feeds[variant]`: edges, newest first;
+// null makes the query fail) and Explore's grid (`explore`: media, or
+// { ad: media }; null fails).
 export const accounts = {};
 function reset() {
   for (const k of Object.keys(accounts)) delete accounts[k];
@@ -71,6 +72,7 @@ function reset() {
     tray: [reel('1', 'alice', { watched: true }), reel('2', 'carol', { ago: 600 }), reel('3', 'fav_of_a', { ago: 900 })],
     favourites: ['3'],
     feeds: { following: null, favorites: null, home: null },
+    explore: null,
   };
   accounts['222'] = {
     tray: [reel('4', 'dave'), reel('5', 'fav_of_b', { ago: 1200 })],
@@ -94,6 +96,28 @@ const PROFILE = (id, username) => PAGE.replace('<main>', `<script>window.__igCli
 document.addEventListener('click', (e) => { if (e.target.closest('[role=button]')) window.__igClicks++; });</script>
 <main><header><section><div role="button" tabindex="0"><span role="link" tabindex="-1">
 <img alt="${username}'s profile picture" src="/test/pic/${id}.jpg"></span></div></section></header>`);
+// Explore, as Instagram renders it: a search box above its grid. Focusing
+// the box turns the page into search results, with a Back button beside
+// the box, which turns it back.
+const EXPLORE = PAGE.replace(/<main>.*<\/main>/, `<style>nav { position: fixed; top: 0; left: 0; width: 72px; overflow: hidden; }
+main { margin-left: 72px; }</style>
+<main><div>
+<div class="search"><div><span class="back"></span><input type="text" placeholder="Search" aria-label="Search input"></div></div>
+<div class="results" style="height: 3000px"><a href="/p/Dnative1/"><img alt=""></a></div></div>
+<script>
+const row = document.querySelector('.search > div');
+const results = document.querySelector('.results');
+row.querySelector('input').addEventListener('focus', () => {
+  row.querySelector('.back').innerHTML = '<div role="button"><svg aria-label="Back"></svg></div>';
+  results.innerHTML = '<div class="recent">Recent</div>';
+});
+row.querySelector('.back').addEventListener('click', () => {
+  row.querySelector('.back').replaceChildren();
+  row.querySelector('input').value = '';
+  results.innerHTML = '<a href="/p/Dnative1/"><img alt=""></a>';
+});
+</script></main>`);
+
 // Profiles there are pages for: alice and carol have stories, nostory doesn't.
 const PROFILES = { alice: '1', carol: '2', nostory: '9' };
 
@@ -126,6 +150,7 @@ export async function freshContext(storage = {}) {
     const acc = accounts[me];
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
     if (path === '/' || /^\/reels\//.test(path)) return route.fulfill({ contentType: 'text/html', body: PAGE });
+    if (path === '/explore/') return route.fulfill({ contentType: 'text/html', body: EXPLORE });
     const profile = path.match(/^\/([\w.]+)\/$/);
     if (profile && PROFILES[profile[1]]) return route.fulfill({ contentType: 'text/html', body: PROFILE(PROFILES[profile[1]], profile[1]) });
     const ext = path.match(/^\/test\/ext\/([\w.]+)$/);
@@ -137,6 +162,18 @@ export async function freshContext(storage = {}) {
     if (path === '/api/v1/friendships/feed_favorites/') {
       const all = Object.values(accounts).flatMap((a) => a.tray);
       return json({ users: acc.favourites.map((id) => all.find((r) => r.id === id).user) });
+    }
+    if (path === '/api/v1/discover/web/explore_grid/') {
+      if (!acc.explore) return route.fulfill({ status: 500, body: '' });
+      // Pages of 6, in sections of 3, max_id being the page's number.
+      const n = Number(new URL(req.url()).searchParams.get('max_id') || 0);
+      const page = acc.explore.slice(n * 6, n * 6 + 6);
+      const more = (n + 1) * 6 < acc.explore.length;
+      const sections = [page.slice(0, 3), page.slice(3)].filter((p) => p.length).map((p) => ({
+        layout_type: 'media_grid',
+        layout_content: { medias: p.map((m) => (m.ad ? { media: { ...m.ad, ad_id: '1' } } : { media: m })) },
+      }));
+      return json({ sectional_items: sections, more_available: more, next_max_id: more ? String(n + 1) : null, rank_token: 'r' });
     }
     if (path === '/api/graphql' || path === '/graphql/query') {
       const vars = JSON.parse(new URLSearchParams(req.postData() || '').get('variables') || '{}');

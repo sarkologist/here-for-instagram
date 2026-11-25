@@ -6,8 +6,9 @@
   //   Following   Instagram's chronological feed, minus favourites
   //   Favourites  the same, for accounts you starred
   // Ads are hidden everywhere. Reels is a fourth tab beside them. feed.js
-  // draws these views itself; what's here filters Instagram's own page,
-  // which a view falls back to when its feed can't be loaded.
+  // draws these views itself, and Explore's grid; what's here filters
+  // Instagram's own page, which a view falls back to when its feed can't be
+  // loaded.
   const { api, go, el, mark, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, userIds, lookUpId } = Sinsta;
 
   const VIEWS = [
@@ -762,9 +763,10 @@
   }
 
   // The bar goes atop feed.js's surface, over Instagram's Reels player, or
-  // (where Instagram's page shows) atop its feed.
+  // (where Instagram's page shows) atop its feed. On Explore it only goes
+  // atop the surface, without the tabs.
   function mountBar(view) {
-    const host = (Sinsta.surface && Sinsta.surface.barHost(view)) || (view === 'reels' ? null : feedColumn());
+    const host = (Sinsta.surface && Sinsta.surface.barHost(view)) || (HOME_VIEWS.has(view) ? feedColumn() : null);
     if (!host) return;
     if (bar.parentElement !== host) host.prepend(bar);
     if (bar.dataset.view !== view) {
@@ -808,7 +810,8 @@
     ensureFavButtons();
     syncBadgeTip();
     const onReels = /^\/reels(\/|$)/.test(location.pathname);
-    const view = location.pathname === '/' ? currentView() : onReels ? 'reels' : null;
+    const onExplore = /^\/explore\/?$/.test(location.pathname);
+    const view = location.pathname === '/' ? currentView() : onReels ? 'reels' : onExplore ? 'explore' : null;
     document.documentElement.toggleAttribute('data-sinsta-favourites', view === 'favorites');
     document.documentElement.toggleAttribute('data-sinsta-following', view === 'following');
     if (!view) return;
@@ -819,6 +822,11 @@
     if (view !== visitView) {
       visitView = view;
       newVisit();
+    }
+    // Explore: feed.js's surface, or Instagram's page left as it is.
+    if (view === 'explore') {
+      mountBar(view);
+      return;
     }
     if (seen && prefs.lastView !== view) {
       prefs.lastView = view;

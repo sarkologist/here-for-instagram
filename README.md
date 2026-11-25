@@ -15,11 +15,15 @@ Opening instagram.com reopens whichever of the first three you were last on.
 
 The extension draws these views itself, from the feeds Instagram's own pages load, as a list or a grid (see below). Algo is Instagram's home feed keeping only posts from accounts you don't follow (about half of it); Following and Favourites are Instagram's chronological feeds, with favourites taken out of Following and a stories row added. Ads are left out everywhere.
 
-If a feed can't be loaded, that view shows Instagram's own page instead, filtered the same way (by its "Suggested for you" and "Sponsored" labels). Explore is untouched.
+If a feed can't be loaded, that view shows Instagram's own page instead, filtered the same way (by its "Suggested for you" and "Sponsored" labels).
+
+## Explore
+
+Explore (Search in Instagram's menu) gets the same list or grid, player and Hide seen, from the grid Instagram's own Explore page loads, without ads. Instagram's search box stays above it: using the box shows Instagram's search results as usual, and its Back button brings the grid back. If the grid can't be loaded, Explore is Instagram's own page.
 
 ## List and grid
 
-The List / Grid switch in the tab bar (or `G`) applies to all four tabs.
+The List / Grid switch in the tab bar (or `G`) applies to all four tabs and Explore.
 
 - **List:** one post under another, showing just the photo or video. The name, buttons (like, comments, and a link to the post, which Ctrl/⌘-click or middle-click opens in a new tab), likes and the full caption appear over it while the pointer is on it. Videos play silently while on screen. Clicking a post opens it in the player (below); with the pointer on it, `L` likes and `C` opens its comments. On Reels, List is Instagram's own player.
 - **Grid:** tiles in columns, each post uncropped (within Instagram's 4:5 to 1.91:1) and reels 9:16. Hovering a tile shows its caption, name and likes, and plays a video silently. The − / + buttons beside the switch (or the `-` and `+` keys) set 1 to 8 columns, separately for each tab. Tiles never get taller than the window, so few columns leave margins on wide screens. Ctrl/⌘-click a tile to open it in a new tab.
@@ -31,7 +35,7 @@ Each tab keeps its place while you visit the others, until the page reloads. The
 
 ## Hide seen
 
-Following, Favourites and Algo share a "Hide seen" toggle (on by default). With it on, posts you saw before this visit are removed from the feed, so it shows only what you haven't seen. Turn it off for the strict, complete timeline, where posts seen before this visit are dimmed.
+Following, Favourites, Algo and Explore share a "Hide seen" toggle (on by default). With it on, posts you saw before this visit are removed from the feed, so it shows only what you haven't seen. Turn it off for the strict, complete timeline, where posts seen before this visit are dimmed.
 
 - In the list, a post counts as seen once half of it (or half the screen) has shown it for a second, in any of the three views. In the grid, where a screen holds many posts, a post counts as seen once it has been wholly on screen for a second and you scroll past it, or once the pointer has rested on it for a second. Opening a post counts too.
 - A post that counts as seen gets a tick in its corner, so you can see the rule at work; hovering the tick says when. Clicking it marks the post as not seen (it isn't counted again this visit), and clicking a post's empty tick, shown while the pointer is on it, marks it as seen.
