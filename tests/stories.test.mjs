@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, accounts, page, freshContext, logIn, settled } from './stand-in.mjs';
+import { ORIGIN, accounts, videoReel, page, freshContext, logIn, settled } from './stand-in.mjs';
 
 // The usernames in the stories row once it has settled, watched ones marked.
 async function row(view) {
@@ -89,4 +89,34 @@ test('A click outside the story closes the viewer; on the story, it does not', a
   assert.equal(await isOpen(), true);
   await page.mouse.click(10, box.y + box.height / 2);
   assert.equal(await isOpen(), false);
+});
+
+test('Video story: seekbar and playback speed', async () => {
+  await freshContext();
+  await logIn('111');
+  accounts['111'].tray = [videoReel('6', 'vid')];
+  accounts['111'].favourites = [];
+  assert.deepEqual(await row('following'), ['vid']);
+  await page.click('.sinsta-story');
+  const clock = page.locator('#sinsta-viewer .sinsta-clock');
+  await clock.filter({ hasText: '/ 0:04' }).waitFor();
+  const speed = page.locator('#sinsta-viewer .sinsta-speed');
+  const rate = () => page.evaluate(() => document.querySelector('#sinsta-viewer video').playbackRate);
+  assert.equal(await speed.textContent(), '1×');
+  await speed.click();
+  assert.equal(await speed.textContent(), '1.25×');
+  assert.equal(await rate(), 1.25);
+  await page.keyboard.press('>');
+  assert.equal(await rate(), 1.5);
+  await page.keyboard.press('<');
+  await page.keyboard.press('<');
+  assert.equal(await speed.textContent(), '1×');
+  // Clicking the seekbar at three quarters seeks there.
+  const box = await page.locator('#sinsta-viewer .sinsta-seek').boundingBox();
+  await page.mouse.click(box.x + box.width * 0.75, box.y + box.height / 2);
+  const t = await page.evaluate(() => document.querySelector('#sinsta-viewer video').currentTime);
+  assert.ok(t > 2.5 && t < 3.5, `seeked to ${t}`);
+  // Seeking doesn't move on to another story or close the viewer.
+  assert.equal(await page.locator('#sinsta-viewer').count(), 1);
+  await clock.filter({ hasText: /^0:0[23] \/ 0:04$/ }).waitFor({ timeout: 1000 });
 });

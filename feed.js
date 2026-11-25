@@ -14,7 +14,7 @@
   'use strict';
 
   const {
-    go, el, shadowVideo, hostOf, icon, onTop, reelsPage, reelByCode, feedPage, ago,
+    go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, reelByCode, feedPage, ago,
     likeMedia, likeComment, comments, replies, addComment,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
@@ -56,6 +56,7 @@
     cols: { following: 4, favorites: 3, algo: 3, reels: 4 },
     muted: false,
     volume: 1,
+    speed: 1,
     comments: true,
   };
 
@@ -791,20 +792,20 @@
   const list = () => playing;
 
   const stage = el('div', { className: 'sr-stage' });
-  const bar = el('i');
-  const progress = el('div', { className: 'sr-progress' }, bar);
+  const seek = seekbar();
   const stageAvatar = el('img', { className: 'sr-avatar', alt: '' });
   const userLink = el('a', { className: 'sr-user' });
   const muteBtn = button('sr-btn', 'Sound (M)', SOUND_ON);
   const slider = el('input', { type: 'range', min: 0, max: 1, step: 0.05, title: 'Volume' });
   const volumeBox = el('div', { className: 'sr-volume' }, muteBtn, slider);
-  const head = el('div', { className: 'sr-head' }, stageAvatar, userLink, el('span', { className: 'sr-gap' }), volumeBox);
+  const speedBtn = el('button', { className: 'sr-btn sinsta-speed', type: 'button', title: 'Speed (< >)' });
+  const head = el('div', { className: 'sr-head' }, stageAvatar, userLink, el('span', { className: 'sr-gap' }), speedBtn, volumeBox);
   const caption = el('div', { className: 'sr-caption' });
-  const foot = el('div', { className: 'sr-foot' }, caption);
+  const foot = el('div', { className: 'sr-foot' }, caption, seek.row);
   const slidePrev = button('sr-slide sr-slide-prev', 'Previous photo (←)', LEFT);
   const slideNext = button('sr-slide sr-slide-next', 'Next photo (→)', RIGHT);
   const dots = el('div', { className: 'sr-dots' });
-  stage.append(head, foot, progress, slidePrev, slideNext, dots);
+  stage.append(head, foot, slidePrev, slideNext, dots);
 
   // Like, comments and copy link, beside the post as in the app.
   function action(title, paths) {
@@ -854,6 +855,10 @@
   muteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleMute();
+  });
+  speedBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setSpeed(cycleSpeed(prefs.speed));
   });
   slider.addEventListener('input', () => setVolume(Number(slider.value)));
   slider.addEventListener('click', (e) => e.stopPropagation());
@@ -941,7 +946,7 @@
     prefs.comments = !panel.hidden;
     save();
     player.classList.toggle('sr-with-comments', !panel.hidden);
-    foot.hidden = !panel.hidden || !list()[pi] || !list()[pi].caption;
+    syncFoot();
     sizeStage();
     syncActions();
     if (!panel.hidden) loadComments();
@@ -1173,6 +1178,25 @@
     syncSound();
   }
 
+  // The caption (while comments are closed, where it shows instead) and a
+  // video's seekbar, along the bottom of the stage.
+  function syncFoot() {
+    const it = list()[pi];
+    caption.hidden = !it || !it.caption || !panel.hidden;
+    foot.hidden = caption.hidden && seek.row.hidden;
+  }
+
+  function setSpeed(rate) {
+    prefs.speed = rate;
+    save();
+    syncSpeed();
+  }
+
+  function syncSpeed() {
+    if (video) setRate(video, prefs.speed);
+    speedBtn.textContent = speedLabel(prefs.speed);
+  }
+
   function syncSound() {
     if (video) {
       video.muted = prefs.muted;
@@ -1222,9 +1246,8 @@
       video.style.objectFit = 'contain';
       video.autoplay = false;
       syncSound();
-      video.addEventListener('timeupdate', onTime);
+      syncSpeed();
       stage.prepend(hostOf(video));
-      bar.style.width = video.duration ? `${(video.currentTime / video.duration) * 100}%` : '0';
       const started = video.play();
       // Sound needs a recent click or key press; without one, play muted.
       if (started) started.catch(() => {
@@ -1239,8 +1262,9 @@
       if (big) picture0.src = big.url;
       stage.prepend(picture0);
     }
-    progress.hidden = !s.video;
-    volumeBox.hidden = !s.video;
+    seek.attach(video);
+    seek.row.hidden = volumeBox.hidden = speedBtn.hidden = !s.video;
+    syncFoot();
     const many = it.slides.length > 1;
     slidePrev.hidden = slideNext.hidden = dots.hidden = !many;
     slidePrev.disabled = si === 0;
@@ -1266,7 +1290,7 @@
     cUser.href = `/${it.username}/`;
     cTime.textContent = it.takenAt ? ago(it.takenAt) : '';
     caption.textContent = it.caption;
-    foot.hidden = !it.caption || !panel.hidden;
+    syncFoot();
     syncActions();
     thread = null;
     if (!panel.hidden) loadComments();
@@ -1299,11 +1323,6 @@
     si = n;
     showMedia(null);
     return true;
-  }
-
-  function onTime(e) {
-    const v = e.target;
-    if (v === video && v.duration) bar.style.width = `${(v.currentTime / v.duration) * 100}%`;
   }
 
   function syncPlayerArrows() {
@@ -1347,6 +1366,7 @@
     if (video) unload(video);
     if (preload) unload(preload.video);
     video = null;
+    seek.attach(null);
     preload = null;
     thread = null;
     setReply(null);
@@ -1406,6 +1426,8 @@
       L: like,
       c: toggleComments,
       C: toggleComments,
+      '<': () => setSpeed(shiftSpeed(prefs.speed, -1)),
+      '>': () => setSpeed(shiftSpeed(prefs.speed, 1)),
       Escape: closePlayer,
     };
     const act = keys[e.key];

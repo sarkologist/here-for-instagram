@@ -23,7 +23,7 @@ The List / Grid switch in the tab bar (or `G`) applies to all four tabs.
 
 - **List:** one post under another, showing just the photo or video. The name, buttons (like, comments, copy link), likes and the full caption appear over it while the pointer is on it. Videos play silently while on screen; clicking one turns its sound on. Double-click likes a post; with the pointer on it, `L` likes and `C` opens its comments. A carousel has arrows on its sides. On Reels, List is Instagram's own player.
 - **Grid:** tiles in columns, each post uncropped (within Instagram's 4:5 to 1.91:1) and reels 9:16. Hovering a tile shows its caption, name and likes, and plays a video silently. The − / + buttons beside the switch (or the `-` and `+` keys) set 1 to 8 columns, separately for each tab. Tiles never get taller than the window, so few columns leave margins on wide screens. Ctrl/⌘-click a tile to open it in a new tab.
-- **Player:** clicking a tile, or a post's comments, opens the player, which goes through the tab in order. The caption, in full, and the comments sit beside the post (`C` hides them). `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous post; `←` / `→` go through a carousel's photos (on anything else, they move between posts too). For videos, `Space` pauses, `M` toggles sound and the slider beside the sound button (or scrolling over it) sets the volume. `L` likes, `Esc` closes and lands the view on the post you stopped at.
+- **Player:** clicking a tile, or a post's comments, opens the player, which goes through the tab in order. The caption, in full, and the comments sit beside the post (`C` hides them). `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous post; `←` / `→` go through a carousel's photos (on anything else, they move between posts too). For videos, `Space` pauses, `M` toggles sound the slider beside the sound button (or scrolling over it) sets the volume, the seekbar along the bottom seeks, and the speed button (or `<` / `>`) sets the playback speed from 0.5× to 2× (remembered). `L` likes, `Esc` closes and lands the view on the post you stopped at.
 - **Likes and comments:** comments load as you scroll; replies load under their comment, and comments can be liked, replied to (Reply) and posted (`Enter`; `Shift+Enter` for a new line).
 
 Each tab keeps its place while you visit the others, until the page reloads. The player doesn't report views to Instagram, so watching here doesn't tune its feeds the way its own pages do.
@@ -56,8 +56,11 @@ Unwatched stories come first, then fully watched ones with a grey ring, each gro
 | Swipe sideways (trackpad), or scroll (mouse wheel) | turn the carousel of accounts |
 | Hold, or `Space` | pause a video |
 | `M` | sound on/off |
+| Speed button, or `<` / `>` | playback speed of a video (0.5× to 2×) |
 | `L` | like |
 | Click outside the story, or `Esc` | close |
+
+A video story has a seekbar above the reply box, with its time; dragging or clicking it seeks. The speed stays as set until the page reloads.
 
 Scrolling only moves between accounts; clicks move between an account's stories. The carousel turns as you swipe, with the trackpad's momentum, and comes to rest on an account; a mouse wheel turns it smoothly and settles on the nearest account when you stop.
 

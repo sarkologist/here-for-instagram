@@ -465,6 +465,65 @@ const Sinsta = (() => {
   }
   const hostOf = (v) => v.getRootNode().host;
 
+  // A seekbar with the time beside it, for whichever video attach() was last
+  // given. It follows playback every frame and seeks as it is dragged.
+  function seekbar() {
+    const input = el('input', { type: 'range', className: 'sinsta-seek', min: 0, max: 1, step: 'any', value: 0, title: 'Seek' });
+    const clock = el('span', { className: 'sinsta-clock' });
+    const row = el('div', { className: 'sinsta-seekrow' }, input, clock);
+    let video = null;
+    let raf = 0;
+    let pressed = false;
+    let text = '';
+    const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    function sync() {
+      raf = video ? requestAnimationFrame(sync) : 0;
+      if (!video) return;
+      const d = video.duration;
+      const t = video.currentTime;
+      const next = d ? `${fmt(t)} / ${fmt(d)}` : '';
+      if (next !== text) clock.textContent = text = next;
+      // Writing the value during a press on the slider can cancel it in Firefox.
+      if (!pressed) {
+        const v = String(d ? t / d : 0);
+        if (input.value !== v) input.value = v;
+      }
+    }
+    input.addEventListener('pointerdown', () => { pressed = true; });
+    window.addEventListener('pointerup', () => { pressed = false; }, true);
+    input.addEventListener('input', () => {
+      if (video && video.duration) video.currentTime = Number(input.value) * video.duration;
+    });
+    // Let go of focus, so the player's keys (arrows, space) work again.
+    input.addEventListener('change', () => input.blur());
+    function attach(v) {
+      video = v;
+      if (video && !raf) raf = requestAnimationFrame(sync);
+      if (!video) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+        clock.textContent = text = '';
+        input.value = '0';
+      }
+    }
+    return { row, attach };
+  }
+
+  // Playback speeds, slowest first; shift(rate, ±1) is the next one along.
+  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  function shiftSpeed(rate, delta) {
+    const i = SPEEDS.indexOf(rate);
+    return SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? SPEEDS.indexOf(1) : i) + delta))];
+  }
+  // The next speed up for a click, back to the slowest after the fastest.
+  const cycleSpeed = (rate) => SPEEDS[(SPEEDS.indexOf(rate) + 1) % SPEEDS.length];
+  function setRate(video, rate) {
+    // load() resets playbackRate to the default, so set both.
+    video.defaultPlaybackRate = rate;
+    video.playbackRate = rate;
+  }
+  const speedLabel = (rate) => `${rate}×`;
+
   // Show a full-window overlay in the browser's top layer, so it covers
   // whatever Instagram stacks with z-index (in narrow or zoomed windows,
   // parts of its hidden feed otherwise show through).
@@ -521,6 +580,7 @@ const Sinsta = (() => {
   let shown = false; // current media has actually loaded
   let raf = 0;
   let muted = true;
+  let speed = 1;
   let spacePaused = false;
   let holding = false;
   let hovering = false; // pointer on a sticker
@@ -547,6 +607,8 @@ const Sinsta = (() => {
   const userLink = el('a', { className: 'sv-user' });
   const timeText = el('span', { className: 'sv-time' });
   const muteBtn = el('button', { className: 'sv-btn', type: 'button', title: 'Sound (M)' });
+  const speedBtn = el('button', { className: 'sv-btn sinsta-speed', type: 'button', title: 'Speed (< >)' }, speedLabel(speed));
+  const seek = seekbar();
   const note = el('div', { className: 'sv-note' });
   const stickerBox = el('div', { className: 'sv-stickers' });
   const bubbleText = el('span');
@@ -560,14 +622,14 @@ const Sinsta = (() => {
   const reactions = el('div', { className: 'sv-reactions', hidden: true },
     ...REACTIONS.map((emoji) => el('button', { type: 'button', className: 'sv-emoji', title: `React with ${emoji}` }, emoji)));
   const toast = el('div', { className: 'sv-toast', hidden: true });
-  const foot = el('div', { className: 'sv-foot' }, reactions, el('div', { className: 'sv-reply-row' }, replyInput, likeBtn));
+  const foot = el('div', { className: 'sv-foot' }, seek.row, reactions, el('div', { className: 'sv-reply-row' }, replyInput, likeBtn));
   const stage = el('div', { className: 'sv-stage' },
     mediaBox,
     stickerBox,
     el('div', { className: 'sv-dim' }),
     el('div', { className: 'sv-top' },
       bars,
-      el('div', { className: 'sv-head' }, avatar, userLink, timeText, el('span', { className: 'sv-gap' }), muteBtn),
+      el('div', { className: 'sv-head' }, avatar, userLink, timeText, el('span', { className: 'sv-gap' }), speedBtn, muteBtn),
       sub),
     note,
     toast,
@@ -582,6 +644,7 @@ const Sinsta = (() => {
 
   closeBtn.addEventListener('click', () => close());
   muteBtn.addEventListener('click', () => setMuted(!muted));
+  speedBtn.addEventListener('click', () => setSpeed(cycleSpeed(speed)));
   // Links within Instagram close the viewer and navigate in place; link
   // stickers open a new tab and pause the story.
   stage.addEventListener('click', (e) => {
@@ -687,6 +750,8 @@ const Sinsta = (() => {
       ' ': () => { spacePaused = !spacePaused; syncPause(); },
       m: () => setMuted(!muted),
       l: toggleLike,
+      '<': () => setSpeed(shiftSpeed(speed, -1)),
+      '>': () => setSpeed(shiftSpeed(speed, 1)),
     };
     const action = actions[e.key];
     if (!action) return;
@@ -1657,8 +1722,15 @@ const Sinsta = (() => {
     if (current && current.tagName === 'VIDEO') current.muted = muted;
   }
 
+  function setSpeed(value) {
+    speed = value;
+    speedBtn.textContent = speedLabel(speed);
+    if (current && current.tagName === 'VIDEO') setRate(current, speed);
+  }
+
   function startVideo() {
     current.muted = muted;
+    setRate(current, speed);
     const attempt = current.play();
     if (attempt && attempt.catch) {
       // Browsers can refuse to autoplay with sound.
@@ -1693,6 +1765,7 @@ const Sinsta = (() => {
     loadAhead();
     if (current && current.tagName === 'VIDEO') current.pause();
     current = null;
+    seek.attach(null);
     shown = false;
     const reel = list[ri];
     avatar.src = reel.pic;
@@ -1753,7 +1826,7 @@ const Sinsta = (() => {
     }));
     timeText.textContent = ago(item.takenAt);
     syncFoot(reel, item);
-    muteBtn.hidden = item.type !== 'video';
+    muteBtn.hidden = speedBtn.hidden = seek.row.hidden = item.type !== 'video';
     renderStickers(item);
 
     current = mediaEl(item);
@@ -1808,6 +1881,8 @@ const Sinsta = (() => {
       };
       if (node.currentTime) node.currentTime = 0; // a seek, even to where it is
       node.loop = true;
+      setRate(node, speed);
+      seek.attach(node);
       node.onloadeddata = painted;
       node.onplaying = painted;
       node.onerror = broken;
@@ -1919,6 +1994,7 @@ const Sinsta = (() => {
     for (const node of preloaded.values()) unload(node);
     preloaded.clear();
     current = null;
+    seek.attach(null);
     mediaBox.replaceChildren();
     clearDeck();
     replyInput.blur();
@@ -1929,7 +2005,7 @@ const Sinsta = (() => {
   }
 
   return {
-    api, go, el, shadowVideo, hostOf, icon, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, reelByCode, feedPage,
+    api, go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, reelByCode, feedPage,
     mark, userIds, lookUpId, ago,
     likeMedia, likeComment, comments, replies, addComment,
   };
