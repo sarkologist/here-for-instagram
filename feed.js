@@ -27,8 +27,7 @@
   const PREVIEW_MS = 250; // hover this long before a cover starts playing
   const WHEEL_STEP = 40; // px of scrolling that moves the player one post
   const WHEEL_IDLE = 200; // ms without scroll events that ends a gesture
-  const SWIPE_PX = 40; // px of a touch swipe that moves a carousel one photo
-  const DBLCLICK_MS = 250; // ms a click on a list post waits for a second one (a like)
+  const SETTLE_MS = 150; // ms without scrolling after which a carousel has come to rest
   const SEEN_MS = 1000; // as in content.js: on screen this long counts as seen
   const RUN_LIMIT = 120; // seen posts in a row before pausing, as in content.js
   const storage = typeof browser === 'object' && browser.storage && browser.storage.local;
@@ -220,7 +219,8 @@
 
   // One wheel gesture, a trackpad's momentum tail included, acts once: `act`
   // gets the direction once it has gone far enough. A gesture keeps the `key`
-  // it started with (an axis, a post); events for another key are ignored.
+  // it started with (an axis), which it returns; events for another key are
+  // ignored.
   function wheelGesture() {
     let sum = 0;
     let last = 0;
@@ -234,17 +234,16 @@
         key = k;
       }
       last = now;
-      if (acted || k !== key) return;
+      if (acted || k !== key || !act) return key;
       sum += delta;
-      if (Math.abs(sum) < WHEEL_STEP) return;
+      if (Math.abs(sum) < WHEEL_STEP) return key;
       acted = true;
       act(Math.sign(sum));
+      return key;
     };
   }
 
   const wheelScale = (e) => (e.deltaMode === 1 ? 16 : 1); // lines to px
-
-  const isSwipe = (dx, dy) => Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5;
 
   // ---- Rendering --------------------------------------------------------------
 
@@ -291,7 +290,7 @@
     a.dataset.pk = it.pk;
     a.style.aspectRatio = String(shape(it));
     if (seenBefore(cur, it)) a.classList.add('sf-seen');
-    a.append(picture(it.slides[0], tileWidth()));
+    a.append(trackOf(it, picture(it.slides[0], tileWidth())));
     if (cur !== 'reels' && it.slides.some((s) => s.video)) {
       a.append(el('span', { className: 'sf-badge', hidden: !it.video }, icon(PLAY)));
     }
@@ -317,9 +316,7 @@
     art.dataset.pk = it.pk;
     art.style.setProperty('--ar', String(shape(it)));
     if (seenBefore(cur, it)) art.classList.add('sf-seen');
-    const media = el('div', { className: 'sf-media' });
-    art.append(media);
-    showSlide(art, it, 0);
+    art.append(el('div', { className: 'sf-media' }, trackOf(it, picture(it.slides[0], LIST_SIZES))));
 
     const user = el('a', { className: 'sf-user', href: `/${it.username}/` }, it.username);
     const head = el('div', { className: 'sf-head' }, avatar(it, 'sf-pic'), user,
@@ -343,7 +340,6 @@
     }
     art.append(head, foot);
     if (it.slides.length > 1) art.append(dotsOf(it));
-    art.append(el('div', { className: 'sf-burst' }, icon(HEART)));
     syncPost(art, it);
     return art;
   }
@@ -364,34 +360,89 @@
 
   const slideOf = (node) => Number(node.dataset.slide || 0);
 
-  // A list post's photo, or (while on screen) its video; a grid tile's photo.
-  function showSlide(node, it, si) {
-    node.dataset.slide = si;
-    const dots = node.querySelector('.sf-dots');
-    if (dots) [...dots.children].forEach((d, i) => d.classList.toggle('sf-on', i === si));
+  const LIST_SIZES = 'min(470px, 100vw)';
+
+  // A post's photos side by side, in a track that scrolls sideways natively
+  // (a trackpad's two-finger swipe, a finger, Shift + mouse wheel) and snaps
+  // to each in turn. A cell gets its photo once the track comes near it.
+  function trackOf(it, first) {
+    const t = el('div', { className: 'sf-track' }, ...it.slides.map(() => el('div', { className: 'sf-cell' })));
+    t.firstChild.append(first);
+    return t;
+  }
+
+  // The cell a track is (nearest to) showing.
+  const cellAt = (t) => Math.max(0, Math.min(t.children.length - 1, Math.round(t.scrollLeft / (t.clientWidth || 1))));
+
+  // Cell i and its neighbours get their photo, `make(slide)`, loaded now
+  // (lazily they would wait until scrolled into view).
+  function fillCells(t, it, i, make) {
+    for (let j = Math.max(0, i - 1); j <= Math.min(it.slides.length - 1, i + 1); j++) {
+      const c = t.children[j];
+      if (c.firstChild) continue;
+      const img = make(it.slides[j]);
+      img.loading = 'eager';
+      c.append(img);
+    }
+  }
+
+  function syncDots(dots, i, cls) {
+    if (dots) [...dots.children].forEach((d, k) => d.classList.toggle(cls, k === i));
+  }
+
+  // The carousels under `root`: `move(track, i)` as one scrolls, `land(track,
+  // i)` once it comes to rest on cell i.
+  function watchTracks(root, move, land) {
+    const timers = new WeakMap();
+    const isTrack = (t) => t.classList && t.classList.contains('sf-track');
+    const settle = (t) => {
+      clearTimeout(timers.get(t));
+      land(t, cellAt(t));
+    };
+    root.addEventListener('scroll', (e) => {
+      const t = e.target;
+      if (!isTrack(t)) return;
+      move(t, cellAt(t));
+      clearTimeout(timers.get(t));
+      timers.set(t, setTimeout(() => settle(t), SETTLE_MS));
+    }, true);
+    root.addEventListener('scrollend', (e) => {
+      if (isTrack(e.target)) settle(e.target);
+    }, true);
+  }
+
+  // A list post's or grid tile's neighbouring photos, ready to swipe to.
+  function nearCells(node) {
+    const it = itemOf(node);
+    const t = node && node.querySelector('.sf-track');
+    if (!it || !t || it.slides.length < 2) return;
+    const sizes = node.classList.contains('sf-tile') ? tileWidth() : LIST_SIZES;
+    fillCells(t, it, cellAt(t), (sl) => picture(sl, sizes));
+  }
+
+  // A list post or grid tile at rest on photo i: its video plays there.
+  function landOn(node, i) {
+    const it = itemOf(node);
+    if (!it || i === slideOf(node)) return;
+    node.dataset.slide = i;
     if (node.classList.contains('sf-tile')) {
-      const hovering = previewTile === node;
-      stopPreview();
-      node.querySelector(':scope > img').replaceWith(picture(it.slides[si], tileWidth()));
       const badge = node.querySelector('.sf-badge');
-      if (badge) badge.hidden = !it.slides[si].video;
-      if (hovering) startPreview(node, 0);
+      if (badge) badge.hidden = !it.slides[i].video;
+      if (previewTile === node) {
+        stopPreview();
+        startPreview(node, 0);
+      }
       return;
     }
-    const media = node.querySelector('.sf-media');
     stopListVideo(node);
-    media.replaceChildren(picture(it.slides[si], 'min(470px, 100vw)'));
     if (node.dataset.onScreen) startListVideo(node);
   }
 
-  // Through a carousel in the list or the grid; false at either end.
-  function slideBy(node, delta) {
-    const it = itemOf(node);
-    const n = slideOf(node) + delta;
-    if (!it || n < 0 || n >= it.slides.length) return false;
-    showSlide(node, it, n);
-    return true;
-  }
+  watchTracks(content, (t, i) => {
+    const node = t.closest('[data-pk]');
+    syncDots(node.querySelector('.sf-dots'), i, 'sf-on');
+    nearCells(node);
+  }, (t, i) => landOn(t.closest('[data-pk]'), i));
 
   const listVideos = new WeakMap(); // article -> its playing video
 
@@ -404,7 +455,7 @@
     host.className = 'sr-preview';
     v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
     listVideos.set(art, v);
-    art.querySelector('.sf-media').append(host);
+    art.querySelector('.sf-track').children[slideOf(art)].append(host);
     art.classList.add('sf-video');
   }
 
@@ -523,6 +574,7 @@
       if (e.intersectionRatio >= 0.6 && !playerOpen) {
         art.dataset.onScreen = '1';
         startListVideo(art);
+        nearCells(art);
       } else if (e.intersectionRatio < 0.6) {
         delete art.dataset.onScreen;
         stopListVideo(art);
@@ -599,31 +651,11 @@
       if (!plainClick(e)) return; // Ctrl/⌘-click: a new tab
       e.preventDefault();
       e.stopPropagation();
-      if (!justSwiped()) openPlayer(shown.indexOf(it));
+      openPlayer(shown.indexOf(it));
       return;
     }
-    // A list post opens in the player too, but not at once: a second click
-    // makes it a double click, which likes it instead.
-    clearTimeout(openTimer);
-    if (e.detail > 1 || justSwiped() || String(getSelection())) return;
-    openTimer = setTimeout(() => {
-      if (node.isConnected && !playerOpen) openPlayer(shown.indexOf(it));
-    }, DBLCLICK_MS);
-  });
-  let openTimer = 0;
-
-  // Double-clicking a post likes it, as on Instagram.
-  content.addEventListener('dblclick', (e) => {
-    const node = e.target.closest('.sf-post');
-    if (!node || e.target.closest('a, button')) return;
-    clearTimeout(openTimer);
-    const it = itemOf(node);
-    if (!it) return;
-    if (!it.liked) toggleLike(it, () => syncEverywhere(it));
-    const burst = node.querySelector('.sf-burst');
-    burst.classList.remove('sf-go');
-    void burst.offsetWidth;
-    burst.classList.add('sf-go');
+    // A list post opens in the player too (unless that click selected text).
+    if (!String(getSelection())) openPlayer(shown.indexOf(it));
   });
 
   // Hovering a grid tile plays it silently, as the app's grids do.
@@ -652,7 +684,7 @@
       host.className = 'sr-preview';
       previews.set(host, v);
       v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
-      a.insertBefore(host, a.querySelector('.sf-tinfo'));
+      a.querySelector('.sf-track').children[slideOf(a)].append(host);
     }, delay);
   }
 
@@ -662,37 +694,11 @@
     const a = node && node.classList.contains('sf-tile') ? node : null;
     if (a === previewTile) return;
     stopPreview();
-    if (a && e.pointerType !== 'touch') startPreview(a);
+    if (!a) return;
+    nearCells(a);
+    if (e.pointerType !== 'touch') startPreview(a);
   });
 
-  // A carousel's photos, in the list and the grid: sideways scrolling (a
-  // trackpad's swipe, Shift + mouse wheel) or a touch swipe goes through them.
-  const sideways = wheelGesture();
-  content.addEventListener('wheel', (e) => {
-    const node = e.target.closest('.sf-post, .sf-tile');
-    const it = itemOf(node);
-    if (!it || it.slides.length < 2 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-    e.preventDefault(); // nor the browser's swipe back
-    sideways(e.deltaX * wheelScale(e), node, (d) => slideBy(node, d));
-  }, { passive: false });
-
-  let touchFrom = null;
-  let swipedAt = 0;
-  const justSwiped = () => Date.now() - swipedAt < 400;
-  content.addEventListener('pointerdown', (e) => {
-    const node = e.pointerType !== 'mouse' && e.target.closest('.sf-post, .sf-tile');
-    touchFrom = node ? { node, x: e.clientX, y: e.clientY } : null;
-  });
-  content.addEventListener('pointercancel', () => {
-    touchFrom = null;
-  });
-  content.addEventListener('pointerup', (e) => {
-    const from = touchFrom;
-    touchFrom = null;
-    if (!from || !isSwipe(e.clientX - from.x, e.clientY - from.y)) return;
-    swipedAt = Date.now();
-    slideBy(from.node, e.clientX < from.x ? 1 : -1);
-  });
   content.addEventListener('pointerleave', () => {
     hovered = null;
     stopPreview();
@@ -855,7 +861,8 @@
   let pi = 0; // index into list()
   let si = 0; // slide of the post on screen
   let video = null;
-  let picture0 = null; // the photo on screen
+  let strack = null; // the post's photos, side by side (see trackOf)
+  let slideTarget = null; // the photo a click or key is scrolling to
   let preload = null; // { index, video } for the next post
   const playerWheel = wheelGesture();
   let playing = []; // what the player goes through: the view's posts as they were when it opened
@@ -934,11 +941,10 @@
     });
   }
   // In a carousel, as in the story viewer, a click on the left third goes
-  // back a photo and elsewhere on to the next; a touch swipe goes either way.
-  // Otherwise a click pauses a video.
-  const onStageControl = (t) => t.closest('a, button, input, .sr-caption, .sinsta-seekrow');
+  // back a photo and elsewhere on to the next. Otherwise a click pauses a
+  // video.
   stage.addEventListener('click', (e) => {
-    if (onStageControl(e.target) || justSwiped()) return;
+    if (e.target.closest('a, button, input, .sr-caption, .sinsta-seekrow')) return;
     const it = list()[pi];
     if (it && it.slides.length > 1) {
       const box = stage.getBoundingClientRect();
@@ -948,39 +954,33 @@
       else video.pause();
     }
   });
-  let stageTouch = null;
-  stage.addEventListener('pointerdown', (e) => {
-    stageTouch = e.pointerType !== 'mouse' ? { x: e.clientX, y: e.clientY } : null;
-  });
-  stage.addEventListener('pointerup', (e) => {
-    const from = stageTouch;
-    stageTouch = null;
-    if (!from || !isSwipe(e.clientX - from.x, e.clientY - from.y)) return;
-    swipedAt = Date.now();
-    slide(e.clientX < from.x ? 1 : -1);
-  });
-  // A double click likes, except in a carousel, where it is two clicks
-  // through the photos.
-  stage.addEventListener('dblclick', (e) => {
-    if (onStageControl(e.target)) return;
+  watchTracks(stage, (t, i) => {
     const it = list()[pi];
-    if (it && it.slides.length < 2 && !it.liked) toggleLike(it, () => syncEverywhere(it));
+    syncDots(dots, i, 'sr-on');
+    if (it) fillCells(t, it, i, bigPhoto);
+  }, (t, i) => {
+    slideTarget = null;
+    if (i === si) return;
+    si = i;
+    showMedia(null);
   });
   player.addEventListener('click', (e) => {
     if (e.target === player) closePlayer();
   });
   player.addEventListener('wheel', (e) => {
     if (panel.contains(e.target)) return; // scrolls the comments
-    e.preventDefault();
     // Over the volume control, scrolling sets the volume instead.
     if (volumeBox.contains(e.target)) {
+      e.preventDefault();
       const v = prefs.muted ? 0 : prefs.volume;
       setVolume(Math.round((v - Math.sign(e.deltaY) * 0.05) * 20) / 20);
       return;
     }
-    // Up and down moves between posts, sideways through a carousel's photos.
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) playerWheel(e.deltaX * wheelScale(e), 'x', slide);
-    else playerWheel(e.deltaY * wheelScale(e), 'y', step);
+    // Up and down moves between posts; sideways, a carousel scrolls itself.
+    const sideways = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    const key = playerWheel(e.deltaY * wheelScale(e), sideways ? 'x' : 'y', sideways ? null : step);
+    const it = list()[pi];
+    if (key !== 'x' || !it || it.slides.length < 2) e.preventDefault();
   }, { passive: false });
 
   // ---- Like and comments ----------------------------------------------------
@@ -1311,8 +1311,7 @@
     const s = it.slides[si];
     if (video) unload(video);
     video = null;
-    if (picture0) picture0.remove();
-    picture0 = null;
+    fillCells(strack, it, si, bigPhoto);
     if (s.video) {
       video = handoff || (preload && preload.index === pi && si === 0 ? preload.video : makeVideo(s));
       if (preload && preload.video === video) preload = null;
@@ -1321,7 +1320,7 @@
       video.autoplay = false;
       syncSound();
       syncSpeed();
-      stage.prepend(hostOf(video));
+      strack.children[si].append(hostOf(video));
       const started = video.play();
       // Sound needs a recent click or key press; without one, play muted.
       if (started) started.catch(() => {
@@ -1330,11 +1329,6 @@
         syncSound();
         video.play().catch(() => {});
       });
-    } else {
-      picture0 = el('img', { className: 'sr-photo', alt: '', decoding: 'async' });
-      const big = s.thumbs[0];
-      if (big) picture0.src = big.url;
-      stage.prepend(picture0);
     }
     seek.attach(video);
     seek.row.hidden = volumeBox.hidden = speedBtn.hidden = !s.video;
@@ -1344,14 +1338,28 @@
     if (many) dots.replaceChildren(...it.slides.map((_, i) => el('i', { className: i === si ? 'sr-on' : '' })));
   }
 
+  function bigPhoto(sl) {
+    const img = el('img', { className: 'sr-photo', alt: '', decoding: 'async' });
+    if (sl.thumbs[0]) img.src = sl.thumbs[0].url;
+    return img;
+  }
+
   function show(handoff, start = 0) {
     const it = list()[pi];
     si = start;
+    slideTarget = null;
     if (preload && preload.index !== pi) {
       unload(preload.video);
       preload = null;
     }
     sizeStage();
+    if (video) unload(video);
+    video = null;
+    if (strack) strack.remove();
+    strack = trackOf(it, bigPhoto(it.slides[0]));
+    strack.classList.add('sr-track');
+    stage.prepend(strack);
+    strack.scrollLeft = si * strack.clientWidth;
     showMedia(handoff);
 
     stageAvatar.src = it.pic || '';
@@ -1388,12 +1396,14 @@
     syncPlayerArrows();
   }
 
+  // Scrolls the carousel there; it plays once it lands (see watchTracks).
   function slide(delta) {
     const it = list()[pi];
-    const n = si + delta;
+    const n = (slideTarget == null ? si : slideTarget) + delta;
     if (!it || n < 0 || n >= it.slides.length) return false;
-    si = n;
-    showMedia(null);
+    slideTarget = n;
+    fillCells(strack, it, n, bigPhoto);
+    strack.scrollTo({ left: n * strack.clientWidth, behavior: 'smooth' });
     return true;
   }
 

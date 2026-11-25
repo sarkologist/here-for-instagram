@@ -109,7 +109,7 @@ test('Grid: tiles in columns; clicking one opens the player with the caption bes
   await page.waitForFunction(() => document.querySelector('#sinsta-reel-player .sr-cuser').textContent === 'carol');
   assert.equal(await page.evaluate(() => document.querySelectorAll('#sinsta-reel-player .sr-dots i').length), 3);
   await page.keyboard.press('ArrowRight');
-  assert.equal(await page.evaluate(() => [...document.querySelectorAll('#sinsta-reel-player .sr-dots i')].findIndex((d) => d.classList.contains('sr-on'))), 1);
+  await page.waitForFunction(() => [...document.querySelectorAll('#sinsta-reel-player .sr-dots i')].findIndex((d) => d.classList.contains('sr-on')) === 1);
   // Opening a post counts as seeing it.
   const stored = await page.evaluate(() => new Promise((r) => setTimeout(() => r(JSON.parse(localStorage.getItem('sinsta-seen') || '{}')), 2500)));
   assert.ok(stored.Calice1 && stored.Ccarol1);
@@ -234,9 +234,9 @@ test('Player: a video\'s seekbar and playback speed, the speed remembered', asyn
   assert.equal(await page.locator('#sinsta-reel-player .sinsta-seek').isVisible(), false);
 });
 
-test('Carousels: dots along the bottom without hovering, swiping goes through the photos', async () => {
-  const photo = (sel) => page.evaluate((s) => document.querySelector(s).currentSrc || document.querySelector(s).src, sel);
-  const on = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)].findIndex((d) => d.classList.contains('sf-on')), sel);
+test('Carousels: dots along the bottom without hovering; a sideways swipe scrolls through the photos', async () => {
+  const src = (sel) => page.evaluate((s) => document.querySelector(s).currentSrc || document.querySelector(s).src, sel);
+  const at = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)].findIndex((d) => d.classList.contains('sf-on')), sel);
   for (const [storage, node] of [[GRID, '.sf-tile[href="/p/Ccarol1/"]'], [LIST, '.sf-post:has(.sf-dots)']]) {
     await open('following', storage);
     await page.waitForSelector(`${node} .sf-dots`);
@@ -248,22 +248,25 @@ test('Carousels: dots along the bottom without hovering, swiping goes through th
       return { count: d.children.length, opacity: getComputedStyle(d).opacity, nearBottom: box.bottom - r.bottom < 20 && r.top > box.top + box.height / 2 };
     }, node);
     assert.deepEqual(dots, { count: 3, opacity: '1', nearBottom: true });
-    assert.equal(await page.evaluate(() => document.querySelectorAll('.sf-slide').length), 0);
-    // A trackpad's sideways swipe, its momentum tail included, moves one photo.
+    // Native scrolling, snapping to a photo: past halfway goes on to the next.
+    const width = await page.evaluate((s) => document.querySelector(`${s} .sf-track`).clientWidth, node);
     await page.hover(node);
-    for (let i = 0; i < 6; i++) await page.mouse.wheel(30, 0);
-    assert.equal(await on(`${node} .sf-dots i`), 1);
-    assert.match(await photo(`${node} img`), /Ccarol1-1\.jpg/);
-    await page.waitForTimeout(300);
-    await page.mouse.wheel(-60, 0);
-    assert.equal(await on(`${node} .sf-dots i`), 0);
-    await page.waitForTimeout(300);
-    await page.mouse.wheel(60, 0);
+    await page.mouse.wheel(width * 0.6, 0);
+    await page.waitForFunction((s) => {
+      const t = document.querySelector(`${s} .sf-track`);
+      return t.scrollLeft === t.clientWidth && document.querySelector(s).dataset.slide === '1';
+    }, node);
+    assert.equal(await at(`${node} .sf-dots i`), 1);
+    assert.match(await src(`${node} .sf-cell:nth-child(2) img`), /Ccarol1-1\.jpg/);
     // Clicking it opens the player on that photo.
     await page.click(node);
     await page.waitForSelector('#sinsta-reel-player .sr-photo');
     assert.equal(await page.textContent('#sinsta-reel-player .sr-cuser'), 'carol');
-    assert.match(await photo('#sinsta-reel-player .sr-photo'), /Ccarol1-1\.jpg/);
+    await page.waitForFunction(() => {
+      const t = document.querySelector('#sinsta-reel-player .sr-track');
+      return t.scrollLeft === t.clientWidth;
+    });
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('#sinsta-reel-player .sr-dots i')].findIndex((d) => d.classList.contains('sr-on'))), 1);
   }
 });
 
@@ -271,35 +274,34 @@ test('Player: in a carousel, clicking goes through its photos as in the story vi
   await open('following', GRID);
   await page.click('.sf-tile[href="/p/Ccarol1/"]');
   await page.waitForSelector('#sinsta-reel-player .sr-photo');
-  const at = () => page.evaluate(() => [...document.querySelectorAll('#sinsta-reel-player .sr-dots i')].findIndex((d) => d.classList.contains('sr-on')));
-  assert.equal(await page.evaluate(() => document.querySelectorAll('#sinsta-reel-player .sr-slide').length), 0);
+  const at = (i) => page.waitForFunction((i) => {
+    const t = document.querySelector('#sinsta-reel-player .sr-track');
+    return Math.abs(t.scrollLeft - i * t.clientWidth) < 1
+      && [...document.querySelectorAll('#sinsta-reel-player .sr-dots i')].findIndex((d) => d.classList.contains('sr-on')) === i;
+  }, i);
   const box = await page.locator('#sinsta-reel-player .sr-stage').boundingBox();
   const click = async (x) => {
     await page.mouse.click(box.x + box.width * x, box.y + box.height / 2);
-    await page.waitForTimeout(400); // not a double click
+    await page.waitForTimeout(500);
   };
   await click(0.8);
-  assert.equal(await at(), 1);
+  await at(1);
   await click(0.8);
   await click(0.8); // the last photo: stays
-  assert.equal(await at(), 2);
+  await at(2);
   await click(0.1);
-  assert.equal(await at(), 1);
-  // Sideways scrolling too; up and down still moves between posts.
-  await page.mouse.wheel(60, 0);
-  assert.equal(await at(), 2);
+  await at(1);
+  // A sideways swipe scrolls it natively; up and down still moves between posts.
+  await page.mouse.wheel(box.width * 0.6, 0);
+  await at(2);
   await page.waitForTimeout(300);
   await page.mouse.wheel(0, 60);
   await page.waitForFunction(() => document.querySelector('#sinsta-reel-player .sr-cuser').textContent === 'alice');
 });
 
-test('List: clicking a post opens the player; double-clicking likes it instead', async () => {
+test('List: clicking a post opens the player', async () => {
   await open('following', LIST);
   await posts();
-  await page.dblclick('.sf-post[data-pk] .sf-media');
-  await page.waitForTimeout(500);
-  assert.equal(await page.evaluate(() => !!document.querySelector('#sinsta-reel-player')), false);
-  assert.equal(await page.evaluate(() => document.querySelector('.sf-post .sf-burst').classList.contains('sf-go')), true);
   await page.click('.sf-post[data-pk] .sf-media');
   await page.waitForSelector('#sinsta-reel-player .sr-photo');
   assert.equal(await page.textContent('#sinsta-reel-player .sr-cuser'), 'alice');

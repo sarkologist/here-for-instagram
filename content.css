@@ -1054,7 +1054,7 @@ html[data-sinsta-surface] main {
   outline-offset: 2px;
 }
 
-.sf-tile > img,
+.sf-cell > img,
 .sr-preview {
   position: absolute;
   inset: 0;
@@ -1209,9 +1209,24 @@ html[data-sinsta-surface] main {
   cursor: pointer;
 }
 
-/* Sideways touch swipes go through a carousel rather than pan the page. */
-:is(.sf-post, .sf-tile):has(.sf-dots) {
-  touch-action: pan-y;
+/* A post's photos side by side, scrolled sideways natively and snapping to
+   each, one per swipe. Its edges hold rather than go back a page. */
+.sf-track {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.sf-cell {
+  position: relative;
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 
 .sf-head,
@@ -1380,35 +1395,6 @@ html[data-sinsta-surface] main {
 
 .sf-dots i.sf-on {
   background: #fff;
-}
-
-.sf-burst {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.sf-burst svg {
-  width: 96px;
-  height: 96px;
-  fill: #fff;
-  stroke: #fff;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
-}
-
-.sf-burst.sf-go {
-  animation: sf-burst 0.8s ease-out;
-}
-
-@keyframes sf-burst {
-  0% { opacity: 0; transform: scale(0.4); }
-  25% { opacity: 1; transform: scale(1.1); }
-  60% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1); }
 }
 
 .sr-status {
@@ -1737,7 +1723,7 @@ html[data-sinsta-surface] main {
   color: #ff3040;
 }
 
-.sr-photo {
+.sr-track .sr-photo {
   position: absolute;
   inset: 0;
   width: 100%;
