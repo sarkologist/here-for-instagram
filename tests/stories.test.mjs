@@ -91,6 +91,20 @@ test('A click outside the story closes the viewer; on the story, it does not', a
   assert.equal(await isOpen(), false);
 });
 
+test('Name, buttons and reply box show only while the story is hovered', async () => {
+  await freshContext();
+  await logIn('111');
+  await openFromProfile('carol');
+  const opacity = () => page.evaluate(() => ['.sv-top', '.sv-foot']
+    .map((s) => getComputedStyle(document.querySelector(`#sinsta-viewer ${s}`)).opacity).join());
+  await page.mouse.move(5, 5);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#sinsta-viewer .sv-top')).opacity === '0');
+  assert.equal(await opacity(), '0,0');
+  await page.hover('#sinsta-viewer .sv-stage');
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#sinsta-viewer .sv-foot')).opacity === '1');
+  assert.equal(await opacity(), '1,1');
+});
+
 test('Video story: seekbar and playback speed', async () => {
   await freshContext();
   await logIn('111');

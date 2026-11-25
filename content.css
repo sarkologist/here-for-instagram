@@ -831,6 +831,19 @@ html[data-sinsta-surface] main video {
   pointer-events: auto;
 }
 
+/* Name, bars, buttons and reply box show only while the story is hovered
+   or one of them has focus, as on posts. */
+.sv-top,
+.sv-foot {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.sv-stage:hover :is(.sv-top, .sv-foot),
+.sv-stage:focus-within :is(.sv-top, .sv-foot) {
+  opacity: 1;
+}
+
 .sv-reply-row {
   display: flex;
   align-items: center;
