@@ -551,11 +551,12 @@ test('Profile: its posts in the same tiles, in the page under its header and tab
       header: getComputedStyle(document.querySelector('main header')).visibility,
       native: getComputedStyle(document.querySelector('main .grid')).display,
       covered: document.documentElement.hasAttribute('data-sinsta-surface'),
-      bar: [...surface.querySelectorAll('.sinsta-tab, .sinsta-toggle')].filter((n) => n.offsetParent).length,
+      tabs: [...surface.querySelectorAll('.sinsta-tab')].filter((n) => n.offsetParent).length,
+      toggle: !!surface.querySelector('.sinsta-toggle').offsetParent,
       layoutControls: !!surface.querySelector('.sf-switch').offsetParent,
     };
   });
-  assert.deepEqual(layout, { inline: 'static', afterTabs: true, header: 'visible', native: 'none', covered: false, bar: 0, layoutControls: true });
+  assert.deepEqual(layout, { inline: 'static', afterTabs: true, header: 'visible', native: 'none', covered: false, tabs: 0, toggle: true, layoutControls: true });
   // The page scrolls, and more posts load as it does.
   await page.mouse.move(640, 600);
   for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 800);
@@ -566,13 +567,25 @@ test('Profile: its posts in the same tiles, in the page under its header and tab
   await page.waitForSelector('#sinsta-reel-player');
 });
 
-test('Profile: seen posts show their mark and stay, Hide seen or not', async () => {
+test('Profile: Hide seen leaves out posts seen before this visit; off, they show dimmed', async () => {
   await openProfile({ ...GRID, 'sinsta-seen': { Pa2: NOW - 86400 } });
-  const got = await tiles();
-  assert.ok(got.includes('/p/Pa2/'));
-  assert.equal(await page.evaluate(() => document.querySelector('.sf-tile[href="/p/Pa2/"] .sf-mark').hasAttribute('data-on')), true);
+  assert.ok(!(await tiles()).includes('/p/Pa2/'));
+  assert.equal(await page.evaluate(() => !!document.querySelector('#sinsta-surface .sinsta-toggle').offsetParent), true);
+  await page.waitForFunction(() => document.querySelector('.sinsta-toggle .sinsta-count').textContent === '1');
+  await page.click('#sinsta-surface .sinsta-toggle');
+  await page.waitForFunction(() => document.querySelector('.sf-tile[href="/p/Pa2/"].sf-seen .sf-mark[data-on]'));
 });
 
+test('Profile: the grid reaches out of Instagram\'s column to the room beside the sidebar', async () => {
+  await openProfile();
+  await tiles();
+  await page.evaluate(() => { document.querySelector('main .profile').style.cssText = 'width: 500px; margin: 0 auto'; });
+  await page.setViewportSize({ width: 1300, height: 900 }); // and measure again
+  await page.waitForFunction(() => {
+    const r = document.querySelector('#sinsta-surface').getBoundingClientRect();
+    return r.width > 1000 && Math.abs(r.right - document.documentElement.clientWidth) <= 1;
+  });
+});
 test('Profile: Reels and Tagged stay Instagram\'s own; so do posts that can\'t be loaded', async () => {
   await openProfile(GRID, '/alice/reels/');
   await page.waitForTimeout(800);

@@ -169,9 +169,8 @@ main a[href*="variant=home"] {
   display: none;
 }
 
-/* On a profile, just the layout: its posts are all there, seen or not. */
-#sinsta-bar[data-view="profile"] .sinsta-tabs,
-#sinsta-bar[data-view="profile"] .sinsta-toggle {
+/* On a profile, Hide seen and the layout. */
+#sinsta-bar[data-view="profile"] .sinsta-tabs {
   display: none;
 }
 
