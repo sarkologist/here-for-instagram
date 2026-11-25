@@ -334,6 +334,7 @@
     c.node.append(a);
     c.h += 1 / shape(it);
     if (it.slides.length > 1) nearWatch.observe(a);
+    if (cur !== 'reels') gridWatch.observe(a);
   }
 
   // A carousel tile gets all its photos as it comes near the screen, so that
@@ -589,6 +590,7 @@
         listWatch.unobserve(art);
       }
       nearWatch.disconnect();
+      gridWatch.disconnect();
       content.replaceChildren();
       content.className = 'sf-content ' + (isGrid() ? 'sf-grid' : 'sf-list');
       columns = [];
@@ -636,8 +638,8 @@
   const covered = () => playerOpen || document.documentElement.classList.contains('sinsta-viewing');
 
   // A post counts as seen once half of it, or half the screen, has shown it
-  // for a second, as on Instagram's page (content.js). In the grid a post
-  // counts as seen when it is opened.
+  // for a second, as on Instagram's page (content.js). In the grid, see
+  // gridWatch. Opening a post counts too.
   const seenTimers = new WeakMap();
   const listWatch = new IntersectionObserver((entries) => {
     for (const e of entries) {
@@ -664,6 +666,46 @@
       }
     }
   }, { root, threshold: [0, 0.25, 0.5, 0.6, 0.75, 1] });
+
+  // In the grid, where a screen holds many posts, being on screen isn't
+  // enough: a tile counts as seen once it has been wholly on screen for a
+  // second and is then scrolled past (off the top), or once the pointer has
+  // rested on it for a second.
+  const readyTiles = new WeakSet(); // wholly on screen for long enough
+  const gridWatch = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const a = e.target;
+      clearTimeout(seenTimers.get(a));
+      if (e.intersectionRatio >= 0.95 && !covered()) {
+        seenTimers.set(a, setTimeout(() => {
+          if (!covered()) readyTiles.add(a);
+        }, SEEN_MS));
+      } else if (!e.isIntersecting && readyTiles.has(a) && e.rootBounds && e.boundingClientRect.bottom <= e.rootBounds.top + 1) {
+        readyTiles.delete(a);
+        markTile(a);
+      }
+    }
+  }, { root, threshold: [0, 0.95] });
+
+  function markTile(a) {
+    const it = itemOf(a);
+    const h = home();
+    if (!it || !h || !a.isConnected || cur === 'reels') return;
+    h.markSeen(it.code);
+    syncSeen(a, it);
+  }
+
+  let dwellNode = null;
+  let dwellTimer = 0;
+  function dwell(node) {
+    if (node === dwellNode) return;
+    clearTimeout(dwellTimer);
+    dwellNode = node;
+    if (!node || !node.classList.contains('sf-tile')) return;
+    dwellTimer = setTimeout(() => {
+      if (dwellNode === node && !covered()) markTile(node);
+    }, SEEN_MS);
+  }
 
   // ---- Clicks and hovers --------------------------------------------------
 
@@ -762,6 +804,7 @@
   content.addEventListener('pointerover', (e) => {
     const node = e.target.closest('[data-pk]');
     hovered = node;
+    if (e.pointerType !== 'touch') dwell(node);
     if (node && e.target.closest('.sf-mark')) syncSeen(node, itemOf(node)); // "seen 5m ago" moves on
     if (scrub && scrub.node !== node) endScrub();
     const a = node && node.classList.contains('sf-tile') ? node : null;
@@ -774,6 +817,7 @@
 
   content.addEventListener('pointerleave', () => {
     hovered = null;
+    dwell(null);
     endScrub();
     stopPreview();
   });
@@ -1545,6 +1589,10 @@
     for (const art of content.querySelectorAll('.sf-post')) {
       listWatch.unobserve(art);
       listWatch.observe(art);
+    }
+    for (const a of content.querySelectorAll('.sf-tile')) {
+      gridWatch.unobserve(a);
+      gridWatch.observe(a);
     }
   }
 

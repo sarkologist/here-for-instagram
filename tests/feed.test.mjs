@@ -133,6 +133,28 @@ test('Grid: a seen post\'s tile shows the mark; clicking it doesn\'t open the po
   assert.equal(await page.evaluate(() => document.querySelectorAll('#sinsta-reel-player').length), 0);
 });
 
+test('Grid: a tile counts as seen once scrolled past, or once the pointer rests on it', async () => {
+  await freshContext(GRID);
+  await logIn('111');
+  feeds111();
+  accounts['111'].feeds.following = Array.from({ length: 24 }, (_, i) => media(`Cg${i}`, 'alice', { ago: 100 + i }));
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await settled(() => page.evaluate(() => document.querySelectorAll('.sf-tile').length));
+  const on = (code) => page.evaluate((c) => document.querySelector(`.sf-tile[href="/p/${c}/"] .sf-mark`).hasAttribute('data-on'), code);
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(1500);
+  // On screen, however long: not yet.
+  assert.equal(await on('Cg0'), false);
+  // Scrolled past: seen. Further down, not.
+  await page.evaluate(() => document.querySelector('#sinsta-surface').scrollBy(0, 1500));
+  await page.waitForFunction(() => document.querySelector('.sf-tile[href="/p/Cg0/"] .sf-mark').hasAttribute('data-on'));
+  assert.equal(await on('Cg23'), false);
+  // The pointer resting on a tile for a second.
+  await page.evaluate(() => document.querySelector('.sf-tile[href="/p/Cg23/"]').scrollIntoView({ block: 'center' }));
+  await page.hover('.sf-tile[href="/p/Cg23/"]');
+  await page.waitForFunction(() => document.querySelector('.sf-tile[href="/p/Cg23/"] .sf-mark').hasAttribute('data-on'), null, { timeout: 3000 });
+});
+
 test('List: name, buttons and caption appear only while hovered', async () => {
   await open('following', LIST);
   await posts();

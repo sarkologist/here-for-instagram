@@ -33,7 +33,7 @@ Each tab keeps its place while you visit the others, until the page reloads. The
 
 Following and Favourites have a "Hide seen" toggle (on by default). With it on, posts you saw before this visit are removed from the feed, so it shows only what you haven't seen. Turn it off for the strict, complete timeline, where posts seen before this visit are dimmed.
 
-- In the list, a post counts as seen once half of it (or half the screen) has shown it for a second, in any of the three views. In the grid, a post counts as seen when you open it.
+- In the list, a post counts as seen once half of it (or half the screen) has shown it for a second, in any of the three views. In the grid, where a screen holds many posts, a post counts as seen once it has been wholly on screen for a second and you scroll past it, or once the pointer has rested on it for a second. Opening a post counts too.
 - A post that counts as seen gets a tick in its corner, so you can see the rule at work; hovering the tick says when. Clicking it marks the post as not seen (it isn't counted again this visit), and clicking a post's empty tick, shown while the pointer is on it, marks it as seen.
 - A visit starts when the page loads, when you switch view, and when you flip the toggle. Posts you see during a visit stay put until the next one.
 - The toggle shows how many seen posts it has left out of what's loaded.
