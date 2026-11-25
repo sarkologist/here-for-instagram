@@ -48,7 +48,7 @@
   const CHECK = ['M6.5 12.5l3.5 3.5 7.5-8'];
 
   const VIEWS = ['following', 'favorites', 'algo', 'reels'];
-  const SEEN_VIEWS = new Set(['following', 'favorites']); // where "Hide seen" applies
+  const SEEN_VIEWS = new Set(['following', 'favorites', 'algo']); // where "Hide seen" applies
 
   let prefs = {
     layout: 'grid',
@@ -219,7 +219,7 @@
 
   // Posts in a row at the end of what's loaded that were skipped while
   // looking for ones to show: seen ones (with Hide seen on) or, in Algo,
-  // ones from accounts you follow (Instagram's home feed puts its
+  // ones from accounts you follow too (Instagram's home feed puts its
   // suggestions after the recent posts of people you follow).
   function seenRun(view) {
     const algo = view === 'algo';
@@ -229,12 +229,8 @@
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
       if (it.ad) continue;
-      if (algo) {
-        if (belongs(view, it)) break;
-      } else {
-        if (!belongs(view, it)) continue;
-        if (!seenBefore(view, it)) break;
-      }
+      if (!algo && !belongs(view, it)) continue;
+      if (visible(view, it)) break;
       n++;
     }
     return n;
@@ -936,13 +932,18 @@
     statusKey = key;
     status.replaceChildren();
     if (f.loading) {
-      if (run && cur === 'algo') status.append(el('p', {}, `Skipping posts from accounts you follow… (${run})`));
+      if (run && cur === 'algo') {
+        status.append(el('p', {}, hidingSeen(cur) ? `Looking for suggestions you haven't seen… (skipped ${run})`
+          : `Skipping posts from accounts you follow… (${run})`));
+      }
       else if (run) status.append(el('p', {}, `Looking for posts you haven't seen… (skipped ${run})`));
       status.append(el('span', { className: 'sr-spinner' }));
     } else if (f.failed) {
       const retry = el('button', { type: 'button', className: 'sr-retry' }, 'Try again');
       retry.addEventListener('click', () => loadMore());
       status.append(el('p', {}, cur === 'reels' ? "Couldn't load reels." : "Couldn't load more posts."), retry);
+    } else if (run >= f.runLimit && cur === 'algo' && hidden) {
+      status.append(el('p', { className: 'sf-strong' }, `No new suggestions in the last ${run} posts.`), caughtUpButtons(f));
     } else if (run >= f.runLimit && cur === 'algo') {
       const further = el('button', { type: 'button', className: 'sr-retry' }, 'Look further');
       further.addEventListener('click', () => {

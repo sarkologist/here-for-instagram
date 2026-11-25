@@ -144,13 +144,24 @@
       hideSeenPosts(articles, view);
     } else {
       setNote(null);
-      setHiddenCount(0);
       hideExcluded(articles, view);
     }
   }
 
+  // Algo, and the other views while Hide seen is off. Seen posts left out of
+  // Algo count as hidden ones, parked with the rest.
   function hideExcluded(articles, view) {
-    const out = articles.map((a) => excluded(a, view));
+    const hiding = view === 'algo' && prefs.hideSeen && seen;
+    let hiddenSeen = 0;
+    const out = articles.map((a) => {
+      if (excluded(a, view)) return true;
+      const id = hiding && postId(a);
+      const t = id ? seen.get(id) : undefined;
+      if (t === undefined || t >= visitStart) return false;
+      hiddenSeen++;
+      return true;
+    });
+    setHiddenCount(hiddenSeen);
     const lastKept = out.lastIndexOf(false);
     const park = articles.length - 1 - lastKept >= TAIL_LIMIT;
     articles.forEach((article, i) => {
@@ -177,9 +188,10 @@
   // ---- Seen posts ---------------------------------------------------------
 
   // A post counts as seen once half of it, or half the screen, has shown it
-  // for a second, in any view. Following and Favourites can then hide posts
-  // seen before the current visit (Algo does this on Instagram's side). A
-  // visit starts on page load, on switching view and on flipping the toggle.
+  // for a second, in any view. Following, Favourites and Algo can then hide
+  // posts seen before the current visit. (Instagram can't do it for Algo:
+  // the views feed.js draws tell it nothing of what you've seen.) A visit
+  // starts on page load, on switching view and on flipping the toggle.
   // feed.js shows which posts count as seen, and lets you mark one either
   // way: one marked as not seen isn't counted again until the next visit.
   const SEEN_KEY = 'sinsta-seen';
@@ -363,7 +375,7 @@
   const buildUnfavCss = () => setAuthorCss(unfavStyle, 'data-sinsta-favourites', unfavved);
 
   function syncHideSeen(view) {
-    document.documentElement.toggleAttribute('data-sinsta-hide-seen', view !== 'algo' && prefs.hideSeen && !!seen);
+    document.documentElement.toggleAttribute('data-sinsta-hide-seen', HOME_VIEWS.has(view) && prefs.hideSeen && !!seen);
   }
 
   function newVisit() {

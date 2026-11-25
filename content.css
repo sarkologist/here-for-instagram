@@ -160,7 +160,7 @@ main a[href*="variant=home"] {
   display: none;
 }
 
-#sinsta-bar:is([data-view="algo"], [data-view="reels"]) .sinsta-toggle {
+#sinsta-bar[data-view="reels"] .sinsta-toggle {
   visibility: hidden;
 }
 
