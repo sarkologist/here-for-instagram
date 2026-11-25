@@ -15,6 +15,7 @@ const Sinsta = (() => {
   const DOC_BADGE = '26853171684350625'; // usePolarisNotificationsNavItemQuery
   const DOC_FEED = '29639616438977013'; // PolarisFeedRootPaginationCachedQuery_subscribe
   const DOC_CLIPS = '29386172244354956'; // PolarisClipsTabDesktopPaginationQuery
+  const DOC_PROFILE_POSTS = '39818828461098125'; // PolarisProfilePostsTabContentQuery_connection
   const DOC_LIKE = '27182485238052618'; // usePolarisLikeMediaXIGLikeMutation
   const DOC_UNLIKE = '27345296031770102'; // usePolarisLikeMediaXIGUnlikeMutation
   const DOC_COMMENT = '30184188691181526'; // usePolarisCommentSubmitMutation
@@ -31,6 +32,14 @@ const Sinsta = (() => {
     __relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider: false,
     __relay_internal__pv__PolarisAdDebugToolEnabledrelayprovider: false,
     __relay_internal__pv__PolarisSuggestedUserFeedUnitCardsEnabledrelayprovider: true,
+  };
+  const PROFILE_FLAGS = {
+    __relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider: true,
+    __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
+    __relay_internal__pv__PolarisSEOIsCrawlerrelayprovider: false,
+    __relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider: false,
+    __relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider: false,
+    __relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider: false,
   };
   const CLIPS_FLAGS = {
     __relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider: false,
@@ -315,6 +324,33 @@ const Sinsta = (() => {
     const conn = res && res.data && res.data.xdt_api__v1__clips__home__connection_v2;
     if (!conn) return null;
     const items = (conn.edges || []).map((e) => clipItem(e.node && e.node.media)).filter(Boolean);
+    const info = conn.page_info || {};
+    return { items, after: info.has_next_page ? info.end_cursor : null };
+  }
+
+  // One page of an account's posts, as its profile's Posts tab shows them
+  // (pinned ones first), as { items, after } where `after` is null at the
+  // end, or null on failure.
+  async function profilePage(username, after) {
+    const res = await gql(DOC_PROFILE_POSTS, {
+      after: after || null,
+      before: null,
+      data: {
+        count: 12,
+        include_reel_media_seen_timestamp: true,
+        include_relationship_info: true,
+        latest_besties_reel_media: true,
+        latest_reel_media: true,
+      },
+      first: 12,
+      include_multi_captions: true,
+      last: null,
+      username,
+      ...PROFILE_FLAGS,
+    }, true);
+    const conn = res && res.data && res.data.xdt_api__v1__feed__user_timeline_graphql_connection;
+    if (!conn) return null;
+    const items = (conn.edges || []).map((e) => mediaItem(e && e.node)).filter(Boolean);
     const info = conn.page_info || {};
     return { items, after: info.has_next_page ? info.end_cursor : null };
   }
@@ -2045,7 +2081,7 @@ const Sinsta = (() => {
   }
 
   return {
-    api, go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, reelByCode, feedPage,
+    api, go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage,
     mark, userIds, lookUpId, ago,
     likeMedia, likeComment, comments, replies, addComment,
   };

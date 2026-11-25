@@ -169,6 +169,12 @@ main a[href*="variant=home"] {
   display: none;
 }
 
+/* On a profile, just the layout: its posts are all there, seen or not. */
+#sinsta-bar[data-view="profile"] .sinsta-tabs,
+#sinsta-bar[data-view="profile"] .sinsta-toggle {
+  display: none;
+}
+
 /* Instagram's picks sit apart from the accounts you chose. */
 .sinsta-picks {
   margin-left: 10px;
@@ -1006,6 +1012,17 @@ html[data-sinsta-surface] main [data-sinsta-keep] {
 
 html[data-sinsta-explore] {
   overflow: hidden !important;
+}
+
+/* A profile's grid, which the surface takes the place of in its page. */
+[data-sinsta-replaced] {
+  display: none !important;
+}
+
+#sinsta-surface.sf-inline {
+  position: static;
+  overflow: visible;
+  background: none;
 }
 
 #sinsta-surface {

@@ -21,9 +21,13 @@ If a feed can't be loaded, that view shows Instagram's own page instead, filtere
 
 Explore (Search in Instagram's menu) gets the same list or grid, player and Hide seen, from the grid Instagram's own Explore page loads, without ads. Instagram's search box stays above it: using the box shows Instagram's search results as usual, and its Back button brings the grid back. If the grid can't be loaded, Explore is Instagram's own page.
 
+## Profiles
+
+A profile's Posts tab shows the same list or grid, with the player, in place of Instagram's grid: the profile's header, highlights and tabs stay above it, and the page scrolls as usual. Posts you've seen show their tick (and are dimmed if seen before this visit), but stay: Hide seen doesn't apply to profiles. Reels and Tagged are Instagram's own, as is the Posts tab if its posts can't be loaded. All profiles share one column count.
+
 ## List and grid
 
-The List / Grid switch in the tab bar (or `G`) applies to all four tabs and Explore.
+The List / Grid switch in the tab bar (or `G`) applies to all four tabs, Explore and profiles.
 
 - **List:** one post under another, showing just the photo or video. The name, buttons (like, comments, and a link to the post, which Ctrl/⌘-click or middle-click opens in a new tab), likes and the full caption appear over it while the pointer is on it. Videos play silently while on screen. Clicking a post opens it in the player (below); with the pointer on it, `L` likes and `C` opens its comments. On Reels, List is Instagram's own player.
 - **Grid:** tiles in columns, each post uncropped (within Instagram's 4:5 to 1.91:1) and reels 9:16. Hovering a tile shows its caption, name and likes, and plays a video silently. The − / + buttons beside the switch (or the `-` and `+` keys) set 1 to 8 columns, separately for each tab. Tiles never get taller than the window, so few columns leave margins on wide screens. Ctrl/⌘-click a tile to open it in a new tab.

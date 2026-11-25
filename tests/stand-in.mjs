@@ -90,12 +90,16 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8">
 <div><a href="/me/"><div><img src="/test/pic/me.jpg"></div><div class="label" style="display: none; opacity: 0;"><span>Profile</span></div></a></div></div></nav>
 <main><div><div class="col"><article><a href="/p/Dtest0001/">post</a></article></div></div></main></body></html>`;
 
-// A profile, as Instagram renders its header: the picture is a button, not a
-// link. Clicks that reach the page are counted, as Instagram's own handler.
-const PROFILE = (id, username) => PAGE.replace('<main>', `<script>window.__igClicks = 0; // "profile_id":"${id}"
+// A profile, as Instagram renders it: the header, where the picture is a
+// button, not a link; the tabs (Posts on /<name>/, Reels, Tagged); and the
+// Posts grid. Clicks that reach the page are counted, as Instagram's own
+// handler.
+const PROFILE = (id, username, tab = '') => PAGE.replace(/<main>.*<\/main>/, `<script>window.__igClicks = 0; // "profile_id":"${id}"
 document.addEventListener('click', (e) => { if (e.target.closest('[role=button]')) window.__igClicks++; });</script>
-<main><header><section><div role="button" tabindex="0"><span role="link" tabindex="-1">
-<img alt="${username}'s profile picture" src="/test/pic/${id}.jpg"></span></div></section></header>`);
+<main><div class="profile"><header><section><div role="button" tabindex="0"><span role="link" tabindex="-1">
+<img alt="${username}'s profile picture" src="/test/pic/${id}.jpg"></span></div></section></header>
+<div class="tabs">${['', 'reels/', 'tagged/'].map((t) => `<a role="link" aria-selected="${t === tab}" href="/${username}/${t}">${t || 'posts'}</a>`).join('')}</div>
+<div class="grid"><div><a href="/p/Pnative${tab ? '-' + tab.slice(0, -1) : ''}/"><img alt=""></a></div></div></div></main>`);
 // Explore, as Instagram renders it: a search box above its grid. Focusing
 // the box turns the page into search results, with a Back button beside
 // the box, which turns it back.
@@ -119,6 +123,7 @@ row.querySelector('.back').addEventListener('click', () => {
 </script></main>`);
 
 // Profiles there are pages for: alice and carol have stories, nostory doesn't.
+// What their Posts tabs hold is up to each account (`posts`).
 const PROFILES = { alice: '1', carol: '2', nostory: '9' };
 
 let browser;
@@ -151,8 +156,8 @@ export async function freshContext(storage = {}) {
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
     if (path === '/' || /^\/reels\//.test(path)) return route.fulfill({ contentType: 'text/html', body: PAGE });
     if (path === '/explore/') return route.fulfill({ contentType: 'text/html', body: EXPLORE });
-    const profile = path.match(/^\/([\w.]+)\/$/);
-    if (profile && PROFILES[profile[1]]) return route.fulfill({ contentType: 'text/html', body: PROFILE(PROFILES[profile[1]], profile[1]) });
+    const profile = path.match(/^\/([\w.]+)\/((?:reels|tagged)\/)?$/);
+    if (profile && PROFILES[profile[1]]) return route.fulfill({ contentType: 'text/html', body: PROFILE(PROFILES[profile[1]], profile[1], profile[2] || '') });
     const ext = path.match(/^\/test\/ext\/([\w.]+)$/);
     if (ext) return route.fulfill({ contentType: ext[1].endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(join(ROOT, ext[1])) });
     // Every video is the same 4 seconds (VP9: Playwright's Firefox has no H.264).
@@ -180,6 +185,21 @@ export async function freshContext(storage = {}) {
       if (vars.reel_ids_arr) {
         const reels = vars.reel_ids_arr.map((id) => acc.tray.find((r) => r.id === id)).filter(Boolean);
         return json({ data: { xdt_api__v1__feed__reels_media: { reels_media: reels } } });
+      }
+      if (vars.username && vars.data) {
+        // A profile's posts (`posts[username]`), in pages of 12.
+        const posts = acc.posts && acc.posts[vars.username];
+        if (!posts) return json({ data: null });
+        const start = Number(vars.after || 0);
+        const more = start + 12 < posts.length;
+        return json({
+          data: {
+            xdt_api__v1__feed__user_timeline_graphql_connection: {
+              edges: posts.slice(start, start + 12).map((m) => ({ node: m })),
+              page_info: { has_next_page: more, end_cursor: more ? String(start + 12) : null },
+            },
+          },
+        });
       }
       if (vars.variant && vars.data) {
         const edges = acc.feeds[vars.variant];
