@@ -164,6 +164,11 @@ main a[href*="variant=home"] {
   visibility: hidden;
 }
 
+/* Explore isn't one of Home's tabs: just Hide seen and the layout. */
+#sinsta-bar[data-view="explore"] .sinsta-tabs {
+  display: none;
+}
+
 /* Instagram's picks sit apart from the accounts you chose. */
 .sinsta-picks {
   margin-left: 10px;
@@ -993,9 +998,19 @@ html[data-sinsta-surface] main {
   visibility: hidden !important;
 }
 
+/* On Explore, but for its search box, which stays above the surface (and
+   in place: the page under it doesn't scroll). */
+html[data-sinsta-surface] main [data-sinsta-keep] {
+  visibility: visible !important;
+}
+
+html[data-sinsta-explore] {
+  overflow: hidden !important;
+}
+
 #sinsta-surface {
   position: fixed;
-  top: 0;
+  top: var(--sr-top, 0);
   right: 0;
   bottom: var(--sr-bottom, 0);
   left: var(--sr-left, 72px);

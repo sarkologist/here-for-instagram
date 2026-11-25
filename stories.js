@@ -319,6 +319,46 @@ const Sinsta = (() => {
     return { items, after: info.has_next_page ? info.end_cursor : null };
   }
 
+  // One page of Explore's grid (the one under Instagram's search box), as
+  // { items, after } where `after` is null at the end, or null on failure.
+  // Instagram lays it out in sections (a big reel beside four tiles, rows
+  // of tiles); the posts come in the order the sections hold them.
+  async function explorePage(after) {
+    const paging = after ? JSON.parse(after) : {};
+    const q = new URLSearchParams({
+      include_fixed_destinations: 'true',
+      is_nonpersonalized_explore: 'false',
+      is_prefetch: 'false',
+      omit_cover_media: 'false',
+      ...paging,
+    });
+    const res = await api(`/api/v1/discover/web/explore_grid/?${q}`);
+    if (!res || !Array.isArray(res.sectional_items)) return null;
+    const items = [];
+    const walk = (o) => {
+      if (!o || typeof o !== 'object') return;
+      if (o.media && o.media.code) {
+        const it = mediaItem(o.media);
+        if (it) {
+          if (o.media.ad_id || o.ad) it.ad = true;
+          items.push(it);
+        }
+        return;
+      }
+      for (const v of Array.isArray(o) ? o : Object.values(o)) walk(v);
+    };
+    for (const s of res.sectional_items) walk(s.layout_content);
+    const more = res.more_available && res.next_max_id != null;
+    return {
+      items,
+      after: more ? JSON.stringify({
+        max_id: String(res.next_max_id),
+        ...(res.rank_token ? { rank_token: res.rank_token } : {}),
+        ...(res.session_paging_token ? { session_paging_token: res.session_paging_token } : {}),
+      }) : null,
+    };
+  }
+
   // ---- Likes and comments -------------------------------------------------
 
   // The first field of a mutation's result, or null if it failed.
@@ -2005,7 +2045,7 @@ const Sinsta = (() => {
   }
 
   return {
-    api, go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, reelByCode, feedPage,
+    api, go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, reelByCode, feedPage,
     mark, userIds, lookUpId, ago,
     likeMedia, likeComment, comments, replies, addComment,
   };

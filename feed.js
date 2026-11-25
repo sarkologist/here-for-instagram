@@ -1,20 +1,21 @@
-// Home's views and Reels, drawn by the extension.
+// Home's views, Reels and Explore, drawn by the extension.
 //
-// Following, Favourites and Algo show Instagram's home feeds, and Reels its
-// Reels feed, read with the queries Instagram's own pages use, as a list or
-// as a grid (one choice for all four). The list shows just the photos: a
-// post's name, buttons and caption appear over it while the pointer is on
-// it. Clicking a tile, or a post's comments button, opens the player, which
+// Following, Favourites and Algo show Instagram's home feeds, Reels its
+// Reels feed and Explore the grid under its search box, read with the
+// queries Instagram's own pages use, as a list or as a grid (one choice for
+// all five). The list shows just the photos: a post's name, buttons and
+// caption appear over it while the pointer is on it. Clicking a tile, or a post's comments button, opens the player, which
 // goes through the view in order with the caption and comments beside it.
 // Instagram's own page stays underneath, hidden and paused.
 //
-// If a home feed can't be loaded, that view falls back to Instagram's page,
-// which content.js filters. Reels in the list layout is Instagram's player.
+// If a home feed or Explore can't be loaded, that view falls back to
+// Instagram's page, which content.js filters (Home's). Reels in the list
+// layout is Instagram's player.
 (() => {
   'use strict';
 
   const {
-    go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, reelByCode, feedPage, ago,
+    go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, reelByCode, feedPage, ago,
     likeMedia, likeComment, comments, replies, addComment,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
@@ -47,21 +48,22 @@
   const PLAY = ['M8 5v14l11-7z'];
   const CHECK = ['M6.5 12.5l3.5 3.5 7.5-8'];
 
-  const VIEWS = ['following', 'favorites', 'algo', 'reels'];
-  const SEEN_VIEWS = new Set(['following', 'favorites', 'algo']); // where "Hide seen" applies
+  const VIEWS = ['following', 'favorites', 'algo', 'reels', 'explore'];
+  const SEEN_VIEWS = new Set(['following', 'favorites', 'algo', 'explore']); // where "Hide seen" applies
 
   let prefs = {
     layout: 'grid',
-    cols: { following: 4, favorites: 3, algo: 3, reels: 4 },
+    cols: { following: 4, favorites: 3, algo: 3, reels: 4, explore: 4 },
     muted: false,
     volume: 1,
     speed: 1,
     comments: true,
   };
 
-  // The view Home or Reels is on, from the address.
+  // The view Home, Reels or Explore is on, from the address.
   function viewOf() {
     if (/^\/reels(\/|$)/.test(location.pathname)) return 'reels';
+    if (/^\/explore\/?$/.test(location.pathname)) return 'explore';
     if (location.pathname !== '/') return null;
     const variant = new URLSearchParams(location.search).get('variant');
     return variant === 'following' || variant === 'favorites' ? variant : 'algo';
@@ -830,6 +832,7 @@
 
   function fetchPage(view, after) {
     if (view === 'reels') return reelsPage(after);
+    if (view === 'explore') return explorePage(after);
     return feedPage(view === 'algo' ? 'home' : view, after);
   }
 
@@ -956,7 +959,7 @@
       status.append(el('p', { className: 'sf-strong' }, `You're caught up: the last ${run} posts were ones you've seen.`), caughtUpButtons(f));
     } else if (f.ended) {
       if (hidden) status.append(el('p', { className: 'sf-strong' }, "You're caught up: that's as far back as this feed goes."), caughtUpButtons(f));
-      else status.append(el('p', {}, cur === 'reels' ? "That's all Instagram has for now." : "That's as far back as this feed goes."));
+      else status.append(el('p', {}, cur === 'reels' || cur === 'explore' ? "That's all Instagram has for now." : "That's as far back as this feed goes."));
     }
   }
 
@@ -1814,12 +1817,37 @@
     if (focused) root.focus({ preventScroll: true });
   }
 
-  // Whether the surface shows this view: home views unless their feed
-  // couldn't be loaded, Reels in the grid layout.
+  // Whether the surface shows this view: home views and Explore unless
+  // their feed couldn't be loaded (or, on Explore, while searching), Reels
+  // in the grid layout.
   function wants(view) {
     if (!view) return false;
     if (view === 'reels') return isGrid();
+    if (view === 'explore' && searching) return false;
     return !feed(view).unavailable;
+  }
+
+  // On Explore the surface leaves Instagram's search box in sight above it.
+  // Using the box turns Instagram's page into search results, with a Back
+  // button beside the box: the surface makes way for them until then.
+  let keptRow = null; // the box's row, kept visible
+  let searching = false;
+  function syncSearch(view) {
+    const input = view === 'explore' ? document.querySelector('main input') : null;
+    const main = input && input.closest('main');
+    let row = input;
+    while (row && row.parentElement && row.parentElement !== main && row.parentElement.getBoundingClientRect().height < 120) row = row.parentElement;
+    searching = !!input && (document.activeElement === input || !!input.value || !!row.querySelector('svg[aria-label="Back"]'));
+    // Kept only where the page's top has it; elsewhere it stays under.
+    const bottom = row ? row.getBoundingClientRect().bottom : 0;
+    const keep = !searching && row && bottom < window.innerHeight / 3 ? row : null;
+    if (keptRow && keptRow !== keep) keptRow.removeAttribute('data-sinsta-keep');
+    keptRow = keep;
+    if (keep) {
+      keep.setAttribute('data-sinsta-keep', '');
+      const top = `${Math.round(bottom + 8)}px`;
+      if (root.style.getPropertyValue('--sr-top') !== top) root.style.setProperty('--sr-top', top);
+    } else root.style.removeProperty('--sr-top');
   }
 
   function sync() {
@@ -1841,10 +1869,18 @@
       statusKey = '';
       restore = true;
     }
+    syncSearch(view);
     const want = wants(view);
     const html = document.documentElement;
     html.toggleAttribute('data-sinsta-surface', want);
+    html.toggleAttribute('data-sinsta-explore', want && view === 'explore');
     if (want && !root.isConnected && document.body) {
+      // Explore's search box, above the surface, is where the page's top
+      // has it.
+      if (view === 'explore' && window.scrollY) {
+        window.scrollTo(0, 0);
+        syncSearch(view);
+      }
       surfaceHost().append(root);
       active = true;
       measuredAt = 0;
@@ -1969,5 +2005,8 @@
   syncControls();
   new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
   window.addEventListener('popstate', schedule);
+  // Explore's search box taking or losing the focus (see syncSearch).
+  document.addEventListener('focusin', schedule);
+  document.addEventListener('focusout', schedule);
   load();
 })();
