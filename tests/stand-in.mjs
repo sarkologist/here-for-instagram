@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { firefox } from 'playwright';
 
 const VIDEO = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/story.webm');
+const SONG = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/song.webm');
 const ROOT = resolve(process.env.EXT_SRC || join(dirname(fileURLToPath(import.meta.url)), '..'));
 export const ORIGIN = 'https://www.instagram.com';
 export const NOW = Math.floor(Date.now() / 1000);
@@ -37,10 +38,21 @@ export const videoReel = (id, username) => {
 };
 
 // A post as Instagram's feed query returns it. `following`: whether you
-// follow its author (null: the feed doesn't say).
+// follow its author (null: the feed doesn't say). `song`: the title of the
+// song it plays, which, as on Instagram, the feed query leaves out and the
+// post's own page (`posts`, by pk) has: 1s to 3s of a 4-second file.
 let pks = 1000;
-export const media = (code, username, { following = true, ago = 3600, slides = 1, video = false, caption = '' } = {}) => {
+export const songs = {};
+export const media = (code, username, { following = true, ago = 3600, slides = 1, video = false, caption = '', song = null } = {}) => {
   const pk = String(pks++);
+  if (song) {
+    songs[pk] = {
+      music_info: {
+        music_asset_info: { title: song, display_artist: 'Band', progressive_download_url: `${ORIGIN}/test/aud/${code}.m4a` },
+        music_consumption_info: { audio_asset_start_time_in_ms: 1000, overlap_duration_in_ms: 2000, should_mute_audio: false },
+      },
+    };
+  }
   const pic = (n) => ({
     original_width: 1080, original_height: 1350,
     image_versions2: { candidates: [{ width: 1080, height: 1350, url: `${ORIGIN}/test/pic/${code}-${n}.jpg` }] },
@@ -66,7 +78,9 @@ export const suggested = (m) => ({ explore_story: { media: m } });
 // null makes the query fail) and Explore's grid (`explore`: media, or
 // { ad: media }; null fails).
 export const accounts = {};
+export const songLookups = []; // pks of the posts asked for their song
 function reset() {
+  songLookups.length = 0;
   for (const k of Object.keys(accounts)) delete accounts[k];
   accounts['111'] = {
     tray: [reel('1', 'alice', { watched: true }), reel('2', 'carol', { ago: 600 }), reel('3', 'fav_of_a', { ago: 900 })],
@@ -162,7 +176,14 @@ export async function freshContext(storage = {}) {
     if (ext) return route.fulfill({ contentType: ext[1].endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(join(ROOT, ext[1])) });
     // Every video is the same 4 seconds (VP9: Playwright's Firefox has no H.264).
     if (path.startsWith('/test/vid/')) return route.fulfill({ contentType: 'video/webm', body: readFileSync(VIDEO) });
+    // Every song the same 4 seconds of a tone.
+    if (path.startsWith('/test/aud/')) return route.fulfill({ contentType: 'audio/webm', body: readFileSync(SONG) });
     if (!acc) return route.fulfill({ status: 401, body: '' });
+    const info = path.match(/^\/api\/v1\/media\/(\d+)\/info\/$/);
+    if (info) {
+      songLookups.push(info[1]);
+      return json({ items: [{ pk: info[1], media_type: 1, music_metadata: songs[info[1]] || null }] });
+    }
     if (path === '/api/v1/feed/reels_tray/') return json({ tray: acc.tray });
     if (path === '/api/v1/friendships/feed_favorites/') {
       const all = Object.values(accounts).flatMap((a) => a.tray);

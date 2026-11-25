@@ -245,6 +245,46 @@ const Sinsta = (() => {
     };
   }
 
+  // The song a photo post plays: the part its author chose, as { url,
+  // start, end } in seconds, with `title` ("Song · Artist"); null when it
+  // has none, or is a video (whose sound has the song in it already).
+  // undefined when Instagram's response leaves the song out (the home and
+  // profile queries do), for songFor to look up.
+  function songOf(m) {
+    if (m.media_type === 2) return null;
+    const meta = m.music_metadata;
+    if (meta === undefined) return undefined;
+    const info = meta && meta.music_info;
+    const asset = info && info.music_asset_info;
+    const url = asset && (asset.progressive_download_url || asset.fast_start_progressive_download_url);
+    const use = (info && info.music_consumption_info) || {};
+    if (!url || use.should_mute_audio) return null;
+    const start = (use.audio_asset_start_time_in_ms || 0) / 1000;
+    return {
+      url,
+      start,
+      end: use.overlap_duration_in_ms ? start + use.overlap_duration_in_ms / 1000 : null,
+      title: [asset.title, asset.display_artist].filter(Boolean).join(' · '),
+    };
+  }
+
+  // A post's song (see songOf), asking Instagram for the post when its
+  // feed left the song out; null if it has none or can't be loaded.
+  const songLookups = new Map();
+  function songFor(it) {
+    if (it.song !== undefined) return Promise.resolve(it.song);
+    if (!songLookups.has(it.pk)) {
+      songLookups.set(it.pk, api(`/api/v1/media/${it.pk}/info/`).then((res) => {
+        const m = res && res.items && res.items[0];
+        // A failed lookup is tried again next time.
+        if (m) it.song = songOf(m);
+        songLookups.delete(it.pk);
+        return m ? it.song : null;
+      }));
+    }
+    return songLookups.get(it.pk);
+  }
+
   // A post or reel as the grids, the list and the player use it, from
   // Instagram's media object. A carousel has a slide per photo or video;
   // `thumbs` and `video` are the first slide's.
@@ -270,6 +310,7 @@ const Sinsta = (() => {
       slides,
       thumbs: slides[0].thumbs,
       video: slides[0].video,
+      song: slides.every((s) => s.video) ? null : songOf(m),
       // Whether you follow the author, when the feed says (null when not).
       following: fs && typeof fs.following === 'boolean' ? fs.following : null,
       ad: false,
@@ -2081,7 +2122,7 @@ const Sinsta = (() => {
   }
 
   return {
-    api, go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage,
+    api, go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
     mark, userIds, lookUpId, ago,
     likeMedia, likeComment, comments, replies, addComment,
   };

@@ -15,7 +15,7 @@
   'use strict';
 
   const {
-    go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, reelByCode, feedPage, ago,
+    go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor, ago,
     likeMedia, likeComment, comments, replies, addComment,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
@@ -1030,6 +1030,7 @@
   let strack = null; // the post's photos, side by side (see trackOf)
   let slideTarget = null; // the photo a click or key is scrolling to
   let preload = null; // { index, video } for the next post
+  let song = null; // { it, audio, held } the open post's song (see loadSong)
   const playerWheel = wheelGesture();
   let playing = []; // what the player goes through: the view's posts as they were when it opened
 
@@ -1039,11 +1040,12 @@
   const seek = seekbar();
   const stageAvatar = el('img', { className: 'sr-avatar', alt: '' });
   const userLink = el('a', { className: 'sr-user' });
+  const songLabel = el('span', { className: 'sr-song', hidden: true });
   const muteBtn = button('sr-btn', 'Sound (M)', SOUND_ON);
   const slider = el('input', { type: 'range', min: 0, max: 1, step: 0.05, title: 'Volume' });
   const volumeBox = el('div', { className: 'sr-volume' }, muteBtn, slider);
   const speedBtn = el('button', { className: 'sr-btn sinsta-speed', type: 'button', title: 'Speed (< >)' });
-  const head = el('div', { className: 'sr-head' }, stageAvatar, userLink, el('span', { className: 'sr-gap' }), speedBtn, volumeBox);
+  const head = el('div', { className: 'sr-head' }, stageAvatar, userLink, songLabel, el('span', { className: 'sr-gap' }), speedBtn, volumeBox);
   const caption = el('div', { className: 'sr-caption' });
   const foot = el('div', { className: 'sr-foot' }, caption, seek.row);
   const dots = el('div', { className: 'sr-dots' });
@@ -1115,9 +1117,8 @@
     if (it && it.slides.length > 1) {
       const box = stage.getBoundingClientRect();
       slide(e.clientX - box.left < box.width * 0.3 ? -1 : 1);
-    } else if (video) {
-      if (video.paused) video.play().catch(() => {});
-      else video.pause();
+    } else {
+      togglePause();
     }
   });
   watchTracks(stage, (t, i) => {
@@ -1424,9 +1425,10 @@
   }
 
   function syncSound() {
-    if (video) {
-      video.muted = prefs.muted;
-      video.volume = prefs.volume;
+    for (const m of [video, song && song.audio]) {
+      if (!m) continue;
+      m.muted = prefs.muted;
+      m.volume = prefs.volume;
     }
     muteBtn.replaceChildren(icon(prefs.muted ? SOUND_OFF : SOUND_ON));
     // Writing the value during a press on the slider can cancel it in Firefox.
@@ -1483,11 +1485,82 @@
       });
     }
     seek.attach(video);
-    seek.row.hidden = volumeBox.hidden = speedBtn.hidden = !s.video;
+    seek.row.hidden = speedBtn.hidden = !s.video;
+    syncSong();
     syncFoot();
     const many = it.slides.length > 1;
     dots.hidden = !many;
     if (many) dots.replaceChildren(...it.slides.map((_, i) => el('i', { className: i === si ? 'sr-on' : '' })));
+  }
+
+  // Space, or a click on a post that isn't a carousel: pause or go on with
+  // the video, else the song.
+  function togglePause() {
+    if (video) {
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    } else if (song && song.audio) {
+      song.held = !song.held;
+      syncSong();
+    }
+  }
+
+  // The post's song (`it` null: none), once it's known: it plays the part
+  // its author chose, over and over, while a photo shows, as on Instagram.
+  function loadSong(it) {
+    if (song && song.audio) {
+      song.audio.pause();
+      song.audio.removeAttribute('src');
+      song.audio.load();
+    }
+    song = it && it.song !== null ? { it, audio: null, held: false } : null;
+    songLabel.hidden = true;
+    if (!song) return;
+    const mine = song;
+    songFor(it).then((s) => {
+      if (song !== mine || !s || !playerOpen) return;
+      const a = el('audio', { preload: 'auto', src: s.url });
+      // From the start of the part on, and back there at its end.
+      const restart = () => {
+        a.currentTime = s.start;
+      };
+      a.addEventListener('loadedmetadata', restart, { once: true });
+      a.addEventListener('timeupdate', () => {
+        if (s.end && a.currentTime >= s.end) restart();
+      });
+      a.addEventListener('ended', () => {
+        restart();
+        syncSong();
+      });
+      mine.audio = a;
+      songLabel.textContent = s.title ? `♪ ${s.title}` : '♪';
+      songLabel.title = s.title;
+      songLabel.hidden = false;
+      syncSound();
+      syncSong();
+    });
+  }
+
+  // The song plays while a photo of its post shows, unless paused.
+  function syncSong() {
+    const it = list()[pi];
+    const s = it && it.slides[si];
+    const a = song && song.audio;
+    volumeBox.hidden = !(s && s.video) && !a;
+    if (!a) return;
+    if (s && !s.video && !song.held) {
+      if (!a.paused) return;
+      const started = a.play();
+      // Sound needs a recent click or key press; without one, play muted.
+      if (started) started.catch(() => {
+        if (!song || song.audio !== a || a.muted) return;
+        prefs.muted = true;
+        syncSound();
+        a.play().catch(() => {});
+      });
+    } else {
+      a.pause();
+    }
   }
 
   function bigPhoto(sl) {
@@ -1512,6 +1585,7 @@
     strack.classList.add('sr-track');
     stage.prepend(strack);
     strack.scrollLeft = si * strack.clientWidth;
+    if (!song || song.it !== it) loadSong(it);
     showMedia(handoff);
 
     stageAvatar.src = it.pic || '';
@@ -1538,6 +1612,7 @@
     const next = list()[pi + 1];
     if (next && next.slides[0].video) preload = { index: pi + 1, video: makeVideo(next.slides[0]) };
     else if (next && next.slides[0].thumbs.length) new Image().src = next.slides[0].thumbs[0].url;
+    if (next && next.song === undefined) songFor(next);
     if (list().length - pi < 6) {
       loadMore();
       grow();
@@ -1615,6 +1690,7 @@
     if (video) unload(video);
     if (preload) unload(preload.video);
     video = null;
+    loadSong(null);
     seek.attach(null);
     preload = null;
     thread = null;
@@ -1672,7 +1748,7 @@
       ArrowUp: () => step(-1),
       ArrowLeft: side(-1),
       k: () => step(-1),
-      ' ': () => video && (video.paused ? video.play().catch(() => {}) : video.pause()),
+      ' ': togglePause,
       m: toggleMute,
       M: toggleMute,
       l: like,

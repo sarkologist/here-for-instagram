@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled } from './stand-in.mjs';
+import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups } from './stand-in.mjs';
 
 const LIST = { 'sinsta-surface': { layout: 'list' } };
 const GRID = { 'sinsta-surface': { layout: 'grid', cols: { following: 3 } } };
@@ -314,6 +314,53 @@ test('Player: a video\'s seekbar and playback speed, the speed remembered', asyn
   await page.waitForFunction(() => document.querySelector('#sinsta-reel-player .sr-cuser').textContent === 'carol');
   assert.equal(await speed.isVisible(), false);
   assert.equal(await page.locator('#sinsta-reel-player .sinsta-seek').isVisible(), false);
+});
+
+test('Player: a photo post\'s song plays its part on a loop, with the sound controls; Space pauses it', async () => {
+  // Media elements the page plays, whether or not they're in the document.
+  await freshContext(GRID);
+  await page.addInitScript(() => {
+    window.__media = new Set();
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      window.__media.add(this);
+      return play.call(this);
+    };
+  });
+  await logIn('111');
+  const tune = media('Ctune', 'alice', { ago: 100, song: 'Tune' });
+  const quiet = media('Cquiet', 'carol', { ago: 200 });
+  const clip = media('Cclip', 'dave', { ago: 300, video: true });
+  accounts['111'].feeds.following = [tune, quiet, clip];
+  await page.goto(`${ORIGIN}/?variant=following`);
+  const audio = () => page.evaluate(() => [...window.__media].filter((m) => m.tagName === 'AUDIO')
+    .map((a) => ({ src: a.getAttribute('src') || '', paused: a.paused, t: a.currentTime })));
+  const label = page.locator('#sinsta-reel-player .sr-song');
+  const volume = page.locator('#sinsta-reel-player .sr-volume');
+
+  await page.click('.sf-tile[href*="Ctune"]');
+  await label.filter({ hasText: '♪ Tune · Band' }).waitFor();
+  assert.equal(await volume.isVisible(), true);
+  // The part from 1s to 3s, round and round.
+  await page.waitForTimeout(3000);
+  const [a] = await audio();
+  assert.match(a.src, /\/test\/aud\/Ctune\.m4a$/);
+  assert.equal(a.paused, false);
+  assert.ok(a.t >= 1 && a.t < 3.5, `at ${a.t}s`);
+  await page.keyboard.press(' ');
+  assert.equal((await audio())[0].paused, true);
+  await page.keyboard.press(' ');
+  await page.waitForFunction(() => [...window.__media].some((m) => m.tagName === 'AUDIO' && !m.paused));
+
+  // A post without one: the song stops; no sound controls on a photo.
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(() => document.querySelector('#sinsta-reel-player .sr-cuser').textContent === 'carol');
+  assert.deepEqual((await audio()).map((x) => x.paused), [true]);
+  await page.waitForTimeout(300);
+  assert.equal(await label.isVisible(), false);
+  assert.equal(await volume.isVisible(), false);
+  // Only photo posts are looked up; a video's sound has its song in it.
+  assert.deepEqual(songLookups.sort(), [tune.pk, quiet.pk].sort());
 });
 
 test('Carousels: dots along the bottom without hovering; a sideways swipe scrolls through the photos', async () => {
