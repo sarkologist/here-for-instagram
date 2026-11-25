@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, accounts, videoReel, page, freshContext, logIn, settled } from './stand-in.mjs';
+import { ORIGIN, accounts, reel, videoReel, storyViewers, page, freshContext, logIn, settled } from './stand-in.mjs';
 
 // The usernames in the stories row once it has settled, watched ones marked.
 async function row(view) {
@@ -133,4 +133,78 @@ test('Video story: seekbar and playback speed', async () => {
   // Seeking doesn't move on to another story or close the viewer.
   assert.equal(await page.locator('#sinsta-viewer').count(), 1);
   await clock.filter({ hasText: /^0:0[23] \/ 0:04$/ }).waitFor({ timeout: 1000 });
+});
+
+test('Your own story: how many saw, liked and replied, and who', async () => {
+  await freshContext();
+  await logIn('111');
+  accounts['111'].tray = [reel('111', 'me_myself', { ago: 120 }), reel('2', 'carol', { ago: 600 })];
+  accounts['111'].favourites = [];
+  // 25 viewers, in two pages; the one who liked comes after the first page.
+  storyViewers['111001'] = [
+    { username: 'eve', reply: 'nice' },
+    ...Array.from({ length: 21 }, (_, i) => ({ username: `v${i}` })),
+    { username: 'bob', liked: true },
+    { username: 'zed', liked: true, reply: 'wow' },
+    { username: 'last' },
+  ];
+  assert.deepEqual(await row('following'), ['me_myself', 'carol']);
+  await page.click('.sinsta-story');
+  const pill = page.locator('#sinsta-viewer .sv-seen');
+  // Every page is read, so the counts are whole.
+  await pill.filter({ hasText: '25' }).filter({ hasText: '2' }).waitFor();
+  const counts = () => page.evaluate(() => [...document.querySelectorAll('#sinsta-viewer .sv-seen .sv-stat')]
+    .map((s) => (s.hidden ? '-' : `${s.title} ${s.textContent}`)));
+  assert.deepEqual(await counts(), ['Viewers 25', 'Likes 2', 'Replies 2']);
+  const foot = () => page.evaluate(() => ({
+    reply: !document.querySelector('#sinsta-viewer .sv-reply').hidden,
+    like: !document.querySelector('#sinsta-viewer .sv-like').hidden,
+    pill: !document.querySelector('#sinsta-viewer .sv-seen').hidden,
+  }));
+  assert.deepEqual(await foot(), { reply: false, like: false, pill: true });
+
+  // V opens the list beside the story: likers first, then Instagram's order.
+  await page.keyboard.press('v');
+  const names = () => page.evaluate(() => [...document.querySelectorAll('#sinsta-viewer .sv-viewer a')].map((a) => a.textContent));
+  const panel = page.locator('#sinsta-viewer .sv-viewers');
+  await panel.waitFor();
+  const list = await names();
+  assert.equal(list.length, 25);
+  assert.deepEqual(list.slice(0, 4), ['bob', 'zed', 'eve', 'v0']);
+  const [stage, side] = await Promise.all([page.locator('#sinsta-viewer .sv-stage').boundingBox(), panel.boundingBox()]);
+  assert.ok(side.x >= stage.x + stage.width, 'beside the story, not over it');
+  assert.equal(await page.locator('#sinsta-viewer .sv-viewer', { hasText: 'zed' }).locator('.sv-viewer-reply').textContent(), 'wow');
+  // The filters. Clicked with the mouse: Playwright's own click scrolls the
+  // panel into view, which turns the carousel (the viewer scrolls sideways).
+  const tab = (n) => ({
+    click: async () => {
+      const b = await page.locator('#sinsta-viewer .sv-tab').nth(n).boundingBox();
+      await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+    },
+  });
+  assert.deepEqual(await page.locator('#sinsta-viewer .sv-tab').allTextContents(), ['All25', '2', '2']);
+  await tab(1).click();
+  assert.deepEqual(await names(), ['bob', 'zed']);
+  await tab(2).click();
+  assert.deepEqual(await names(), ['zed', 'eve']);
+  await tab(0).click();
+
+  // A click on the story closes the list, not the viewer, and doesn't move on.
+  await page.mouse.click(stage.x + stage.width * 0.8, stage.y + 100);
+  assert.equal(await panel.isHidden(), true);
+  assert.equal(await page.locator('#sinsta-viewer .sv-user').textContent(), 'me_myself');
+  // The pill opens it again; Esc closes only the list.
+  await page.hover('#sinsta-viewer .sv-stage');
+  await pill.click();
+  assert.equal(await panel.isVisible(), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await panel.isHidden(), true);
+  assert.equal(await page.locator('#sinsta-viewer').count(), 1);
+
+  // Someone else's story: the heart, no pill, and V does nothing.
+  await page.keyboard.press('ArrowRight');
+  await page.locator('#sinsta-viewer .sv-user', { hasText: 'carol' }).waitFor();
+  assert.deepEqual(await foot(), { reply: false, like: true, pill: false });
+  await page.keyboard.press('v');
+  assert.equal(await panel.isHidden(), true);
 });

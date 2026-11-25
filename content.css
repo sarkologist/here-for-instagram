@@ -941,6 +941,194 @@ html[data-sinsta-surface] main video {
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 30%);
 }
 
+/* Your own story: how many have seen it, liked it and replied, in a pill
+   in place of the reply box. */
+#sinsta-viewer .sv-seen {
+  gap: 14px;
+  width: fit-content;
+  margin: 0 auto 2px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+#sinsta-viewer .sv-seen:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.sv-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#sinsta-viewer .sv-stat svg {
+  width: 17px;
+  height: 17px;
+}
+
+#sinsta-viewer .sv-stat-likes svg {
+  color: #ff3040;
+  fill: currentColor;
+  stroke: none;
+}
+
+/* While the list is open, the story's controls stay up. */
+#sinsta-viewer.sv-listing .sv-stage :is(.sv-top, .sv-foot) {
+  opacity: 1;
+}
+
+/* Who: a panel beside the story, over the cards on its right, as tall as
+   the story. Kept on screen where there's no room beside it. */
+.sv-viewers {
+  --h: min(89vh, calc((100vw - 32px) * 16 / 9));
+  position: absolute;
+  z-index: 102;
+  top: calc(50% - var(--h) / 2);
+  left: min(calc(50% + var(--h) * 9 / 32 + 16px), calc(100% - 356px));
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  height: var(--h);
+  border-radius: 8px;
+  background: #262626;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  cursor: auto;
+  animation: sv-viewers-in 0.2s ease-out;
+}
+
+@keyframes sv-viewers-in {
+  from { transform: translateX(-12px); opacity: 0; }
+}
+
+.sv-viewers-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 8px 10px 16px;
+}
+
+.sv-viewers-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sv-viewers-title small {
+  margin-left: 6px;
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+.sv-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+#sinsta-viewer .sv-tab {
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#sinsta-viewer .sv-tab[data-on] {
+  background: #fff;
+  color: #000;
+}
+
+#sinsta-viewer .sv-tab svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sv-viewers-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+}
+
+.sv-viewer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 16px;
+}
+
+.sv-viewer:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sv-viewer img {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  background: #333;
+  object-fit: cover;
+}
+
+.sv-viewer-who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sv-viewer-who > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sv-viewer-who a {
+  font-weight: 600;
+}
+
+.sv-viewer-name {
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+/* A reply, as a chat bubble under the name. */
+.sv-viewer-who .sv-viewer-reply {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 5px 10px;
+  border-radius: 14px 14px 14px 4px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+  user-select: text;
+}
+
+.sv-viewer-liked {
+  display: flex;
+  color: #ff3040;
+}
+
+#sinsta-viewer .sv-viewer-liked svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.sv-viewers-end {
+  padding: 28px 16px;
+  text-align: center;
+  opacity: 0.6;
+}
+
 .sv-toast {
   position: absolute;
   bottom: 84px;
