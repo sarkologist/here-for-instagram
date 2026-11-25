@@ -522,3 +522,93 @@ test('Explore falls back to Instagram\'s page when its grid can\'t be loaded', a
   await page.waitForFunction(() => !document.documentElement.hasAttribute('data-sinsta-surface')
     && getComputedStyle(document.querySelector('main .results')).visibility === 'visible', null, { timeout: 8000 });
 });
+
+// ---- Profiles ----------------------------------------------------------------
+
+async function openProfile(storage = GRID, path = '/alice/') {
+  await freshContext(storage);
+  await logIn('111');
+  accounts['111'].posts = {
+    alice: [
+      media('Pa1', 'alice', { video: true }),
+      media('Pa2', 'alice', { slides: 3 }),
+      ...Array.from({ length: 22 }, (_, i) => media(`Pa${i + 3}`, 'alice')),
+    ],
+  };
+  await page.goto(ORIGIN + path);
+}
+
+test('Profile: its posts in the same tiles, in the page under its header and tabs', async () => {
+  await openProfile();
+  const got = await tiles();
+  assert.equal(got[0], '/reel/Pa1/');
+  assert.ok(got.includes('/p/Pa2/') && got.includes('/p/Pa3/'));
+  const layout = await page.evaluate(() => {
+    const surface = document.querySelector('#sinsta-surface');
+    return {
+      inline: surface.classList.contains('sf-inline') && getComputedStyle(surface).position,
+      afterTabs: document.querySelector('.tabs').getBoundingClientRect().bottom <= surface.getBoundingClientRect().top + 1,
+      header: getComputedStyle(document.querySelector('main header')).visibility,
+      native: getComputedStyle(document.querySelector('main .grid')).display,
+      covered: document.documentElement.hasAttribute('data-sinsta-surface'),
+      bar: [...surface.querySelectorAll('.sinsta-tab, .sinsta-toggle')].filter((n) => n.offsetParent).length,
+      layoutControls: !!surface.querySelector('.sf-switch').offsetParent,
+    };
+  });
+  assert.deepEqual(layout, { inline: 'static', afterTabs: true, header: 'visible', native: 'none', covered: false, bar: 0, layoutControls: true });
+  // The page scrolls, and more posts load as it does.
+  await page.mouse.move(640, 600);
+  for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 800);
+  await page.waitForFunction(() => window.scrollY > 0 && document.querySelectorAll('#sinsta-surface .sf-tile').length === 24);
+  // Clicking a tile opens the player.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.click('#sinsta-surface .sf-tile[href="/p/Pa2/"]');
+  await page.waitForSelector('#sinsta-reel-player');
+});
+
+test('Profile: seen posts show their mark and stay, Hide seen or not', async () => {
+  await openProfile({ ...GRID, 'sinsta-seen': { Pa2: NOW - 86400 } });
+  const got = await tiles();
+  assert.ok(got.includes('/p/Pa2/'));
+  assert.equal(await page.evaluate(() => document.querySelector('.sf-tile[href="/p/Pa2/"] .sf-mark').hasAttribute('data-on')), true);
+});
+
+test('Profile: Reels and Tagged stay Instagram\'s own; so do posts that can\'t be loaded', async () => {
+  await openProfile(GRID, '/alice/reels/');
+  await page.waitForTimeout(800);
+  assert.equal(await page.evaluate(() => !!document.querySelector('#sinsta-surface')), false);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('main .grid')).display), 'block');
+  await freshContext(GRID);
+  await logIn('111');
+  await page.goto(`${ORIGIN}/carol/`);
+  await page.waitForFunction(() => !document.querySelector('#sinsta-surface') && getComputedStyle(document.querySelector('main .grid')).display === 'block', null, { timeout: 8000 });
+});
+
+test('Profile and back to Home, within the page: the grid moves between the page and the surface', async () => {
+  await freshContext(LIST);
+  await logIn('111');
+  feeds111();
+  accounts['111'].posts = { alice: [media('Pa1', 'alice'), media('Pa2', 'alice')] };
+  await page.goto(`${ORIGIN}/?variant=following`);
+  assert.deepEqual(await posts(), ['alice', 'carol', 'alice']);
+  const homeMain = await page.evaluate(() => document.querySelector('main').outerHTML);
+  // As Instagram's router does: a new address, a new page in main.
+  const nav = (path, html) => page.evaluate(([p, h]) => {
+    history.pushState({}, '', p);
+    document.querySelector('main').outerHTML = h;
+  }, [path, html]);
+  const profileMain = await page.evaluate(async () => (await (await fetch('/alice/')).text()).match(/<main>[\s\S]*<\/main>/)[0]);
+  await nav('/alice/', profileMain);
+  await page.waitForFunction(() => document.querySelector('main #sinsta-surface.sf-inline .sf-post'));
+  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-sinsta-surface')), false);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('main')).visibility), 'visible');
+  await nav('/?variant=following', homeMain);
+  assert.deepEqual(await posts(), ['alice', 'carol', 'alice']);
+  const back = await page.evaluate(() => ({
+    surface: document.documentElement.hasAttribute('data-sinsta-surface'),
+    inline: document.querySelector('#sinsta-surface').classList.contains('sf-inline'),
+    inMain: !!document.querySelector('main #sinsta-surface'),
+    tabs: [...document.querySelectorAll('#sinsta-surface .sinsta-tab')].filter((t) => t.offsetParent).length,
+  }));
+  assert.deepEqual(back, { surface: true, inline: false, inMain: false, tabs: 4 });
+});

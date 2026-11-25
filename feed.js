@@ -15,7 +15,7 @@
   'use strict';
 
   const {
-    go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, reelByCode, feedPage, ago,
+    go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, reelByCode, feedPage, ago,
     likeMedia, likeComment, comments, replies, addComment,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
@@ -53,17 +53,21 @@
 
   let prefs = {
     layout: 'grid',
-    cols: { following: 4, favorites: 3, algo: 3, reels: 4, explore: 4 },
+    cols: { following: 4, favorites: 3, algo: 3, reels: 4, explore: 4, profile: 4 },
     muted: false,
     volume: 1,
     speed: 1,
     comments: true,
   };
 
-  // The view Home, Reels or Explore is on, from the address.
+  // The view Home, Reels, Explore or a profile's Posts tab is on, from the
+  // address (and, for a profile, its tabs: other pages have such addresses
+  // too). A profile's view is 'profile:<username>'.
   function viewOf() {
     if (/^\/reels(\/|$)/.test(location.pathname)) return 'reels';
     if (/^\/explore\/?$/.test(location.pathname)) return 'explore';
+    const user = (location.pathname.match(/^\/([\w.]+)\/?$/) || [])[1];
+    if (user && document.querySelector(`main a[href="/${user}/"][aria-selected="true"]`)) return `profile:${user}`;
     if (location.pathname !== '/') return null;
     const variant = new URLSearchParams(location.search).get('variant');
     return variant === 'following' || variant === 'favorites' ? variant : 'algo';
@@ -119,7 +123,13 @@
   fewer.addEventListener('click', () => setColumns(cols() - 1));
   more.addEventListener('click', () => setColumns(cols() + 1));
 
-  const cols = () => prefs.cols[cur] || 3;
+  const isProfile = (view) => !!view && view.startsWith('profile:');
+  // A profile's grid sits in Instagram's page, which scrolls, rather than
+  // over it.
+  const inline = () => isProfile(cur);
+  // Profiles share one column count.
+  const colsKey = (view) => (isProfile(view) ? 'profile' : view);
+  const cols = () => prefs.cols[colsKey(cur)] || 3;
   const isGrid = () => prefs.layout === 'grid';
 
   function setLayout(layout) {
@@ -138,7 +148,7 @@
     if (!cur || n === cols()) return;
     // Keep the post at the top of the view in place across the reflow.
     const anchor = topItem();
-    prefs.cols[cur] = n;
+    prefs.cols[colsKey(cur)] = n;
     save();
     syncControls();
     render(true);
@@ -337,13 +347,15 @@
 
   // A carousel tile gets all its photos as it comes near the screen, so that
   // scrubbing through them (see scrub) has them ready.
-  const nearWatch = new IntersectionObserver((entries) => {
+  const nearSeen = (entries) => {
     for (const e of entries) {
       if (!e.isIntersecting) continue;
       nearWatch.unobserve(e.target);
       nearCells(e.target, true);
     }
-  }, { root, rootMargin: '50% 0px' });
+  };
+  const NEAR = { rootMargin: '50% 0px' };
+  let nearWatch = new IntersectionObserver(nearSeen, { root, ...NEAR });
 
   // List: the photos, with their name, buttons and caption over them.
   function post(it) {
@@ -611,8 +623,14 @@
     }
   }
 
+  // What of the page shows the view: the surface, or (inline) the window.
+  function viewBox() {
+    if (inline()) return { top: 0, bottom: window.innerHeight, height: window.innerHeight };
+    return root.getBoundingClientRect();
+  }
+
   function topItem() {
-    const top = root.getBoundingClientRect().top + 80;
+    const top = viewBox().top + 80;
     let best = null;
     for (const n of content.querySelectorAll('[data-pk]')) {
       const r = n.getBoundingClientRect();
@@ -639,7 +657,7 @@
   // for a second, as on Instagram's page (content.js). In the grid, see
   // gridWatch. Opening a post counts too.
   const seenTimers = new WeakMap();
-  const listWatch = new IntersectionObserver((entries) => {
+  const listSeen = (entries) => {
     for (const e of entries) {
       const art = e.target;
       clearTimeout(seenTimers.get(art));
@@ -663,14 +681,16 @@
         stopListVideo(art);
       }
     }
-  }, { root, threshold: [0, 0.25, 0.5, 0.6, 0.75, 1] });
+  };
+  const LIST_AT = { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1] };
+  let listWatch = new IntersectionObserver(listSeen, { root, ...LIST_AT });
 
   // In the grid, where a screen holds many posts, being on screen isn't
   // enough: a tile counts as seen once it has been wholly on screen for a
   // second and is then scrolled past (off the top), or once the pointer has
   // rested on it for a second.
   const readyTiles = new WeakSet(); // wholly on screen for long enough
-  const gridWatch = new IntersectionObserver((entries) => {
+  const gridSeen = (entries) => {
     for (const e of entries) {
       const a = e.target;
       clearTimeout(seenTimers.get(a));
@@ -683,7 +703,21 @@
         markTile(a);
       }
     }
-  }, { root, threshold: [0, 0.95] });
+  };
+  const GRID_AT = { threshold: [0, 0.95] };
+  let gridWatch = new IntersectionObserver(gridSeen, { root, ...GRID_AT });
+
+  // The surface scrolls itself; inline, on a profile, the page scrolls. The
+  // watchers follow whichever scrolls.
+  let watchRoot = root;
+  function setWatchRoot(r) {
+    if (r === watchRoot) return;
+    watchRoot = r;
+    for (const w of [nearWatch, listWatch, gridWatch]) w.disconnect();
+    nearWatch = new IntersectionObserver(nearSeen, { root: r, ...NEAR });
+    listWatch = new IntersectionObserver(listSeen, { root: r, ...LIST_AT });
+    gridWatch = new IntersectionObserver(gridSeen, { root: r, ...GRID_AT });
+  }
 
   function markTile(a) {
     const it = itemOf(a);
@@ -833,6 +867,7 @@
   function fetchPage(view, after) {
     if (view === 'reels') return reelsPage(after);
     if (view === 'explore') return explorePage(after);
+    if (isProfile(view)) return profilePage(view.slice('profile:'.length), after);
     return feedPage(view === 'algo' ? 'home' : view, after);
   }
 
@@ -959,7 +994,8 @@
       status.append(el('p', { className: 'sf-strong' }, `You're caught up: the last ${run} posts were ones you've seen.`), caughtUpButtons(f));
     } else if (f.ended) {
       if (hidden) status.append(el('p', { className: 'sf-strong' }, "You're caught up: that's as far back as this feed goes."), caughtUpButtons(f));
-      else status.append(el('p', {}, cur === 'reels' || cur === 'explore' ? "That's all Instagram has for now." : "That's as far back as this feed goes."));
+      else status.append(el('p', {}, cur === 'reels' || cur === 'explore' ? "That's all Instagram has for now."
+        : inline() ? "That's all of their posts." : "That's as far back as this feed goes."));
     }
   }
 
@@ -969,10 +1005,12 @@
     if (!active || !cur) return;
     const f = feed(cur);
     if (f.loading || f.ended || f.failed || f.unavailable || seenRun(cur) >= f.runLimit) return;
-    if (root.scrollHeight - root.scrollTop - root.clientHeight < root.clientHeight * 1.5) loadMore();
+    const v = viewBox();
+    if (root.getBoundingClientRect().bottom - v.bottom < v.height * 1.5) loadMore();
   }
 
   root.addEventListener('scroll', fill, { passive: true });
+  window.addEventListener('scroll', () => inline() && fill(), { passive: true });
   window.addEventListener('resize', () => {
     measuredAt = 0;
     for (const img of content.querySelectorAll('.sf-tile img')) img.sizes = tileWidth();
@@ -1686,7 +1724,8 @@
       openPlayer(shown.indexOf(it), { comments: true });
       return;
     }
-    if (!SCROLL_KEYS.has(e.key)) return;
+    // Inline, the keys scroll the page, as usual.
+    if (!SCROLL_KEYS.has(e.key) || inline()) return;
     e.stopPropagation();
     // Scroll it here unless it has the focus itself, so that Space on a
     // focused button (the column count, a like) scrolls rather than presses.
@@ -1706,7 +1745,7 @@
   // the story viewer's do, and are left alone.)
   document.addEventListener('play', (e) => {
     const v = e.target;
-    if (!active || !v.closest || !v.closest('main')) return;
+    if (!active || inline() || !v.closest || !v.closest('main')) return;
     v.muted = true;
     v.pause();
   }, true);
@@ -1817,14 +1856,47 @@
     if (focused) root.focus({ preventScroll: true });
   }
 
-  // Whether the surface shows this view: home views and Explore unless
-  // their feed couldn't be loaded (or, on Explore, while searching), Reels
-  // in the grid layout.
+  // Whether the surface shows this view: home views, Explore and profiles
+  // unless their feed couldn't be loaded (or, on Explore, while searching;
+  // on a profile, until Instagram's grid is there to take the place of),
+  // Reels in the grid layout.
   function wants(view) {
     if (!view) return false;
     if (view === 'reels') return isGrid();
     if (view === 'explore' && searching) return false;
+    if (isProfile(view) && !gridBlock(view)) return false;
     return !feed(view).unavailable;
+  }
+
+  // A profile's Posts grid: the box, after the header and the tabs, that
+  // holds Instagram's tiles. Inline, the surface goes after it, in its
+  // place, and it's hidden.
+  let replaced = null;
+  function gridBlock(view) {
+    const tab = document.querySelector(`main a[href="/${view.slice('profile:'.length)}/"][aria-selected="true"]`);
+    if (!tab) return null;
+    const tile = [...document.querySelectorAll('main a[href*="/p/"], main a[href*="/reel/"]')]
+      .find((a) => !root.contains(a) && tab.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
+    let lca = tile && tab.parentElement;
+    while (lca && !lca.contains(tile)) lca = lca.parentElement;
+    if (!lca) return null;
+    let block = tile;
+    while (block.parentElement !== lca) block = block.parentElement;
+    return block;
+  }
+
+  function placeInline(view) {
+    const block = gridBlock(view);
+    if (replaced && replaced !== block) replaced.removeAttribute('data-sinsta-replaced');
+    replaced = block;
+    if (!block) return;
+    block.setAttribute('data-sinsta-replaced', '');
+    if (block.nextElementSibling !== root) block.after(root);
+  }
+
+  function unplaceInline() {
+    if (replaced) replaced.removeAttribute('data-sinsta-replaced');
+    replaced = null;
   }
 
   // On Explore the surface leaves Instagram's search box in sight above it.
@@ -1868,12 +1940,21 @@
       shownKey = '';
       statusKey = '';
       restore = true;
+      setWatchRoot(inline() ? null : root);
     }
     syncSearch(view);
     const want = wants(view);
+    const inl = want && inline();
     const html = document.documentElement;
-    html.toggleAttribute('data-sinsta-surface', want);
+    html.toggleAttribute('data-sinsta-surface', want && !inl);
     html.toggleAttribute('data-sinsta-explore', want && view === 'explore');
+    html.toggleAttribute('data-sinsta-inline', inl);
+    // Between the surface and a profile, the same box moves.
+    if (want && root.isConnected && root.classList.contains('sf-inline') !== inl) {
+      root.remove();
+      if (!inl) unplaceInline();
+    }
+    if (want) root.classList.toggle('sf-inline', inl);
     if (want && !root.isConnected && document.body) {
       // Explore's search box, above the surface, is where the page's top
       // has it.
@@ -1881,16 +1962,19 @@
         window.scrollTo(0, 0);
         syncSearch(view);
       }
-      surfaceHost().append(root);
+      if (inl) placeInline(view);
+      else surfaceHost().append(root);
       active = true;
       measuredAt = 0;
-      measure();
       render(true);
-      root.scrollTop = feed(view).scroll;
-      root.focus({ preventScroll: true });
-      for (const v of document.querySelectorAll('main video')) {
-        v.muted = true;
-        v.pause();
+      if (!inl) {
+        measure();
+        root.scrollTop = feed(view).scroll;
+        root.focus({ preventScroll: true });
+        for (const v of document.querySelectorAll('main video')) {
+          v.muted = true;
+          v.pause();
+        }
       }
     } else if (!want && root.isConnected) {
       if (cur && !restore) feed(cur).scroll = root.scrollTop;
@@ -1903,7 +1987,12 @@
       content.replaceChildren();
       shownKey = '';
       root.remove();
+      unplaceInline();
       active = false;
+    } else if (want && inl) {
+      active = true;
+      placeInline(view);
+      render();
     } else if (want) {
       active = true;
       rehost();
@@ -1973,13 +2062,15 @@
     // The surface's header, or (over Instagram's Reels player) the floating
     // box; null where the bar belongs on Instagram's page.
     barHost(view) {
-      if (view === cur && active) return header;
+      if ((view === cur || (view === 'profile' && inline())) && active) return header;
       if (view === 'reels') return float;
       return null;
     },
     active: () => active,
+    // Whether the view is inline, in a profile's page.
+    inline: () => active && inline(),
     toTop() {
-      if (active) root.scrollTo({ top: 0 });
+      if (active && !inline()) root.scrollTo({ top: 0 });
       else window.scrollTo(0, 0);
     },
     // content.js changed what shows (seen posts, favourites, a new visit).
