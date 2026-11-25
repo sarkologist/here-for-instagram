@@ -1771,6 +1771,15 @@ html[data-sinsta-explore] {
   font-weight: 600;
 }
 
+.sr-song {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
 .sr-gap {
   flex: 1;
 }
