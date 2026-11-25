@@ -68,7 +68,7 @@ test('Profile picture opens the story in the extension viewer, without a carouse
   await freshContext();
   await logIn('111');
   assert.deepEqual(await openFromProfile('carol'),
-    { viewer: true, user: 'carol', cards: 0, instagramGotClick: false, path: '/carol/' });
+    { viewer: true, user: 'carol', cards: 0, instagramGotClick: false, path: '/stories/carol/2001/' });
 });
 
 test('Profile picture without a story: the click goes on to Instagram', async () => {
@@ -207,4 +207,44 @@ test('Your own story: how many saw, liked and replied, and who', async () => {
   assert.deepEqual(await foot(), { reply: false, like: true, pill: false });
   await page.keyboard.press('v');
   assert.equal(await panel.isHidden(), true);
+});
+
+test('Viewer: each story has its own address, and Back and Forward go through them', async () => {
+  await freshContext();
+  await logIn('111');
+  accounts['111'].tray = [reel('111', 'me_myself', { ago: 120 }), reel('2', 'carol', { ago: 600 })];
+  accounts['111'].favourites = [];
+  storyViewers['111001'] = [{ username: 'eve', liked: true }];
+  assert.deepEqual(await row('following'), ['me_myself', 'carol']);
+  const where = () => page.evaluate(() => location.pathname + location.search);
+  const user = (u) => page.locator('#sinsta-viewer .sv-user', { hasText: u }).waitFor();
+  const panel = page.locator('#sinsta-viewer .sv-viewers');
+  await page.evaluate(() => {
+    window.__igPops = 0;
+    addEventListener('popstate', () => window.__igPops++);
+  });
+  await page.click('.sinsta-story');
+  await user('me_myself');
+  await page.waitForFunction(() => location.pathname === '/stories/me_myself/111001/');
+  // The list of viewers is a step of its own.
+  await page.keyboard.press('v');
+  await panel.waitFor();
+  await page.keyboard.press('ArrowRight');
+  await user('carol');
+  assert.equal(await where(), '/stories/carol/2001/');
+  await page.evaluate(() => history.back());
+  await user('me_myself');
+  await panel.waitFor();
+  await page.evaluate(() => history.back());
+  await panel.waitFor({ state: 'hidden' });
+  assert.equal(await where(), '/stories/me_myself/111001/');
+  // Esc closes the viewer and goes back to the row; Forward opens it again.
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#sinsta-viewer', { state: 'detached' });
+  await page.waitForFunction(() => location.pathname + location.search === '/?variant=following');
+  await page.evaluate(() => history.forward());
+  await user('me_myself');
+  await page.evaluate(() => history.back());
+  await page.waitForSelector('#sinsta-viewer', { state: 'detached' });
+  assert.equal(await page.evaluate(() => window.__igPops), 0);
 });

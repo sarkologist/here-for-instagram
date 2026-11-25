@@ -15,7 +15,7 @@
   'use strict';
 
   const {
-    go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor, ago,
+    go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor, ago,
     likeMedia, likeComment, comments, replies, addComment,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
@@ -64,12 +64,13 @@
   // address (and, for a profile, its tabs: other pages have such addresses
   // too). A profile's view is 'profile:<username>'.
   function viewOf() {
-    if (/^\/reels(\/|$)/.test(location.pathname)) return 'reels';
-    if (/^\/explore\/?$/.test(location.pathname)) return 'explore';
-    const user = (location.pathname.match(/^\/([\w.]+)\/?$/) || [])[1];
+    const { pathname, search } = nav.here(); // under the player's or viewer's own address
+    if (/^\/reels(\/|$)/.test(pathname)) return 'reels';
+    if (/^\/explore\/?$/.test(pathname)) return 'explore';
+    const user = (pathname.match(/^\/([\w.]+)\/?$/) || [])[1];
     if (user && document.querySelector(`main a[href="/${user}/"][aria-selected="true"]`)) return `profile:${user}`;
-    if (location.pathname !== '/') return null;
-    const variant = new URLSearchParams(location.search).get('variant');
+    if (pathname !== '/') return null;
+    const variant = new URLSearchParams(search).get('variant');
     return variant === 'following' || variant === 'favorites' ? variant : 'algo';
   }
 
@@ -1024,6 +1025,7 @@
   // ---- Player -------------------------------------------------------------
 
   let playerOpen = false;
+  let pendingPlayer = null; // an entry of the player's to show (restorePlayer)
   let pi = 0; // index into list()
   let si = 0; // slide of the post on screen
   let video = null;
@@ -1085,7 +1087,7 @@
   const closeBtn = button('sr-close', 'Close (Esc)', CLOSE);
   const player = el('div', { id: 'sinsta-reel-player' }, stage, actions, panel, arrows, closeBtn);
 
-  closeBtn.addEventListener('click', closePlayer);
+  closeBtn.addEventListener('click', () => closePlayer(true));
   prevBtn.addEventListener('click', () => step(-1));
   nextBtn.addEventListener('click', () => step(1));
   muteBtn.addEventListener('click', (e) => {
@@ -1132,7 +1134,7 @@
     showMedia(null);
   });
   player.addEventListener('click', (e) => {
-    if (e.target === player) closePlayer();
+    if (e.target === player) closePlayer(true);
   });
   player.addEventListener('wheel', (e) => {
     if (panel.contains(e.target)) return; // scrolls the comments
@@ -1602,6 +1604,7 @@
     thread = null;
     if (!panel.hidden) loadComments();
     syncPlayerArrows();
+    nav.at('player', link(it), { view: cur, pk: it.pk });
     // Opening a post counts as seeing it.
     const h = home();
     if (h && cur !== 'reels') {
@@ -1655,6 +1658,7 @@
   function openPlayer(index, opts = {}) {
     const it = shown[index];
     if (!it) return;
+    pendingPlayer = null;
     // It opens on the photo the tile or post shows, carrying on with the
     // video playing there.
     const tileNode = nodeOf(it.pk);
@@ -1684,9 +1688,11 @@
     grow();
   }
 
-  function closePlayer() {
+  // `back`: closed by the person (see nav.done).
+  function closePlayer(back = false) {
     if (!playerOpen) return;
     playerOpen = false;
+    nav.done('player', back);
     if (video) unload(video);
     if (preload) unload(preload.video);
     video = null;
@@ -1716,6 +1722,32 @@
       gridWatch.observe(a);
     }
   }
+
+  // Back or Forward to one of the player's entries: the post it showed,
+  // once its view is showing (after Back from a page Instagram went on to,
+  // it comes back first).
+  function restorePlayer(d, later = true) {
+    if (cur !== d.view || !active) {
+      pendingPlayer = d;
+      if (later) schedule();
+      return;
+    }
+    pendingPlayer = null;
+    const n = (playerOpen ? playing : shown).findIndex((it) => it.pk === d.pk);
+    if (n < 0) return;
+    if (!playerOpen) openPlayer(n);
+    else if (n !== pi) {
+      pi = n;
+      show();
+    }
+  }
+  nav.own('player', {
+    restore: restorePlayer,
+    leave() {
+      pendingPlayer = null;
+      closePlayer();
+    },
+  });
 
   // Registered once, at document start, so it runs before Instagram's own
   // key handlers, which could otherwise swallow the keys.
@@ -1757,7 +1789,7 @@
       C: toggleComments,
       '<': () => setSpeed(shiftSpeed(prefs.speed, -1)),
       '>': () => setSpeed(shiftSpeed(prefs.speed, 1)),
-      Escape: closePlayer,
+      Escape: () => closePlayer(true),
     };
     const act = keys[e.key];
     if (!act) return;
@@ -2019,7 +2051,7 @@
     const view = viewOf();
     // Arriving at /reels/<code>/ from elsewhere means a link to that reel.
     // Within the tab, Instagram's own player rewrites the path as it plays.
-    const path = location.pathname;
+    const path = nav.here().pathname;
     const wasOn = lastPath !== null && /^\/reels(\/|$)/.test(lastPath);
     const linked = path !== lastPath && !wasOn && path.match(/^\/reels\/([\w-]+)\/?$/);
     lastPath = path;
@@ -2109,6 +2141,8 @@
       float.remove();
     }
     if (linked && want) openLinked(linked[1]);
+    if (pendingPlayer && !nav.data('player')) pendingPlayer = null;
+    if (pendingPlayer) restorePlayer(pendingPlayer, false);
     syncControls();
   }
 

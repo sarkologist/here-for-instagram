@@ -677,3 +677,69 @@ test('Profile and back to Home, within the page: the grid moves between the page
   }));
   assert.deepEqual(back, { surface: true, inline: false, inMain: false, tabs: 4 });
 });
+
+// A stand-in for Instagram's router: on popstate, the page for the address
+// goes into main. It counts the popstates it hears.
+async function router(paths) {
+  await page.evaluate(async (ps) => {
+    const pages = { [location.pathname]: document.querySelector('main').outerHTML };
+    for (const p of ps) pages[p] = (await (await fetch(p)).text()).match(/<main>[\s\S]*<\/main>/)[0];
+    window.__igPops = [];
+    addEventListener('popstate', () => {
+      window.__igPops.push(location.pathname + location.search);
+      if (pages[location.pathname]) document.querySelector('main').outerHTML = pages[location.pathname];
+    });
+  }, paths);
+}
+const where = () => page.evaluate(() => location.pathname + location.search);
+const playing = (user) => page.waitForFunction((u) => document.querySelector('#sinsta-reel-player .sr-cuser')?.textContent === u, user);
+const closed = () => page.waitForSelector('#sinsta-reel-player', { state: 'detached' });
+
+test('Player: each post has its own address, and Back and Forward go through them without Instagram hearing', async () => {
+  await open('following', GRID);
+  await settled(() => page.evaluate(() => document.querySelectorAll('#sinsta-surface .sf-tile').length));
+  await router([]);
+  await page.click('.sf-tile[href="/p/Calice1/"]');
+  await playing('alice');
+  assert.equal(await where(), '/p/Calice1/');
+  await page.keyboard.press('ArrowDown');
+  await playing('carol');
+  assert.equal(await where(), '/p/Ccarol1/');
+  await page.evaluate(() => history.back());
+  await playing('alice');
+  assert.equal(await where(), '/p/Calice1/');
+  await page.evaluate(() => history.forward());
+  await playing('carol');
+  // Esc goes back to the feed, leaving the posts ahead for Forward.
+  await page.keyboard.press('Escape');
+  await closed();
+  await page.waitForFunction(() => location.pathname + location.search === '/?variant=following');
+  await page.evaluate(() => history.forward());
+  await playing('alice');
+  await page.evaluate(() => history.back());
+  await closed();
+  assert.equal(await where(), '/?variant=following');
+  assert.deepEqual(await page.evaluate(() => window.__igPops), []);
+  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-sinsta-surface')), true);
+});
+
+test('Player: Back from a profile opened from it reopens the post over the feed', async () => {
+  await open('following', GRID);
+  await settled(() => page.evaluate(() => document.querySelectorAll('#sinsta-surface .sf-tile').length));
+  await router(['/alice/']);
+  await page.click('.sf-tile[href="/p/Calice1/"]');
+  await playing('alice');
+  await page.click('#sinsta-reel-player .sr-cuser');
+  await closed();
+  await page.waitForFunction(() => document.querySelector('main .profile'));
+  assert.equal(await where(), '/alice/');
+  await page.evaluate(() => history.back());
+  await playing('alice');
+  assert.equal(await where(), '/p/Calice1/');
+  assert.equal(await page.evaluate(() => !!document.querySelector('main .profile')), false);
+  // Instagram heard the way there and, as Back from it, the way to the feed.
+  assert.deepEqual(await page.evaluate(() => window.__igPops), ['/alice/', '/?variant=following']);
+  await page.keyboard.press('Escape');
+  await closed();
+  await page.waitForFunction(() => location.pathname + location.search === '/?variant=following');
+});

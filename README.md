@@ -35,7 +35,11 @@ The List / Grid switch in the tab bar (or `G`) applies to all four tabs, Explore
 - **Player:** clicking a tile, or a post's comments, opens the player, which goes through the tab in order. The caption, in full, and the comments sit beside the post (`C` hides them). `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous post; `←` / `→`, swiping sideways, or clicking (the left third goes back, elsewhere on) go through a carousel's photos, as in the story viewer; on anything else the arrow keys move between posts, and a click pauses a video. For videos, `Space` pauses, `M` toggles sound, the slider beside the sound button (or scrolling over it) sets the volume, the seekbar along the bottom seeks, and the speed button (or `<` / `>`) sets the playback speed from 0.5× to 2× (remembered). A photo post with a song plays the part of it its author chose, over and over, while its photos show, with the song's name beside the author's: `M` and the volume slider work as for videos, and `Space` (or a click, on a single photo) pauses it. `L` likes, `Esc` closes and lands the view on the post you stopped at.
 - **Likes and comments:** comments load as you scroll; replies load under their comment, and comments can be liked, replied to (Reply) and posted (`Enter`; `Shift+Enter` for a new line).
 
-Each tab keeps its place while you visit the others, until the page reloads. The player doesn't report views to Instagram, so watching here doesn't tune its feeds the way its own pages do.
+Each tab keeps its place while you visit the others, until the page reloads.
+
+Each post the player shows, and each story the viewer shows, gets its own address (Instagram's: `/p/<code>/`, `/stories/<name>/<id>/`) and its own step in the browser's history, as does your own story's list of viewers. Back and Forward go through them, and `Esc` goes back to where you opened them, with Forward reopening them. Back from a page you went to from the player or viewer (a profile, say) brings it back on the post or story you left. The address can be copied and shared; reloading it shows Instagram's own page for that post or story.
+
+The player doesn't report views to Instagram, so watching here doesn't tune its feeds the way its own pages do.
 
 ## Hide seen
 
