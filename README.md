@@ -44,8 +44,11 @@ Unwatched stories come first, then fully watched ones with a grey ring, each gro
 | Swipe sideways (trackpad), or scroll (mouse wheel) | turn the carousel of accounts |
 | Hold, or `Space` | pause a video |
 | `M` | sound on/off |
+| Speed button, or `<` / `>` | playback speed of a video (0.5× to 2×) |
 | `L` | like |
 | `Esc` | close |
+
+A video story has a seekbar above the reply box, with its time; dragging or clicking it seeks. The speed stays as set until the page reloads.
 
 Scrolling only moves between accounts; clicks move between an account's stories. The carousel turns as you swipe, with the trackpad's momentum, and comes to rest on an account; a mouse wheel turns it smoothly and settles on the nearest account when you stop.
 
@@ -60,7 +63,7 @@ Polls, quizzes, sliders and question stickers can't be answered: Instagram only 
 Reels shows Instagram's Reels feed as a grid of covers, like the app's grids, instead of one reel at a time. More load as you scroll. Hovering a cover plays it silently.
 
 - **Columns:** the − / + buttons in the top-right corner (or the `-` and `+` keys) set 1 to 8 columns. Covers never get taller than the window, so few columns leave margins on wide screens.
-- **Player:** clicking a cover plays the grid in order from there, with sound, carrying on from where its hover preview got to. `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous reel, `Space` pauses, `M` toggles sound, the slider beside the sound button (or scrolling over it) sets the volume, `Esc` closes and lands the grid on the reel you stopped at. Ctrl/⌘-click a cover to open it in a new tab instead.
+- **Player:** clicking a cover plays the grid in order from there, with sound, carrying on from where its hover preview got to. `↓` / `↑` (or scrolling, or the arrow buttons) move to the next and previous reel, `Space` pauses, `M` toggles sound, the slider beside the sound button (or scrolling over it) sets the volume, the speed button (or `<` / `>`) sets the playback speed from 0.5× to 2× (remembered), the seekbar under the caption seeks, `Esc` closes and lands the grid on the reel you stopped at. Ctrl/⌘-click a cover to open it in a new tab instead.
 - **Likes and comments:** beside the video are the like button (`L`), the comments button (`C`) with the comment count, and a button that copies the reel's link. Comments open in a panel beside the video, which stays open as you move between reels until you close it (`C` or `Esc`). It loads more as you scroll; replies load under their comment, and comments can be liked, replied to (Reply) and posted (`Enter`; `Shift+Enter` for a new line).
 - **Links:** opening a link to one reel (`/reels/<code>/`) puts it first in the grid and plays it.
 - **Grid** in the corner switches back to Instagram's own player and back; the choice and the column count are remembered. Leaving Reels and coming back keeps the grid where it was until the page reloads.
@@ -87,7 +90,7 @@ Permanent: sign it as an unlisted add-on with `npx web-ext sign` (needs AMO API 
 
 ## Tests
 
-`tests/` checks what the extension shows, in headless Firefox, with its own scripts on a stand-in instagram.com answering for made-up logged-in accounts. So far: the stories row on Following and Favourites, including after switching accounts. CI runs them.
+`tests/` checks what the extension shows, in headless Firefox, with its own scripts on a stand-in instagram.com answering for made-up logged-in accounts. So far: the stories row on Following and Favourites, including after switching accounts, and a video story's seekbar and speed. CI runs them.
 
 ```bash
 cd tests && npm ci && npx playwright install firefox && npm test

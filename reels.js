@@ -9,7 +9,7 @@
   'use strict';
 
   const {
-    go, el, shadowVideo, hostOf, icon, onTop, reelsPage, reelByCode, ago,
+    go, el, shadowVideo, hostOf, icon, onTop, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, reelsPage, reelByCode, ago,
     likeMedia, likeComment, comments, replies, addComment,
   } = Sinsta;
 
@@ -33,7 +33,7 @@
   const SOUND_OFF = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 9.5l5 5M21.5 9.5l-5 5'];
   const SOUND_ON = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 8.5a5 5 0 0 1 0 7'];
 
-  let prefs = { grid: true, columns: 4, muted: false, volume: 1, comments: false };
+  let prefs = { grid: true, columns: 4, muted: false, volume: 1, speed: 1, comments: false };
 
   // Feed state survives leaving /reels/ (the script lives across Instagram's
   // in-page navigation), so coming back finds the same grid at the same place.
@@ -283,17 +283,17 @@
   let wheelActed = false;
 
   const stage = el('div', { className: 'sr-stage' });
-  const bar = el('i');
-  const progress = el('div', { className: 'sr-progress' }, bar);
+  const seek = seekbar();
   const avatar = el('img', { className: 'sr-avatar', alt: '' });
   const userLink = el('a', { className: 'sr-user' });
   const muteBtn = button('sr-btn', 'Sound (M)', SOUND_ON);
   const slider = el('input', { type: 'range', min: 0, max: 1, step: 0.05, title: 'Volume' });
   const volumeBox = el('div', { className: 'sr-volume' }, muteBtn, slider);
-  const head = el('div', { className: 'sr-head' }, avatar, userLink, el('span', { className: 'sr-gap' }), volumeBox);
+  const speedBtn = el('button', { className: 'sr-btn sinsta-speed', type: 'button', title: 'Speed (< >)' });
+  const head = el('div', { className: 'sr-head' }, avatar, userLink, el('span', { className: 'sr-gap' }), speedBtn, volumeBox);
   const caption = el('div', { className: 'sr-caption' });
-  const foot = el('div', { className: 'sr-foot' }, caption);
-  stage.append(head, foot, progress);
+  const foot = el('div', { className: 'sr-foot' }, caption, seek.row);
+  stage.append(head, foot);
 
   // Like, comments and copy link, beside the video as in the app.
   function action(title, paths) {
@@ -332,6 +332,10 @@
   muteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleMute();
+  });
+  speedBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setSpeed(cycleSpeed(prefs.speed));
   });
   slider.addEventListener('input', () => setVolume(Number(slider.value)));
   slider.addEventListener('click', (e) => e.stopPropagation());
@@ -667,6 +671,17 @@
     syncSound();
   }
 
+  function setSpeed(rate) {
+    prefs.speed = rate;
+    save();
+    syncSpeed();
+  }
+
+  function syncSpeed() {
+    if (video) setRate(video, prefs.speed);
+    speedBtn.textContent = speedLabel(prefs.speed);
+  }
+
   function syncSound() {
     if (video) {
       video.muted = prefs.muted;
@@ -696,9 +711,9 @@
     video.style.objectFit = 'contain';
     video.autoplay = false;
     syncSound();
-    video.addEventListener('timeupdate', onTime);
+    syncSpeed();
+    seek.attach(video);
     stage.prepend(hostOf(video));
-    bar.style.width = video.duration ? `${(video.currentTime / video.duration) * 100}%` : '0';
     const playing = video.play();
     // Sound needs a recent click or key press; without one, play muted.
     if (playing) playing.catch(() => {
@@ -720,11 +735,6 @@
     const next = items[pi + 1];
     if (next) preload = { index: pi + 1, video: makeVideo(next) };
     if (items.length - pi < 6) loadMore();
-  }
-
-  function onTime(e) {
-    const v = e.target;
-    if (v === video && v.duration) bar.style.width = `${(v.currentTime / v.duration) * 100}%`;
   }
 
   function syncPlayerArrows() {
@@ -761,6 +771,7 @@
     if (video) unload(video);
     if (preload) unload(preload.video);
     video = null;
+    seek.attach(null);
     preload = null;
     thread = null;
     setReply(null);
@@ -808,6 +819,8 @@
       L: toggleLike,
       c: toggleComments,
       C: toggleComments,
+      '<': () => setSpeed(shiftSpeed(prefs.speed, -1)),
+      '>': () => setSpeed(shiftSpeed(prefs.speed, 1)),
       Escape: () => (panel.hidden ? closePlayer() : toggleComments()),
     };
     const act = keys[e.key];

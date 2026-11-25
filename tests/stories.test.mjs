@@ -30,6 +30,13 @@ const reel = (id, username, { watched = false, ago = 3600 } = {}) => {
   };
 };
 
+// An account whose one story is a 4-second video.
+const videoReel = (id, username) => {
+  const r = reel(id, username, { ago: 300 });
+  Object.assign(r.items[0], { media_type: 2, video_versions: [{ width: 90, height: 160, url: `${ORIGIN}/test/video/story.webm` }] });
+  return r;
+};
+
 // What Instagram tells each logged-in account: its stories tray and its
 // favourites. Tests change these as they go.
 const accounts = {};
@@ -42,6 +49,7 @@ function reset() {
     tray: [reel('4', 'dave'), reel('5', 'fav_of_b', { ago: 1200 })],
     favourites: ['5'],
   };
+  accounts['333'] = { tray: [videoReel('6', 'vid')], favourites: [] };
 }
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8">
@@ -74,6 +82,9 @@ async function freshContext() {
     if (path === '/') return route.fulfill({ contentType: 'text/html', body: PAGE });
     const ext = path.match(/^\/test\/ext\/([\w.]+)$/);
     if (ext) return route.fulfill({ contentType: ext[1].endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(join(ROOT, ext[1])) });
+    if (path === '/test/video/story.webm') {
+      return route.fulfill({ contentType: 'video/webm', body: readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/story.webm')) });
+    }
     if (!acc) return route.fulfill({ status: 401, body: '' });
     if (path === '/api/v1/feed/reels_tray/') return json({ tray: acc.tray });
     if (path === '/api/v1/friendships/feed_favorites/') {
@@ -146,4 +157,32 @@ test('Switching accounts: each sees only its own stories', async () => {
   accounts['111'].tray = accounts['111'].tray.filter((r) => r.username !== 'alice');
   await logIn('111');
   assert.deepEqual(await row('following'), ['carol', 'alice (watched)']);
+});
+
+test('Video story: seekbar and playback speed', async () => {
+  await freshContext();
+  await logIn('333');
+  assert.deepEqual(await row('following'), ['vid']);
+  await page.click('.sinsta-story');
+  const clock = page.locator('#sinsta-viewer .sinsta-clock');
+  await clock.filter({ hasText: '/ 0:04' }).waitFor();
+  const speed = page.locator('#sinsta-viewer .sinsta-speed');
+  const rate = () => page.evaluate(() => document.querySelector('#sinsta-viewer video').playbackRate);
+  assert.equal(await speed.textContent(), '1×');
+  await speed.click();
+  assert.equal(await speed.textContent(), '1.25×');
+  assert.equal(await rate(), 1.25);
+  await page.keyboard.press('>');
+  assert.equal(await rate(), 1.5);
+  await page.keyboard.press('<');
+  await page.keyboard.press('<');
+  assert.equal(await speed.textContent(), '1×');
+  // Dragging the seekbar to three quarters seeks there.
+  const box = await page.locator('#sinsta-viewer .sinsta-seek').boundingBox();
+  await page.mouse.click(box.x + box.width * 0.75, box.y + box.height / 2);
+  const t = await page.evaluate(() => document.querySelector('#sinsta-viewer video').currentTime);
+  assert.ok(t > 2.5 && t < 3.5, `seeked to ${t}`);
+  // Seeking doesn't move on to another story or close the viewer.
+  assert.equal(await page.locator('#sinsta-viewer').count(), 1);
+  await clock.filter({ hasText: /^0:0[23] \/ 0:04$/ }).waitFor({ timeout: 1000 });
 });
