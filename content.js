@@ -909,6 +909,7 @@
 
   async function checkBadge() {
     if (!seen || Date.now() - badgeAt < BADGE_MS / 2) return; // seen: stored state loaded
+    if (!Sinsta.allowBackground(1)) return;
     badgeAt = Date.now();
     const n = await appOnlyNotifications();
     if (n === null) return;
@@ -940,6 +941,7 @@
   async function guessAppOnly(windows) {
     const key = JSON.stringify(windows);
     if (!windows.length || key === guessKey) return;
+    if (!Sinsta.allowBackground(4)) return; // tried again at the next check
     guessKey = key;
     const since = Math.min(...windows.map((w) => w[0]));
     const inWindow = (t) => windows.some(([a, b]) => t > a && t <= b + 60);
@@ -1047,9 +1049,11 @@
   // The account's story, or null if it has none, or undefined if Instagram
   // didn't answer. Asked for on hover, so it is usually there by the click.
   const profileReels = new Map(); // username -> { at, job }
-  function profileReel(user) {
+  // `background`: asked for ahead of a click, within the request budget.
+  function profileReel(user, background = false) {
     const got = profileReels.get(user);
     if (got && Date.now() - got.at < 60000) return got.job;
+    if (background && !Sinsta.allowBackground(2)) return Promise.resolve(undefined);
     const job = (async () => {
       const id = await lookUpId(user);
       const reels = id ? await fetchReels([id]) : null;
@@ -1066,7 +1070,7 @@
   let passClick = false;
   document.addEventListener('pointerover', (e) => {
     const user = profileAvatar(e.target);
-    if (user) profileReel(user);
+    if (user) profileReel(user, true);
   }, true);
   document.addEventListener('click', async (e) => {
     if (passClick || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -1197,9 +1201,8 @@
   // extension draws (in its feeds, grids, player and comments) get this one,
   // from the query Instagram's card uses, with the Favourites star in it.
   const CARD_SHOW_MS = 500; // rest on a name this long
-  const CARD_FETCH_MS = 200; // start fetching after resting this long
   const CARD_HIDE_MS = 250; // grace for moving onto the card
-  const CARD_TTL_MS = 5 * 60 * 1000;
+  const CARD_TTL_MS = 30 * 60 * 1000;
   const CARD_POSTS = 9;
   const CARD_SCOPE = '#sinsta-surface, #sinsta-reel-player';
   const NOT_USERS = new Set(['explore', 'reels', 'direct', 'accounts', 'stories', 'p', 'reel', 'about', 'legal']);
@@ -1209,7 +1212,6 @@
   let cardLink = null; // the name it is for (or is about to be for)
   let showTimer = 0;
   let hideTimer = 0;
-  let fetchTimer = 0;
 
   function cardUser(a) {
     if (!a || !a.closest(CARD_SCOPE)) return null;
@@ -1217,9 +1219,13 @@
     return user && !NOT_USERS.has(user) ? user : null;
   }
 
+  // Fetched when a card is about to show, never on the way past a name, and
+  // only for accounts whose id the posts and comments already gave: finding
+  // an id means fetching the whole profile page.
   function cardData(user) {
     const hit = cards.get(user);
     if (hit && Date.now() - hit.at < CARD_TTL_MS) return hit.job;
+    if (!userIds.has(user) || !Sinsta.allowBackground(2)) return Promise.resolve(null);
     // Instagram's card query has only the latest three posts; the profile's
     // own grid query has its first nine as the profile shows them (pinned
     // first). Private accounts you don't follow have only the card's.
@@ -1248,7 +1254,6 @@
   }
 
   function hideCard() {
-    clearTimeout(fetchTimer);
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
     cardLink = null;
@@ -1445,15 +1450,10 @@
       clearTimeout(hideTimer);
       if (card) hideCard();
       cardLink = a;
-      // Start fetching while the pointer rests, unless that means fetching
-      // a whole profile page for the id (a name in a caption, say).
-      clearTimeout(fetchTimer);
-      if (userIds.has(user)) fetchTimer = setTimeout(() => cardData(user), CARD_FETCH_MS);
       showTimer = setTimeout(() => showCard(a, user), CARD_SHOW_MS);
       return;
     }
     if (!cardLink) return;
-    clearTimeout(fetchTimer);
     clearTimeout(showTimer);
     if (!card) {
       cardLink = null;

@@ -67,34 +67,83 @@ const Sinsta = (() => {
 
   // ---- Requests and navigation -------------------------------------------
 
+  // ---- Pacing ---------------------------------------------------------------
+
+  // Instagram flags sessions whose traffic doesn't look like a person's. So
+  // requests nobody asked for this moment (profile cards, prefetching, the
+  // notification checks) share a budget per minute, and as soon as
+  // Instagram pushes back (a "Page not found" page instead of data, 401,
+  // 403, 429, "please wait") they stop for half an hour, and failed loads
+  // aren't retried. What you do yourself (open, like, save, scroll) still
+  // goes through.
+  const BACKGROUND_PER_MIN = 20;
+  const PAUSE_MS = 30 * 60 * 1000;
+  const backgroundAt = []; // when recent background requests were allowed
+  let pausedUntil = 0;
+  const heldBack = () => Date.now() < pausedUntil;
+
+  // Whether background work needing `cost` requests may go now; if so, it
+  // is counted against the budget.
+  function allowBackground(cost = 1) {
+    const now = Date.now();
+    if (heldBack()) return false;
+    while (backgroundAt.length && now - backgroundAt[0] > 60000) backgroundAt.shift();
+    if (backgroundAt.length + cost > BACKGROUND_PER_MIN) return false;
+    for (let i = 0; i < cost; i++) backgroundAt.push(now);
+    return true;
+  }
+
+  function pushback(why) {
+    const was = heldBack();
+    pausedUntil = Date.now() + PAUSE_MS;
+    if (was) return;
+    console.warn(`Here for Instagram: Instagram pushed back (${why}); background requests stop for 30 minutes.`);
+    window.dispatchEvent(new CustomEvent('sinsta-pushback'));
+  }
+
   let lastFailure = ''; // why the last request failed, for the console
   async function request(path, init) {
     const url = location.origin + path;
+    const where = path.split('?')[0];
+    // Firefox: content.fetch sends the request exactly as the page would;
+    // the page's own fetch only if that can't be used at all.
     const fetchers = [];
-    // Firefox: content.fetch sends the request exactly as the page would.
     if (typeof content === 'object' && content && content.fetch) fetchers.push(content.fetch.bind(content));
     fetchers.push(window.fetch.bind(window));
-    const why = [];
     for (const f of fetchers) {
+      let res;
+      let text;
       try {
-        const res = await f(url, init);
-        const text = await res.text();
-        if (res.ok) {
-          try {
-            return JSON.parse(text);
-          } catch (_) {
-            why.push(`not JSON: ${text.slice(0, 80)}`);
-          }
-        } else {
-          why.push(`HTTP ${res.status}`);
-        }
+        res = await f(url, init);
+        text = await res.text();
       } catch (e) {
-        why.push(String(e));
+        lastFailure = `${where}: ${e}`;
+        continue; // this fetch couldn't be used: try the next
       }
+      if (!res.ok) {
+        lastFailure = `${where}: HTTP ${res.status}`;
+        if ([401, 403, 429].includes(res.status)) pushback(lastFailure);
+        return null;
+      }
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (_) {
+        lastFailure = `${where}: not JSON: ${text.slice(0, 80)}`;
+        if (/^\s*</.test(text)) pushback(`${where} answered with a page instead of data`);
+        return null;
+      }
+      const said = json && `${json.message || ''} ${json.status || ''}`;
+      if (json && (json.require_login || json.checkpoint_url || /please wait|try again later|checkpoint/i.test(said))) {
+        lastFailure = `${where}: ${said.trim() || 'login required'}`;
+        pushback(lastFailure);
+        return null;
+      }
+      return json;
     }
-    lastFailure = `${path.split('?')[0]}: ${why.join('; ')}`;
     return null;
   }
+
 
   function api(path) {
     return request(path, { headers: { 'x-ig-app-id': APP_ID }, credentials: 'include' });
@@ -226,7 +275,7 @@ const Sinsta = (() => {
       ...FEED_FLAGS,
     };
     let res = null;
-    for (let n = 0; n < DOC_FEEDS.length; n++) {
+    for (let n = 0; n < DOC_FEEDS.length && !(n && heldBack()); n++) {
       const i = (feedDoc + n) % DOC_FEEDS.length;
       res = await gql(DOC_FEEDS[i], variables);
       const conn = res && res.data && res.data.xdt_api__v1__feed__timeline__connection;
@@ -2697,7 +2746,7 @@ const Sinsta = (() => {
 
   return {
     api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
-    mark, userIds, lookUpId, userCard, ago,
+    mark, userIds, lookUpId, userCard, ago, allowBackground, heldBack,
     likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection, follow,
   };
 })();

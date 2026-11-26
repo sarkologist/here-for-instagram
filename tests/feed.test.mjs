@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls } from './stand-in.mjs';
+import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls, queryLog } from './stand-in.mjs';
 
 const LIST = { 'sinsta-surface': { layout: 'list' } };
 const GRID = { 'sinsta-surface': { layout: 'grid', cols: { following: 3 } } };
@@ -65,6 +65,43 @@ test('The feed loads when scripts can\'t read the csrftoken cookie: the token co
   await page.goto(`${ORIGIN}/?variant=following`);
   assert.deepEqual(await posts(), ['alice', 'carol', 'alice']);
   assert.equal(await page.evaluate(() => document.querySelector('.sf-lay[title^="Grid"]').disabled), false);
+});
+
+test('When Instagram turns the session down, Here asks once, doesn\'t retry, and Grid says why', async () => {
+  await freshContext(LIST);
+  await logIn('111');
+  feeds111();
+  accounts['111'].blocked = true;
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await page.waitForFunction(() => document.querySelector('.sf-lay[title*="turned down"]')?.disabled === true);
+  await page.waitForTimeout(3500); // past when the retries would have come
+  const FEED = ['40856843000596438', '29639616438977013'];
+  assert.equal(queryLog.filter((q) => FEED.includes(q.doc)).length, 1);
+  assert.equal(await page.evaluate(() => Sinsta.heldBack()), true);
+});
+
+test('Profile cards: passing over names fetches nothing; resting on one fetches its card once', async () => {
+  await open('following', LIST);
+  await posts();
+  const CARD = ['28949219061332276', '39818828461098125']; // the card and the profile's grid
+  const cardQueries = () => queryLog.filter((q) => CARD.includes(q.doc)).length;
+  const count = await page.evaluate(() => document.querySelectorAll('.sf-post').length);
+  for (let i = 1; i <= count; i++) {
+    await page.hover(`.sf-post:nth-child(${i})`);
+    await page.hover(`.sf-post:nth-child(${i}) .sf-user`);
+    await page.waitForTimeout(150);
+  }
+  await page.mouse.move(5, 890);
+  await page.waitForTimeout(800);
+  assert.equal(cardQueries(), 0);
+  for (let i = 0; i < 2; i++) {
+    await page.hover('.sf-post');
+    await page.hover('.sf-post .sf-user');
+    await page.waitForSelector('.sinsta-card');
+    await page.mouse.move(5, 890);
+    await page.waitForSelector('.sinsta-card', { state: 'detached' });
+  }
+  assert.equal(cardQueries(), 2);
 });
 
 test('Favourites: only favourites', async () => {

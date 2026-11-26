@@ -82,6 +82,7 @@ export const songLookups = []; // pks of the posts asked for their song
 // Saving: { doc, input } of each save, unsave, add-to-collection and
 // new-collection mutation, in order.
 export const saveCalls = [];
+export const queryLog = [];
 // Following: { kind: 'follow' | 'unfollow', id } of each mutation, and
 // whom each account follows now, by user id, where that changed.
 export const followCalls = [];
@@ -94,6 +95,7 @@ export const storyViewers = {};
 function reset() {
   songLookups.length = 0;
   saveCalls.length = 0;
+  queryLog.length = 0;
   followCalls.length = 0;
   for (const k of Object.keys(storyViewers)) delete storyViewers[k];
   for (const k of Object.keys(accounts)) delete accounts[k];
@@ -231,6 +233,12 @@ export async function freshContext(storage = {}) {
         layout_content: { medias: p.map((m) => (m.ad ? { media: { ...m.ad, ad_id: '1' } } : { media: m })) },
       }));
       return json({ sectional_items: sections, more_available: more, next_max_id: more ? String(n + 1) : null, rank_token: 'r' });
+    }
+    // Every query asked, as { path, doc } (`blocked`: the session's queries
+    // all get Instagram's "Page not found" page).
+    if (path === '/api/graphql' || path === '/graphql/query') {
+      queryLog.push({ path, doc: new URLSearchParams(req.postData() || '').get('doc_id') });
+      if (acc && acc.blocked) return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html><title>Page Not Found • Instagram</title></html>' });
     }
     // Without the CSRF token (`requireCsrf`), Instagram answers queries with
     // its "Page not found" page. The page holds the token in its security

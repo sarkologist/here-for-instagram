@@ -165,7 +165,8 @@
     gridBtn.disabled = unavailable;
     gridBtn.title = !unavailable ? 'Grid (G)'
       : feed(cur).unavailable === 'unclassified' ? "This feed doesn't say whom you follow, so this is Instagram's own page"
-        : "Couldn't load this feed, so this is Instagram's own page";
+        : Sinsta.heldBack() ? "Instagram turned down this session's requests, so this is Instagram's own page. Here has stopped its background requests for 30 minutes; logging out of Instagram and back in usually clears it."
+          : "Couldn't load this feed, so this is Instagram's own page";
     listBtn.title = cur === 'reels' ? "List: Instagram's own player (G)" : 'List (G)';
     stepper.hidden = !(grid && active);
     // Setting text always replaces the node, which would wake the
@@ -1144,7 +1145,8 @@
     // Right after a page load Instagram's session tokens may not be in the
     // page yet; give them a few tries before giving up.
     let page = null;
-    for (let attempt = 0; attempt < 3 && !page; attempt++) {
+    // Not when Instagram has pushed back: retrying is what gets sessions flagged.
+    for (let attempt = 0; attempt < 3 && !page && !(attempt && Sinsta.heldBack()); attempt++) {
       if (attempt) await new Promise((r) => setTimeout(r, 1000 * attempt));
       page = await fetchPage(view, f.after);
     }
@@ -1882,7 +1884,7 @@
     const next = list()[pi + 1];
     if (next && next.slides[0].video) preload = { index: pi + 1, video: makeVideo(next.slides[0]) };
     else if (next && next.slides[0].thumbs.length) new Image().src = next.slides[0].thumbs[0].url;
-    if (next && next.song === undefined) songFor(next);
+    if (next && next.song === undefined && Sinsta.allowBackground(1)) songFor(next);
     if (list().length - pi < 6) {
       loadMore();
       grow();
