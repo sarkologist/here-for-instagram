@@ -1076,20 +1076,23 @@
     previewTile = null;
   }
 
-  // The tile under the pointer, playing its photo's video if it has one.
+  // The tile under the pointer, playing its photo's video if it has one. The
+  // video starts loading at once, hidden, so the dwell before it plays also
+  // covers its download rather than adding to it.
   function startPreview(a, delay = PREVIEW_MS) {
     previewTile = a;
     const it = itemOf(a);
     const src = it && it.slides[slideOf(a)].video;
     if (!src) return;
-    previewTimer = setTimeout(() => {
-      const v = shadowVideo({ muted: true, loop: true, autoplay: true, playsInline: true, src }, 'cover');
-      const host = hostOf(v);
-      host.className = 'sr-preview';
-      previews.set(host, v);
-      v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
-      a.querySelector('.sf-track').children[slideOf(a)].append(host);
-    }, delay);
+    const v = shadowVideo({ muted: true, loop: true, playsInline: true, preload: 'auto', src }, 'cover');
+    const host = hostOf(v);
+    host.className = 'sr-preview';
+    previews.set(host, v);
+    v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
+    a.querySelector('.sf-track').children[slideOf(a)].append(host);
+    const play = () => v.play().catch(() => {});
+    if (delay) previewTimer = setTimeout(play, delay);
+    else play();
   }
 
   content.addEventListener('pointerover', (e) => {
