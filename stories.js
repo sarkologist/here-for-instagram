@@ -67,18 +67,32 @@ const Sinsta = (() => {
 
   // ---- Requests and navigation -------------------------------------------
 
+  let lastFailure = ''; // why the last request failed, for the console
   async function request(path, init) {
     const url = location.origin + path;
     const fetchers = [];
     // Firefox: content.fetch sends the request exactly as the page would.
     if (typeof content === 'object' && content && content.fetch) fetchers.push(content.fetch.bind(content));
     fetchers.push(window.fetch.bind(window));
+    const why = [];
     for (const f of fetchers) {
       try {
         const res = await f(url, init);
-        if (res.ok) return JSON.parse(await res.text());
-      } catch (_) {}
+        const text = await res.text();
+        if (res.ok) {
+          try {
+            return JSON.parse(text);
+          } catch (_) {
+            why.push(`not JSON: ${text.slice(0, 80)}`);
+          }
+        } else {
+          why.push(`HTTP ${res.status}`);
+        }
+      } catch (e) {
+        why.push(String(e));
+      }
     }
+    lastFailure = `${path.split('?')[0]}: ${why.join('; ')}`;
     return null;
   }
 
@@ -90,7 +104,14 @@ const Sinsta = (() => {
   // sent there are accepted but silently dropped (the result is null): they
   // need /api/graphql plus the page's session tokens (`mutation` true), as
   // do more and more reads.
-  function gql(docId, variables, mutation) {
+  // A persisted GraphQL query. Reads go to /graphql/query, which needs
+  // only the CSRF cookie; mutations (`mutation` true) to /api/graphql with
+  // the page's session tokens. Some sessions get an HTML page from
+  // /graphql/query (stories since November 2026, then the home feeds), so a
+  // read that gets no data there is sent again the other way, and once that
+  // works, the rest of the page's reads go that way from the start.
+  let readsNeedTokens = false;
+  async function gql(docId, variables, mutation) {
     const csrf = (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1] || '';
     const params = { doc_id: docId, variables: typeof variables === 'string' ? variables : JSON.stringify(variables) };
     const headers = {
@@ -98,22 +119,28 @@ const Sinsta = (() => {
       'x-csrftoken': csrf,
       'x-ig-app-id': APP_ID,
     };
-    if (mutation) {
-      const t = tokens();
-      if (!t) return Promise.resolve(null);
-      Object.assign(params, { fb_dtsg: t.dtsg, lsd: t.lsd });
-      headers['x-fb-lsd'] = t.lsd;
-    }
-    return request(mutation ? '/api/graphql' : '/graphql/query', {
+    const post = (path, p, h) => request(path, {
       method: 'POST',
       credentials: 'include',
-      headers,
-      body: new URLSearchParams(params).toString(),
+      headers: h,
+      body: new URLSearchParams(p).toString(),
     });
+    const t = mutation || readsNeedTokens ? tokens() : null;
+    if (!mutation && !t) {
+      const res = await post('/graphql/query', params, headers);
+      if (res) return res;
+    }
+    const tk = t || tokens();
+    if (!tk) return null;
+    const res = await post('/api/graphql', { ...params, fb_dtsg: tk.dtsg, lsd: tk.lsd }, { ...headers, 'x-fb-lsd': tk.lsd });
+    if (res && !mutation) readsNeedTokens = true;
+    return res;
   }
+
 
   // Session tokens Instagram embeds in the page's inline scripts.
   let cachedTokens = null;
+  let tokenProbe = null; // which tokens the last look found, for the console
   function tokens() {
     if (cachedTokens) return cachedTokens;
     const find = (name) => {
@@ -134,6 +161,7 @@ const Sinsta = (() => {
         break;
       }
     }
+    tokenProbe = { dtsg: !!dtsg, lsd: !!lsd, device: !!device, scripts: document.scripts.length };
     if (!dtsg || !lsd) return null;
     // Your account's id as Instagram's own mutations name their actor.
     let actor = null;
@@ -170,7 +198,10 @@ const Sinsta = (() => {
   let feedDoc = 0; // index into DOC_FEEDS of the id that last worked
   async function feedConnection(variant, after) {
     const t = tokens();
-    if (!t || !t.device) return null;
+    if (!t || !t.device) {
+      console.warn('Here for Instagram: no session tokens in the page for the feed', JSON.stringify(tokenProbe));
+      return null;
+    }
     const variables = {
       after: after || null,
       before: null,
@@ -199,7 +230,8 @@ const Sinsta = (() => {
         return conn;
       }
     }
-    console.warn('Here for Instagram: the home feed query failed', variant, res && (res.errors || res));
+    console.warn('Here for Instagram: the home feed query failed', variant,
+      res ? JSON.stringify(res.errors || res).slice(0, 300) : lastFailure);
     return null;
   }
 

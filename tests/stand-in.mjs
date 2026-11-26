@@ -232,6 +232,12 @@ export async function freshContext(storage = {}) {
       }));
       return json({ sectional_items: sections, more_available: more, next_max_id: more ? String(n + 1) : null, rank_token: 'r' });
     }
+    // Some sessions get an HTML page from /graphql/query (`htmlQueries`);
+    // /api/graphql then needs the page's session tokens.
+    if (path === '/graphql/query' && acc.htmlQueries) return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html></html>' });
+    if (path === '/api/graphql' && acc.htmlQueries && new URLSearchParams(req.postData() || '').get('lsd') !== 't-lsd') {
+      return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html></html>' });
+    }
     if (path === '/api/graphql' || path === '/graphql/query') {
       const form = new URLSearchParams(req.postData() || '');
       const vars = JSON.parse(form.get('variables') || '{}');

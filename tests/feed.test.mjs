@@ -57,6 +57,16 @@ test('The feed loads with whichever of Instagram\'s two feed query ids the sessi
   }
 });
 
+test('The feed loads when /graphql/query answers with an HTML page, as it does for some sessions', async () => {
+  await freshContext(LIST);
+  await logIn('111');
+  feeds111();
+  accounts['111'].htmlQueries = true;
+  await page.goto(`${ORIGIN}/?variant=following`);
+  assert.deepEqual(await posts(), ['alice', 'carol', 'alice']);
+  assert.equal(await page.evaluate(() => document.querySelector('.sf-lay[title^="Grid"]').disabled), false);
+});
+
 test('Favourites: only favourites', async () => {
   await open('favorites', LIST);
   assert.deepEqual(await posts(), ['fav_of_a']);
