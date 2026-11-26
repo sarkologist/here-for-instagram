@@ -24,6 +24,7 @@ const Sinsta = (() => {
   const DOC_STORY_LIKE = '26938887309082050'; // usePolarisStoriesV4LikeMutationLikeMutation
   const DOC_STORY_UNLIKE = '26510485515280697'; // usePolarisStoriesV4LikeMutationUnlikeMutation
   const DOC_STORY_REPLY = '29327482173525974'; // IGDirectStoryShareReplyMutation
+  const DOC_USER_CARD = '28949219061332276'; // PolarisUserHoverCardContentV2Query
   // Feature flags the feed query declares; values as Instagram's web app sends them.
   const FEED_FLAGS = {
     __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
@@ -294,6 +295,7 @@ const Sinsta = (() => {
     const slides = parts.map(slideOf).filter((s) => s.thumbs.length || s.video);
     if (!slides.length) return null;
     const fs = m.user.friendship_status;
+    noteId(m.user);
     return {
       pk: idOf(m),
       code: m.code,
@@ -454,6 +456,7 @@ const Sinsta = (() => {
 
   function toComment(c) {
     if (!c || !c.pk || !c.user) return null;
+    noteId(c.user);
     return {
       pk: idOf(c),
       text: c.text || '',
@@ -827,6 +830,54 @@ const Sinsta = (() => {
   // ---- Account ids --------------------------------------------------------
 
   const userIds = new Map(); // username -> user id, as far as known
+
+  // Posts and comments say whose they are: noted, so a profile card for
+  // their names needs no lookup.
+  function noteId(user) {
+    const id = user && (user.pk || user.id);
+    if (user && user.username && id && !userIds.has(user.username)) userIds.set(user.username, String(id));
+  }
+
+  // What Instagram's hover card on a name shows: the account, its counts,
+  // whether you follow each other, and its latest three posts, as
+  // { username, fullName, pic, verified, private, posts, followers,
+  // following, youFollow, followsYou, favourite, recent: [{ code, thumb }] },
+  // or null on failure.
+  async function userCard(userId) {
+    const send = () => gql(DOC_USER_CARD, { userID: String(userId) }, true);
+    const of = (res) => res && res.data && res.data.xig_user_by_igid_v2;
+    let got = of(await send());
+    if (!got) {
+      cachedTokens = null; // tokens may have rotated: re-read them once
+      got = of(await send());
+    }
+    const u = got && got.user_dict;
+    if (!u || !u.username) return null;
+    const fs = u.friendship_status || {};
+    // Square crops, a little larger than the card shows them.
+    const thumb = (cands) => {
+      const square = cands.filter((c) => /[?&]stp=c[\d.]+a_/.test(c.url));
+      const pool = square.length ? square : cands;
+      return (pool.find((c) => /_s320x320_/.test(c.url)) || pool.find((c) => /_s240x240_/.test(c.url)) || pool[0] || {}).url || '';
+    };
+    const edges = (got.polaris_ordered_timeline_connection && got.polaris_ordered_timeline_connection.edges) || [];
+    return {
+      username: u.username,
+      fullName: u.full_name || '',
+      pic: (u.hd_profile_pic_url_info && u.hd_profile_pic_url_info.url) || u.profile_pic_url || '',
+      verified: !!u.is_verified,
+      private: !!u.is_private,
+      posts: u.media_count == null ? null : u.media_count,
+      followers: u.follower_count == null ? null : u.follower_count,
+      following: u.following_count == null ? null : u.following_count,
+      youFollow: !!fs.following,
+      followsYou: !!fs.followed_by,
+      favourite: !!fs.is_feed_favorite,
+      recent: edges.map((e) => e && e.node && e.node.media_dict).filter((m) => m && m.code)
+        .slice(0, 3)
+        .map((m) => ({ code: m.code, thumb: thumb((m.image_versions2 && m.image_versions2.candidates) || []) })),
+    };
+  }
 
   // Favourites' ids come with the favourites list. For anyone else, the only
   // lookup left on the web (web_profile_info is gone) is the profile page,
@@ -2487,7 +2538,7 @@ const Sinsta = (() => {
 
   return {
     api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
-    mark, userIds, lookUpId, ago,
+    mark, userIds, lookUpId, userCard, ago,
     likeMedia, likeComment, comments, replies, addComment,
   };
 })();

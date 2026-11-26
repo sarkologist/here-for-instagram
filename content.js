@@ -9,7 +9,7 @@
   // draws these views itself, and Explore's grid; what's here filters
   // Instagram's own page, which a view falls back to when its feed can't be
   // loaded.
-  const { api, go, nav, el, mark, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, userIds, lookUpId } = Sinsta;
+  const { api, go, nav, el, mark, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, userIds, lookUpId, userCard } = Sinsta;
 
   const VIEWS = [
     {
@@ -1190,6 +1190,154 @@
     clearTimeout(note.timer);
     note.timer = setTimeout(() => note.remove(), 5000);
   }
+
+  // ---- Profile cards on the extension's own names -------------------------
+
+  // Instagram's hover card only comes with its own links, so the names the
+  // extension draws (in its feeds, grids, player and comments) get this one,
+  // from the query Instagram's card uses, with the Favourites star in it.
+  const CARD_SHOW_MS = 500; // rest on a name this long
+  const CARD_HIDE_MS = 250; // grace for moving onto the card
+  const CARD_TTL_MS = 5 * 60 * 1000;
+  const CARD_SCOPE = '#sinsta-surface, #sinsta-reel-player';
+  const NOT_USERS = new Set(['explore', 'reels', 'direct', 'accounts', 'stories', 'p', 'reel', 'about', 'legal']);
+  const cards = new Map(); // username -> { at, job: Promise<card | null> }
+  const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+  let card = null; // the popup
+  let cardLink = null; // the name it is for (or is about to be for)
+  let showTimer = 0;
+  let hideTimer = 0;
+
+  function cardUser(a) {
+    if (!a || !a.closest(CARD_SCOPE)) return null;
+    const user = ((a.getAttribute('href') || '').match(/^\/([\w.]+)\/$/) || [])[1];
+    return user && !NOT_USERS.has(user) ? user : null;
+  }
+
+  function cardData(user) {
+    const hit = cards.get(user);
+    if (hit && Date.now() - hit.at < CARD_TTL_MS) return hit.job;
+    const job = lookUpId(user).then((id) => (id ? userCard(id) : null)).catch(() => null);
+    cards.set(user, { at: Date.now(), job });
+    job.then((got) => { if (!got) cards.delete(user); });
+    return job;
+  }
+
+  function hideCard() {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    cardLink = null;
+    if (!card) return;
+    if (card.matches(':popover-open')) card.hidePopover();
+    card.remove();
+    card = null;
+  }
+
+  async function showCard(a, user) {
+    const got = await cardData(user);
+    if (cardLink !== a || !a.isConnected || !got) return;
+    if (card) card.remove();
+    card = buildCard(got);
+    // In the top layer, above the player, which is there too.
+    document.body.append(card);
+    if (card.showPopover) {
+      card.popover = 'manual';
+      card.showPopover();
+    }
+    placeCard(a);
+  }
+
+  function placeCard(a) {
+    const r = a.getBoundingClientRect();
+    const w = card.offsetWidth;
+    const h = card.offsetHeight;
+    const gap = 6;
+    const below = r.bottom + gap + h <= window.innerHeight || r.top - gap - h < 0;
+    const top = below ? r.bottom + gap : r.top - gap - h;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+    card.style.setProperty('top', `${Math.max(8, top)}px`, 'important');
+    card.style.setProperty('left', `${left}px`, 'important');
+  }
+
+  function buildCard(c) {
+    const href = `/${c.username}/`;
+    const name = el('a', { className: 'sinsta-card-user', href }, c.username);
+    const who = el('div', { className: 'sinsta-card-who' },
+      el('div', { className: 'sinsta-card-line' }, name,
+        c.verified ? el('span', { className: 'sinsta-card-tick', title: 'Verified' }, '✓') : ''),
+      c.fullName ? el('div', { className: 'sinsta-card-name' }, c.fullName) : '',
+      c.followsYou ? el('div', { className: 'sinsta-card-rel' }, c.youFollow ? 'You follow each other' : 'Follows you') : '');
+    const head = el('div', { className: 'sinsta-card-head' },
+      el('a', { className: 'sinsta-card-pic', href }, el('img', { src: c.pic, alt: '' })), who);
+
+    const stat = (n, label) => el('div', { className: 'sinsta-card-stat' },
+      el('b', {}, n == null ? '–' : compact.format(n)), el('span', {}, label));
+    const stats = el('div', { className: 'sinsta-card-stats' },
+      stat(c.posts, 'posts'), stat(c.followers, 'followers'), stat(c.following, 'following'));
+
+    const kids = [head, stats];
+    if (c.recent.length) {
+      kids.push(el('div', { className: 'sinsta-card-posts' }, ...c.recent.map((p) =>
+        el('a', { href: `/p/${p.code}/` }, el('img', { src: p.thumb, alt: '', loading: 'lazy' })))));
+    } else if (c.private && !c.youFollow) {
+      kids.push(el('div', { className: 'sinsta-card-empty' }, 'This account is private'));
+    } else if (c.posts === 0) {
+      kids.push(el('div', { className: 'sinsta-card-empty' }, 'No posts yet'));
+    }
+
+    // Only accounts you follow can be favourites.
+    if (c.youFollow) {
+      kids.push(el('div', { className: 'sinsta-card-row' },
+        el('span', { className: 'sinsta-card-follow' }, 'Following'), favButton(c.username)));
+    }
+
+    const node = el('div', { className: 'sinsta-card', role: 'dialog' }, ...kids);
+    // A click on anything in it leaves the page for a profile or post.
+    node.addEventListener('click', (e) => { if (e.target.closest('a')) hideCard(); });
+    return node;
+  }
+
+  document.addEventListener('mouseover', (e) => {
+    const t = e.target;
+    if (card && card.contains(t)) {
+      clearTimeout(hideTimer);
+      return;
+    }
+    const a = t.closest ? t.closest('a[href]') : null;
+    const user = cardUser(a);
+    if (user && a === cardLink) {
+      clearTimeout(hideTimer);
+      return;
+    }
+    if (user) {
+      clearTimeout(showTimer);
+      clearTimeout(hideTimer);
+      if (card) hideCard();
+      cardLink = a;
+      // Start fetching while the pointer rests, unless that means fetching
+      // a whole profile page for the id (a name in a caption, say).
+      if (userIds.has(user)) cardData(user);
+      showTimer = setTimeout(() => showCard(a, user), CARD_SHOW_MS);
+      return;
+    }
+    if (!cardLink) return;
+    clearTimeout(showTimer);
+    if (!card) {
+      cardLink = null;
+      return;
+    }
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(hideCard, CARD_HIDE_MS);
+  }, true);
+  window.addEventListener('scroll', (e) => {
+    if (card && !card.contains(e.target)) hideCard();
+  }, true);
+  document.addEventListener('click', (e) => {
+    if (cardLink && !(card && card.contains(e.target))) hideCard();
+  }, true);
+  window.addEventListener('popstate', hideCard);
+  // The player reuses its name link from post to post as keys move it on.
+  document.addEventListener('keydown', () => { if (cardLink) hideCard(); }, true);
 
   function ensureSavedItem() {
     const home = document.querySelector('svg[aria-label="Home"]');
