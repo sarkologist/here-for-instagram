@@ -1980,15 +1980,17 @@
     const left = parseFloat(measured);
     const shift = `${Math.round(left - root.parentElement.getBoundingClientRect().left)}px`;
     const width = `${Math.round(document.documentElement.clientWidth - left)}px`;
-    if (root.style.marginLeft !== shift) root.style.marginLeft = shift;
-    if (root.style.width !== width) root.style.width = width;
+    // (Only .sf-inline uses these, so the surface can't keep them when
+    // Instagram takes the box away with the profile's page.)
+    if (root.style.getPropertyValue('--sr-shift') !== shift) root.style.setProperty('--sr-shift', shift);
+    if (root.style.getPropertyValue('--sr-width') !== width) root.style.setProperty('--sr-width', width);
   }
 
   function unplaceInline() {
     if (replaced) replaced.removeAttribute('data-sinsta-replaced');
     replaced = null;
-    root.style.marginLeft = '';
-    root.style.width = '';
+    root.style.removeProperty('--sr-shift');
+    root.style.removeProperty('--sr-width');
   }
 
   // On Explore the surface leaves Instagram's search box in sight above it.
@@ -2055,7 +2057,10 @@
         syncSearch(view);
       }
       if (inl) placeInline(view);
-      else surfaceHost().append(root);
+      else {
+        unplaceInline();
+        surfaceHost().append(root);
+      }
       active = true;
       measuredAt = 0;
       render(true);

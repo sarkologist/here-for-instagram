@@ -633,6 +633,37 @@ test('Profile: the grid reaches out of Instagram\'s column to the room beside th
     return r.width > 1000 && Math.abs(r.right - document.documentElement.clientWidth) <= 1;
   });
 });
+test('Profile, then straight to Home as Instagram swaps the page: the surface is beside the sidebar again', async () => {
+  await freshContext(GRID);
+  await logIn('111');
+  feeds111();
+  accounts['111'].posts = { alice: [media('Pa1', 'alice'), media('Pa2', 'alice')] };
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await tiles();
+  const homeMain = await page.evaluate(() => document.querySelector('main').outerHTML);
+  const nav = (path, html) => page.evaluate(([p, h]) => {
+    history.pushState({}, '', p);
+    document.querySelector('main').outerHTML = h;
+  }, [path, html]);
+  const profileMain = await page.evaluate(async () => (await (await fetch('/alice/')).text()).match(/<main>[\s\S]*<\/main>/)[0]
+    .replace('class="profile"', 'class="profile" style="width: 500px; margin: 0 auto"'));
+  await nav('/alice/', profileMain);
+  // Reaching out of the narrow column moves the box left of it.
+  await page.waitForFunction(() => {
+    const s = document.querySelector('main #sinsta-surface.sf-inline');
+    return s && s.querySelector('.sf-tile') && parseFloat(s.style.marginLeft || getComputedStyle(s).marginLeft) < 0;
+  });
+  await nav('/?variant=following', homeMain);
+  await page.waitForFunction(() => document.documentElement.hasAttribute('data-sinsta-surface'));
+  const box = await page.evaluate(() => {
+    const s = document.querySelector('#sinsta-surface');
+    const r = s.getBoundingClientRect();
+    return { left: Math.round(r.left), sidebar: parseFloat(s.style.getPropertyValue('--sr-left')), right: Math.round(r.right), page: document.documentElement.clientWidth };
+  });
+  assert.equal(box.left, box.sidebar);
+  assert.ok(Math.abs(box.right - box.page) <= 1, `right ${box.right} vs ${box.page}`);
+});
+
 test('Profile: Reels and Tagged stay Instagram\'s own; so do posts that can\'t be loaded', async () => {
   await openProfile(GRID, '/alice/reels/');
   await page.waitForTimeout(800);
