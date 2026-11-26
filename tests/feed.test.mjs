@@ -57,11 +57,11 @@ test('The feed loads with whichever of Instagram\'s two feed query ids the sessi
   }
 });
 
-test('The feed loads when /graphql/query answers with an HTML page, as it does for some sessions', async () => {
+test('The feed loads when scripts can\'t read the csrftoken cookie: the token comes from the page', async () => {
   await freshContext(LIST);
   await logIn('111');
   feeds111();
-  accounts['111'].htmlQueries = true;
+  accounts['111'].requireCsrf = true; // and the stand-in sets no csrftoken cookie
   await page.goto(`${ORIGIN}/?variant=following`);
   assert.deepEqual(await posts(), ['alice', 'carol', 'alice']);
   assert.equal(await page.evaluate(() => document.querySelector('.sf-lay[title^="Grid"]').disabled), false);

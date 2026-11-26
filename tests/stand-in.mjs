@@ -112,7 +112,7 @@ function reset() {
 }
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8">
-<script>window.__tokens = ['"DTSGInitialData",[],{"token":"t-dtsg"}', '"LSD",[],{"token":"t-lsd"}', '"device_id":"t-device"', '"RelayAPIConfigDefaults",[],{"accessToken":"","actorID":"17841400000000001"'];</script>
+<script>window.__tokens = ['"DTSGInitialData",[],{"token":"t-dtsg"}', '"LSD",[],{"token":"t-lsd"}', '"device_id":"t-device"', '"RelayAPIConfigDefaults",[],{"accessToken":"","actorID":"17841400000000001"', '"InstagramSecurityConfig",[],{"csrf_token":"t-csrf"'];</script>
 <link rel="stylesheet" href="/test/ext/content.css">
 <script src="/test/ext/stories.js"></script><script src="/test/ext/content.js"></script><script src="/test/ext/feed.js"></script>
 </head><body><nav><div>${['Home', 'Reels', 'Explore', 'Messages', 'Notifications', 'Create']
@@ -232,11 +232,11 @@ export async function freshContext(storage = {}) {
       }));
       return json({ sectional_items: sections, more_available: more, next_max_id: more ? String(n + 1) : null, rank_token: 'r' });
     }
-    // Some sessions get an HTML page from /graphql/query (`htmlQueries`);
-    // /api/graphql then needs the page's session tokens.
-    if (path === '/graphql/query' && acc.htmlQueries) return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html></html>' });
-    if (path === '/api/graphql' && acc.htmlQueries && new URLSearchParams(req.postData() || '').get('lsd') !== 't-lsd') {
-      return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html></html>' });
+    // Without the CSRF token (`requireCsrf`), Instagram answers queries with
+    // its "Page not found" page. The page holds the token in its security
+    // config; the cookie scripts can read may be missing.
+    if (path === '/graphql/query' && acc.requireCsrf && (await req.allHeaders())['x-csrftoken'] !== 't-csrf') {
+      return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html><title>Page Not Found • Instagram</title></html>' });
     }
     if (path === '/api/graphql' || path === '/graphql/query') {
       const form = new URLSearchParams(req.postData() || '');

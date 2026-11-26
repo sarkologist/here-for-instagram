@@ -104,38 +104,43 @@ const Sinsta = (() => {
   // sent there are accepted but silently dropped (the result is null): they
   // need /api/graphql plus the page's session tokens (`mutation` true), as
   // do more and more reads.
-  // A persisted GraphQL query. Reads go to /graphql/query, which needs
-  // only the CSRF cookie; mutations (`mutation` true) to /api/graphql with
-  // the page's session tokens. Some sessions get an HTML page from
-  // /graphql/query (stories since November 2026, then the home feeds), so a
-  // read that gets no data there is sent again the other way, and once that
-  // works, the rest of the page's reads go that way from the start.
-  let readsNeedTokens = false;
-  async function gql(docId, variables, mutation) {
-    const csrf = (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1] || '';
+  // The CSRF token Instagram's requests carry: from the csrftoken cookie,
+  // or, where scripts can't read that cookie, from the page's security
+  // config, which is where Instagram's own app reads it. Without it
+  // /graphql/query answers with a "Page not found" page.
+  function csrfToken() {
+    const cookie = (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1];
+    if (cookie) return cookie;
+    for (const s of document.scripts) {
+      const m = !s.src && s.textContent.match(/"InstagramSecurityConfig",\[\],\{"csrf_token":"([^"]+)"/);
+      if (m) return m[1];
+    }
+    return '';
+  }
+
+  // A persisted GraphQL query: reads go to /graphql/query; mutations
+  // (`mutation` true) to /api/graphql with the page's session tokens.
+  function gql(docId, variables, mutation) {
     const params = { doc_id: docId, variables: typeof variables === 'string' ? variables : JSON.stringify(variables) };
     const headers = {
       'content-type': 'application/x-www-form-urlencoded',
-      'x-csrftoken': csrf,
+      'x-csrftoken': csrfToken(),
       'x-ig-app-id': APP_ID,
     };
-    const post = (path, p, h) => request(path, {
+    if (mutation) {
+      const t = tokens();
+      if (!t) return Promise.resolve(null);
+      Object.assign(params, { fb_dtsg: t.dtsg, lsd: t.lsd });
+      headers['x-fb-lsd'] = t.lsd;
+    }
+    return request(mutation ? '/api/graphql' : '/graphql/query', {
       method: 'POST',
       credentials: 'include',
-      headers: h,
-      body: new URLSearchParams(p).toString(),
+      headers,
+      body: new URLSearchParams(params).toString(),
     });
-    const t = mutation || readsNeedTokens ? tokens() : null;
-    if (!mutation && !t) {
-      const res = await post('/graphql/query', params, headers);
-      if (res) return res;
-    }
-    const tk = t || tokens();
-    if (!tk) return null;
-    const res = await post('/api/graphql', { ...params, fb_dtsg: tk.dtsg, lsd: tk.lsd }, { ...headers, 'x-fb-lsd': tk.lsd });
-    if (res && !mutation) readsNeedTokens = true;
-    return res;
   }
+
 
 
   // Session tokens Instagram embeds in the page's inline scripts.
