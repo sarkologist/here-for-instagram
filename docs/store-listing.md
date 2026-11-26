@@ -98,7 +98,7 @@ Captions, in order:
 - Stories: the name, bars and reply box show only on hover; a click outside the story closes the viewer; a profile's picture opens its story in the extension's viewer.
 - Stories: watched accounts are remembered separately for each Instagram account.
 - Reels is a tab in the bar and leaves Instagram's menu.
-- New icon.
+- New icon, and its wordmark at the start of the tab bar.
 
 ### 1.1.0
 

@@ -82,7 +82,7 @@ const svg = (name, size = 24) =>
 function sidebar(path) {
   const item = (name, href) =>
     `<div class="ni"><a href="${href}"${path === href ? ' aria-current="page"' : ""}>${svg(name)}<span>${name}</span></a></div>`;
-  return `<div class="side"><div class="mark">here<span>.</span></div><div class="menu">
+  return `<div class="side"><div class="mark"></div><div class="menu">
     ${item("Home", "/")}${item("Search", "#search")}${item("Explore", "/explore/")}${item("Reels", "/reels/")}
     ${item("Messages", "/direct/inbox/")}${item("Notifications", "#notifications")}${item("Create", "#create")}
     <div class="ni"><a href="/${data.me.username}/"><img src="${data.me.pic}" alt=""><span>Profile</span></a></div>
@@ -118,8 +118,7 @@ function page(url) {
 html, body { margin: 0; background: #fff; color: #000; font: 14px/18px -apple-system, "Helvetica Neue", Arial, sans-serif; }
 a { color: inherit; text-decoration: none; }
 .side { position: fixed; inset: 0 auto 0 0; width: 244px; padding: 8px 12px 20px; border-right: 1px solid #dbdbdb; display: flex; flex-direction: column; background: #fff; z-index: 2; }
-.mark { font: 600 26px/1 Georgia, serif; padding: 28px 12px 22px; letter-spacing: -0.5px; }
-.mark span { color: #c13584; }
+.mark { height: 76px; } /* Instagram's logo goes here; left out */
 .menu { flex: 1; }
 .ni a { display: flex; align-items: center; gap: 16px; padding: 12px; margin: 2px 0; border-radius: 8px; font-size: 16px; }
 .ni a:hover { background: #f2f2f2; }
