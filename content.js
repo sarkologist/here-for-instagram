@@ -1197,8 +1197,10 @@
   // extension draws (in its feeds, grids, player and comments) get this one,
   // from the query Instagram's card uses, with the Favourites star in it.
   const CARD_SHOW_MS = 500; // rest on a name this long
+  const CARD_FETCH_MS = 200; // start fetching after resting this long
   const CARD_HIDE_MS = 250; // grace for moving onto the card
   const CARD_TTL_MS = 5 * 60 * 1000;
+  const CARD_POSTS = 9;
   const CARD_SCOPE = '#sinsta-surface, #sinsta-reel-player';
   const NOT_USERS = new Set(['explore', 'reels', 'direct', 'accounts', 'stories', 'p', 'reel', 'about', 'legal']);
   const cards = new Map(); // username -> { at, job: Promise<card | null> }
@@ -1207,6 +1209,7 @@
   let cardLink = null; // the name it is for (or is about to be for)
   let showTimer = 0;
   let hideTimer = 0;
+  let fetchTimer = 0;
 
   function cardUser(a) {
     if (!a || !a.closest(CARD_SCOPE)) return null;
@@ -1217,15 +1220,35 @@
   function cardData(user) {
     const hit = cards.get(user);
     if (hit && Date.now() - hit.at < CARD_TTL_MS) return hit.job;
+    // Instagram's card query has only the latest three posts; the profile's
+    // own grid query has its first nine as the profile shows them (pinned
+    // first). Private accounts you don't follow have only the card's.
+    const grid = Sinsta.profilePage(user).catch(() => null);
     const job = lookUpId(user)
-      .then((id) => (id ? userCard(id).then((c) => c && Object.assign(c, { id })) : null))
+      .then(async (id) => {
+        const c = id && await userCard(id);
+        if (!c) return null;
+        const page = await grid;
+        const nine = page && page.items.length
+          ? page.items.slice(0, CARD_POSTS).map((it) => ({ code: it.code, thumb: smallThumb(it.thumbs) }))
+          : null;
+        return Object.assign(c, { id, recent: nine || c.recent });
+      })
       .catch(() => null);
     cards.set(user, { at: Date.now(), job });
     job.then((got) => { if (!got) cards.delete(user); });
     return job;
   }
 
+  // The smallest of a post's pictures (largest first) that is still sharp
+  // in a third of the card.
+  function smallThumb(thumbs) {
+    const ok = (thumbs || []).filter((t) => t.width >= 240 && t.height >= 240);
+    return ((ok.length ? ok[ok.length - 1] : (thumbs || [])[0]) || {}).url || '';
+  }
+
   function hideCard() {
+    clearTimeout(fetchTimer);
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
     cardLink = null;
@@ -1424,11 +1447,13 @@
       cardLink = a;
       // Start fetching while the pointer rests, unless that means fetching
       // a whole profile page for the id (a name in a caption, say).
-      if (userIds.has(user)) cardData(user);
+      clearTimeout(fetchTimer);
+      if (userIds.has(user)) fetchTimer = setTimeout(() => cardData(user), CARD_FETCH_MS);
       showTimer = setTimeout(() => showCard(a, user), CARD_SHOW_MS);
       return;
     }
     if (!cardLink) return;
+    clearTimeout(fetchTimer);
     clearTimeout(showTimer);
     if (!card) {
       cardLink = null;
