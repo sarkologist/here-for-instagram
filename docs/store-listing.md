@@ -10,9 +10,9 @@ This matches `manifest.name`. AMO allows up to 50 characters, and the trademark 
 
 ## Summary
 
-At most 250 characters; this is 197.
+At most 250 characters; this is 224.
 
-> Instagram on your terms. Home splits into Algo, Following and Favourites, with each post in exactly one. Posts you've seen are hidden, stories play in order, and Reels become a grid you can browse.
+> Instagram on your terms. Home splits into Following, Favourites and Algo, with each post in exactly one. Posts you've seen are hidden, Home, Explore, Reels and profiles become a grid with a player, and stories play in order.
 
 ## Description
 
@@ -27,25 +27,27 @@ Instagram's Home mixes the accounts you follow with suggestions, ads and reshuff
 - Opening Instagram returns to the view you were last on. Ads are hidden everywhere.
 
 **Caught up means caught up**
-- "Hide seen" (on by default) removes posts you saw on an earlier visit, so Following and Favourites show only what's new.
+- "Hide seen" (on by default) removes posts you saw on an earlier visit, in all three views, Explore and profiles.
+- A tick marks each post as it counts as seen; click it to undo.
 - When nothing new is left, it says "You're caught up" instead of scrolling on forever.
+
+**A list or a grid, everywhere**
+- Home, Explore, Reels and profiles show as a list of photos and videos, or a grid of 1 to 8 columns. Hover a tile to see its caption and preview its video.
+- Click a post to open the player, which goes through the view in order, with the caption, likes and comments beside it. Videos get a seekbar and playback speed, and photo posts play their song.
+- Each post you open gets its own address, so Back and Forward work and links can be shared.
+- Carousels swipe and scroll natively; in the grid, moving the pointer across one flips through it.
 
 **Stories where you want them**
 - Following and Favourites get a stories row, which Instagram doesn't show on those views. The Favourites row has every favourite's stories, not just the ones Instagram's tray happens to include.
 - Start on an unwatched account and the viewer stops after the last unwatched story, instead of rolling on into ones you've already seen.
 - Nothing moves on by itself: a photo stays until you click on, and a video loops.
-- The accounts before and after the current one fan out on either side, each with its profile picture and a dot per story. Swipe or scroll to turn through them.
-- Hover an account to fan the deck open there and flip through its stories; click to jump straight to one.
+- The accounts before and after the current one fan out on either side. Swipe or scroll to turn through them; hover one to flip through its stories.
+- On your own story, a pill counts viewers, likes and replies; click it to see who.
 - Replying, reacting and liking all still work.
-
-**Reels as a grid**
-- Browse Reels as a grid of covers, from 1 to 8 columns, and hover a cover to preview it.
-- Click a cover to play the grid in order, with likes and comments beside the video.
 
 **Small things**
 - A star on account cards adds or removes Favourites.
 - Saved gets its own place in the main menu.
-- Scrolling over a carousel steps through its photos.
 
 **Private**
 Everything is stored in your browser. The extension talks only to Instagram, as Instagram's own website does, and sends nothing to its developer or anyone else.
@@ -72,10 +74,10 @@ It collects no data (`data_collection_permissions.required = ["none"]`), so no p
 
 Captions, in order:
 
-1. `1-following.png`: Following shows the accounts you follow, newest first, with their stories on top. Favourites and Algo are one click away.
+1. `1-following.png`: Following shows the accounts you follow, newest first, with their stories on top. Here as a grid; a list is one click away.
 2. `2-stories.png`: Stories play in order, with the accounts before and after fanned out on either side. Hover one to peek at its stories.
 3. `3-reels-grid.png`: Reels as a grid. Pick from 1 to 8 columns, and hover to preview.
-4. `4-reels-player.png`: Play the grid in order, with likes and comments beside the video.
+4. `4-reels-player.png`: Play any view in order, with likes and comments beside the post.
 
 ## Before you upload
 
@@ -84,6 +86,19 @@ Captions, in order:
 - Paste [reviewer-notes.md](reviewer-notes.md) into "Notes to reviewer". The code isn't minified, so no source zip is needed.
 
 ## Release notes
+
+### 2.0.0
+
+- Home, Explore, Reels and profiles: drawn by the extension, as a list or a grid of 1 to 8 columns, without ads.
+- Player: click a post to go through the view in order, with the caption, likes and comments beside it. Videos get a seekbar and playback speed, and photo posts play their song.
+- Each post and story you open gets its own address and history step, so Back and Forward work, and links can be shared.
+- Hide seen: now in Algo, Explore and profiles too. A tick shows when a post counts as seen, and clicking it undoes that. In the grid, a post counts once scrolled past or hovered for a second.
+- Carousels: swipe and scroll natively, with momentum; dots along the bottom; in the grid, moving the pointer across one flips through it.
+- Stories: your own story shows a pill counting viewers, likes and replies, and who in a panel beside it.
+- Stories: the name, bars and reply box show only on hover; a click outside the story closes the viewer; a profile's picture opens its story in the extension's viewer.
+- Stories: watched accounts are remembered separately for each Instagram account.
+- Reels is a tab in the bar and leaves Instagram's menu.
+- New icon, and its wordmark at the start of the tab bar.
 
 ### 1.1.0
 

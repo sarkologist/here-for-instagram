@@ -82,7 +82,7 @@ const svg = (name, size = 24) =>
 function sidebar(path) {
   const item = (name, href) =>
     `<div class="ni"><a href="${href}"${path === href ? ' aria-current="page"' : ""}>${svg(name)}<span>${name}</span></a></div>`;
-  return `<div class="side"><div class="mark">here<span>.</span></div><div class="menu">
+  return `<div class="side"><div class="mark"></div><div class="menu">
     ${item("Home", "/")}${item("Search", "#search")}${item("Explore", "/explore/")}${item("Reels", "/reels/")}
     ${item("Messages", "/direct/inbox/")}${item("Notifications", "#notifications")}${item("Create", "#create")}
     <div class="ni"><a href="/${data.me.username}/"><img src="${data.me.pic}" alt=""><span>Profile</span></a></div>
@@ -118,8 +118,7 @@ function page(url) {
 html, body { margin: 0; background: #fff; color: #000; font: 14px/18px -apple-system, "Helvetica Neue", Arial, sans-serif; }
 a { color: inherit; text-decoration: none; }
 .side { position: fixed; inset: 0 auto 0 0; width: 244px; padding: 8px 12px 20px; border-right: 1px solid #dbdbdb; display: flex; flex-direction: column; background: #fff; z-index: 2; }
-.mark { font: 600 26px/1 Georgia, serif; padding: 28px 12px 22px; letter-spacing: -0.5px; }
-.mark span { color: #c13584; }
+.mark { height: 76px; } /* Instagram's logo goes here; left out */
 .menu { flex: 1; }
 .ni a { display: flex; align-items: center; gap: 16px; padding: 12px; margin: 2px 0; border-radius: 8px; font-size: 16px; }
 .ni a:hover { background: #f2f2f2; }
@@ -148,12 +147,30 @@ article { border-bottom: 1px solid #dbdbdb; padding-bottom: 16px; margin-bottom:
 
 const json = (route, body) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
 
+// A Following post as the home feed query returns it.
+function feedMedia(p, i) {
+  const w = 1080;
+  return {
+    pk: String(3700000000000000000n + BigInt(i)),
+    code: p.code,
+    media_type: 1,
+    user: { username: p.user.username, profile_pic_url: p.user.pic, friendship_status: { following: true } },
+    caption: { text: p.caption },
+    like_count: p.likes,
+    comment_count: p.comments,
+    taken_at: Math.floor(Date.now() / 1000 - p.hoursAgo * 3600),
+    image_versions2: { candidates: [{ url: p.picture, width: w, height: Math.round(w / (p.ratio || 0.8)) }] },
+    music_metadata: null,
+  };
+}
+
 function graphql(route) {
   const params = new URLSearchParams(route.request().postData() || "");
   const vars = JSON.parse(params.get("variables") || "{}");
   const doc = params.get("doc_id");
   const STORIES = "28739385832429456";
   const CLIPS = "29386172244354956";
+  const FEED = "29639616438977013";
   if (doc === STORIES) {
     const reels_media = (vars.reel_ids_arr || []).map((id) => data.reels[id]).filter(Boolean);
     return json(route, { data: { xdt_api__v1__feed__reels_media: { reels_media } } });
@@ -166,6 +183,18 @@ function graphql(route) {
         xdt_api__v1__clips__home__connection_v2: {
           edges: page.map((media) => ({ node: { media } })),
           page_info: { has_next_page: start + 12 < data.clips.length, end_cursor: String(start + 12) },
+        },
+      },
+    });
+  }
+  if (doc === FEED) {
+    // Following is the posts; Favourites and Algo are empty (not shown).
+    const posts = vars.variant === "following" ? data.posts : [];
+    return json(route, {
+      data: {
+        xdt_api__v1__feed__timeline__connection: {
+          edges: posts.map((p, i) => ({ node: { media: feedMedia(p, i) } })),
+          page_info: { has_next_page: false, end_cursor: null },
         },
       },
     });

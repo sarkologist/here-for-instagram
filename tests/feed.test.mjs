@@ -199,12 +199,12 @@ test('Grid: tiles in columns; clicking one opens the player with the caption bes
   await page.waitForSelector('#sinsta-reel-player', { state: 'detached' });
 });
 
-test('The tab bar: chosen accounts, then Instagram\'s picks, then List / Grid', async () => {
+test('The tab bar: the wordmark, chosen accounts, then Instagram\'s picks, then List / Grid', async () => {
   await open('following', LIST);
   await posts();
   const groups = await page.evaluate(() => [...document.querySelectorAll('#sinsta-bar .sinsta-controls > *')]
-    .map((n) => n.matches('.sinsta-tabs') ? [...n.querySelectorAll('.sinsta-tab')].map((t) => t.textContent).join('+') : n.className));
-  assert.deepEqual(groups, ['Following+Favourites', 'sinsta-toggle', 'Algo+Reels', 'sinsta-slot']);
+    .map((n) => n.matches('.sinsta-tabs') ? [...n.querySelectorAll('.sinsta-tab')].map((t) => t.textContent).join('+') : n.getAttribute('class')));
+  assert.deepEqual(groups, ['sinsta-mark', 'Following+Favourites', 'sinsta-toggle', 'Algo+Reels', 'sinsta-slot']);
   // Story names are hidden; the ring's tooltip keeps the name.
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sinsta-name')).display), 'none');
   // Reels has left Instagram's menu; Home stays.

@@ -1,11 +1,11 @@
 {
   "manifest_version": 2,
   "name": "Here for Instagram",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "permissions": [
     "storage"
   ],
-  "description": "Splits Instagram's Home into three separate views: suggestions (Algo), Following and Favourites, hides posts you've seen, and shows Reels as a grid.",
+  "description": "Splits Instagram's Home into Following, Favourites and suggestions (Algo), hides posts you've seen, and shows Home, Explore, Reels and profiles as a grid with a player.",
   "icons": {
     "48": "icon.svg",
     "96": "icon.svg"

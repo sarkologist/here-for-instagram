@@ -174,6 +174,18 @@ main a[href*="variant=home"] {
   display: none;
 }
 
+/* The wordmark, set apart from the tabs. */
+.sinsta-mark {
+  flex: none;
+  height: 19px;
+  margin: 0 12px 0 4px;
+  fill: currentColor;
+}
+
+.sinsta-mark .sinsta-mark-dot {
+  fill: #d62976;
+}
+
 /* Instagram's picks sit apart from the accounts you chose. */
 .sinsta-picks {
   margin-left: 10px;
