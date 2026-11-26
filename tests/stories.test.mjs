@@ -235,16 +235,24 @@ test('Viewer: each story has its own address, and Back and Forward go through th
   await page.evaluate(() => history.back());
   await user('me_myself');
   await panel.waitFor();
-  await page.evaluate(() => history.back());
+  // Closing the list is a step too: Back opens it again.
+  await page.keyboard.press('Escape');
   await panel.waitFor({ state: 'hidden' });
   assert.equal(await where(), '/stories/me_myself/111001/');
-  // Esc closes the viewer and goes back to the row; Forward opens it again.
+  await page.evaluate(() => history.back());
+  await panel.waitFor();
+  await page.keyboard.press('Escape');
+  await panel.waitFor({ state: 'hidden' });
+  // Closing the viewer is a step onto the row's address: Back reopens it
+  // on the story it closed on.
   await page.keyboard.press('Escape');
   await page.waitForSelector('#sinsta-viewer', { state: 'detached' });
-  await page.waitForFunction(() => location.pathname + location.search === '/?variant=following');
-  await page.evaluate(() => history.forward());
-  await user('me_myself');
+  assert.equal(await where(), '/?variant=following');
   await page.evaluate(() => history.back());
+  await user('me_myself');
+  assert.equal(await where(), '/stories/me_myself/111001/');
+  await page.evaluate(() => history.forward());
   await page.waitForSelector('#sinsta-viewer', { state: 'detached' });
+  assert.equal(await where(), '/?variant=following');
   assert.equal(await page.evaluate(() => window.__igPops), 0);
 });

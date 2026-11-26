@@ -1688,11 +1688,11 @@
     grow();
   }
 
-  // `back`: closed by the person (see nav.done).
-  function closePlayer(back = false) {
+  // `step`: closed by the person (see nav.done).
+  function closePlayer(step = false) {
     if (!playerOpen) return;
     playerOpen = false;
-    nav.done('player', back);
+    nav.done('player', step);
     if (video) unload(video);
     if (preload) unload(preload.video);
     video = null;

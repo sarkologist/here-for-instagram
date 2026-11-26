@@ -581,12 +581,9 @@ const Sinsta = (() => {
     const owners = {}; // 'player', 'story': { restore(data), leave() }
     const bases = new Map(); // base id -> Instagram's state on the base entry
     let bids = 0;
-    // The current entry, while it's ours: { s, href, routed, leaving }.
-    // `leaving`: on its way back to the base (until then, here() is the base).
-    let entry = null;
+    let entry = null; // { s, href, routed }: the current entry, while it's ours
     let known = location.href; // where Instagram's router last was
     let relaying = false;
-    const live = () => (entry && !entry.leaving ? entry : null);
     const page = () => window.wrappedJSObject || window;
     const clone = (o) => (typeof cloneInto === 'function' ? cloneInto(o, window) : o);
 
@@ -610,7 +607,7 @@ const Sinsta = (() => {
     function at(owner, url, data, push = false) {
       try {
         const href = new URL(url, location.href).href;
-        const cur = live();
+        const cur = entry;
         if (cur && cur.s.owner === owner) {
           const same = !push && (cur.href === href || cur.routed);
           write({ ...cur.s, depth: cur.s.depth + (same ? 0 : 1), data }, url, !same);
@@ -625,18 +622,22 @@ const Sinsta = (() => {
       }
     }
 
-    // `owner` has closed. `back`: closed by the person, so the history goes
-    // back to the base, leaving its entries ahead for Forward. Otherwise it
-    // closed for a page Instagram goes on to, from which Back comes back.
-    function done(owner, back) {
-      const cur = live();
+    // `owner` has closed. `step`: closed by the person, which is a step of
+    // its own, back on the base's address, so Back from there reopens what
+    // it closed on. Otherwise it closed for a page Instagram goes on to,
+    // from which Back comes back.
+    function done(owner, step) {
+      const cur = entry;
       if (!cur || cur.s.owner !== owner) return;
-      if (!back) {
-        entry = null;
-        return;
+      entry = null;
+      if (!step) return;
+      try {
+        const st = bases.has(cur.s.bid) ? bases.get(cur.s.bid) : null;
+        page().history.pushState(st, '', cur.s.base);
+      } catch (e) {
+        console.warn('Here for Instagram: history', e);
       }
-      cur.leaving = true;
-      page().history.go(-cur.s.depth);
+      known = location.href;
     }
 
     // Instagram is on another page (Back from it landed on one of ours): it
@@ -665,8 +666,7 @@ const Sinsta = (() => {
     window.addEventListener('popstate', (e) => {
       if (relaying) return;
       const s = ours(e.state);
-      const going = entry && entry.leaving;
-      const was = live();
+      const was = entry;
       if (s) {
         e.stopImmediatePropagation();
         if (was && was.s.owner !== s.owner) owners[was.s.owner].leave();
@@ -676,8 +676,8 @@ const Sinsta = (() => {
         return;
       }
       entry = null;
-      // Back to the base, or our own trip there: Instagram is there already.
-      const home = going || (was && location.href === was.s.base);
+      // Back (or, after closing, Forward) to the base: Instagram is there already.
+      const home = was && location.href === was.s.base;
       if (was) owners[was.s.owner].leave();
       known = location.href;
       if (home) e.stopImmediatePropagation();
@@ -704,8 +704,7 @@ const Sinsta = (() => {
       here,
       own: (owner, handlers) => { owners[owner] = handlers; },
       // The current entry's data, if it's `owner`'s.
-      data: (owner) => (live() && entry.s.owner === owner ? entry.s.data : null),
-      back: () => page().history.back(),
+      data: (owner) => (entry && entry.s.owner === owner ? entry.s.data : null),
     };
   })();
 
@@ -1228,15 +1227,14 @@ const Sinsta = (() => {
     shown();
   }
 
-  // Opened or closed by the person: the open list is a history entry of its
-  // own, on top of the story's.
+  // Opened or closed by the person: either is a history step, so Back
+  // undoes it.
   function showListing(on) {
     const was = listing;
     setListing(on);
     const d = nav.data('story');
     if (listing === was || !d) return;
-    if (listing) nav.at('story', location.href, { ...d, listing: true }, true);
-    else if (d.listing) nav.back();
+    nav.at('story', location.href, { ...d, listing }, true);
   }
 
   function setListing(on) {
@@ -2436,11 +2434,11 @@ const Sinsta = (() => {
     show();
   }
 
-  // `back`: closed by the person (see nav.done).
-  function close(back = true) {
+  // `step`: closed by the person (see nav.done).
+  function close(step = true) {
     if (!open) return;
     open = false;
-    nav.done('story', back);
+    nav.done('story', step);
     token++;
     cancelAnimationFrame(raf);
     for (const node of preloaded.values()) unload(node);

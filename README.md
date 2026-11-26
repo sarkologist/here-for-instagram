@@ -37,7 +37,7 @@ The List / Grid switch in the tab bar (or `G`) applies to all four tabs, Explore
 
 Each tab keeps its place while you visit the others, until the page reloads.
 
-Each post the player shows, and each story the viewer shows, gets its own address (Instagram's: `/p/<code>/`, `/stories/<name>/<id>/`) and its own step in the browser's history, as does your own story's list of viewers. Back and Forward go through them, and `Esc` goes back to where you opened them, with Forward reopening them. Back from a page you went to from the player or viewer (a profile, say) brings it back on the post or story you left. The address can be copied and shared; reloading it shows Instagram's own page for that post or story.
+Each post the player shows, and each story the viewer shows, gets its own address (Instagram's: `/p/<code>/`, `/stories/<name>/<id>/`) and its own step in the browser's history, as does your own story's list of viewers. Back and Forward go through them. Closing (`Esc`, or a click beside) is a step too, back on the address you opened them from, so Back after closing reopens the post or story you closed on. Back from a page you went to from the player or viewer (a profile, say) brings it back on the post or story you left. The address can be copied and shared; reloading it shows Instagram's own page for that post or story.
 
 The player doesn't report views to Instagram, so watching here doesn't tune its feeds the way its own pages do.
 

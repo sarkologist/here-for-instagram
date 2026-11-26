@@ -710,11 +710,17 @@ test('Player: each post has its own address, and Back and Forward go through the
   assert.equal(await where(), '/p/Calice1/');
   await page.evaluate(() => history.forward());
   await playing('carol');
-  // Esc goes back to the feed, leaving the posts ahead for Forward.
+  // Closing is a step of its own, onto the feed's address: Back reopens
+  // the post it closed on, and goes on through the posts to the feed.
   await page.keyboard.press('Escape');
   await closed();
-  await page.waitForFunction(() => location.pathname + location.search === '/?variant=following');
+  assert.equal(await where(), '/?variant=following');
+  await page.evaluate(() => history.back());
+  await playing('carol');
+  assert.equal(await where(), '/p/Ccarol1/');
   await page.evaluate(() => history.forward());
+  await closed();
+  await page.evaluate(() => history.go(-2));
   await playing('alice');
   await page.evaluate(() => history.back());
   await closed();
