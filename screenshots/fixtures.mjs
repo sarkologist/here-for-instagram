@@ -361,7 +361,7 @@ export function makeRealData(accounts, files, picks = null, now = Math.floor(Dat
     .filter((a) => !isFav(a.username))
     .flatMap((a) => a.posts.filter((x) => local(x.image) && !x.video && photoOk(x)).map((x) => ({ a, x })))
     .sort((m, n) => n.x.taken_at - m.x.taken_at)
-    .slice(0, 6)
+    .slice(0, 12)
     .map(({ a, x }) => ({
       user: byName[a.username],
       code: x.code,
