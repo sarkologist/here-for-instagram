@@ -25,6 +25,8 @@ const Sinsta = (() => {
   const DOC_STORY_UNLIKE = '26510485515280697'; // usePolarisStoriesV4LikeMutationUnlikeMutation
   const DOC_STORY_REPLY = '29327482173525974'; // IGDirectStoryShareReplyMutation
   const DOC_USER_CARD = '28949219061332276'; // PolarisUserHoverCardContentV2Query
+  const DOC_FOLLOW = '30480713304862233'; // usePolarisFollowUserFollowMutation
+  const DOC_UNFOLLOW = '25174972798866458'; // usePolarisFollowUserUnfollowMutation
   const DOC_SAVE = '27365486596441074'; // usePolarisSaveMediaSaveMutation
   const DOC_UNSAVE = '27371251859134880'; // usePolarisSaveMediaUnsaveMutation
   const DOC_COLLECTIONS = '29115677831365401'; // PolarisSavedCollectionPickerQuery
@@ -467,6 +469,34 @@ const Sinsta = (() => {
     const input = { media_id: pk, tracking_token: token || undefined };
     if (on) input.container_module = module;
     return !!mutated(await gql(on ? DOC_LIKE : DOC_UNLIKE, { input }, true));
+  }
+
+  // ---- Following ----------------------------------------------------------
+
+  // Follow an account, or unfollow it (which also withdraws a request to
+  // follow a private one). Resolves to { following, requested } as Instagram
+  // now has it, or null on failure.
+  async function follow(userId, on) {
+    const send = () => gql(on ? DOC_FOLLOW : DOC_UNFOLLOW, { target_user_id: String(userId) }, true);
+    let got = mutated(await send());
+    if (!got) {
+      cachedTokens = null; // tokens may have rotated: re-read them once
+      got = mutated(await send());
+    }
+    if (!got) return null;
+    // The result says where things stand, somewhere inside.
+    const statusIn = (o, depth = 0) => {
+      if (!o || typeof o !== 'object' || depth > 4) return null;
+      if (o.friendship_status && typeof o.friendship_status === 'object') return o.friendship_status;
+      if ('outgoing_request' in o && 'following' in o) return o;
+      for (const v of Object.values(o)) {
+        const fs = statusIn(v, depth + 1);
+        if (fs) return fs;
+      }
+      return null;
+    };
+    const fs = statusIn(got);
+    return fs ? { following: !!fs.following, requested: !!fs.outgoing_request } : { following: on, requested: false };
   }
 
   // ---- Saved posts --------------------------------------------------------
@@ -945,6 +975,7 @@ const Sinsta = (() => {
       following: u.following_count == null ? null : u.following_count,
       youFollow: !!fs.following,
       followsYou: !!fs.followed_by,
+      requested: !!fs.outgoing_request, // asked to follow a private account
       favourite: !!fs.is_feed_favorite,
       recent: edges.map((e) => e && e.node && e.node.media_dict).filter((m) => m && m.code)
         .slice(0, 3)
@@ -2612,6 +2643,6 @@ const Sinsta = (() => {
   return {
     api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
     mark, userIds, lookUpId, userCard, ago,
-    likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection,
+    likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection, follow,
   };
 })();

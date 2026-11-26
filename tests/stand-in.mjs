@@ -82,6 +82,10 @@ export const songLookups = []; // pks of the posts asked for their song
 // Saving: { doc, input } of each save, unsave, add-to-collection and
 // new-collection mutation, in order.
 export const saveCalls = [];
+// Following: { kind: 'follow' | 'unfollow', id } of each mutation, and
+// whom each account follows now, by user id, where that changed.
+export const followCalls = [];
+const FOLLOW_DOCS = { '30480713304862233': 'follow', '25174972798866458': 'unfollow' };
 const SAVE_DOCS = {
   '27365486596441074': 'save', '27371251859134880': 'unsave', '39663440886576281': 'add', '27305499509043563': 'new',
 };
@@ -90,6 +94,7 @@ export const storyViewers = {};
 function reset() {
   songLookups.length = 0;
   saveCalls.length = 0;
+  followCalls.length = 0;
   for (const k of Object.keys(storyViewers)) delete storyViewers[k];
   for (const k of Object.keys(accounts)) delete accounts[k];
   accounts['111'] = {
@@ -230,6 +235,12 @@ export async function freshContext(storage = {}) {
     if (path === '/api/graphql' || path === '/graphql/query') {
       const form = new URLSearchParams(req.postData() || '');
       const vars = JSON.parse(form.get('variables') || '{}');
+      const fkind = FOLLOW_DOCS[form.get('doc_id')];
+      if (fkind) {
+        followCalls.push({ kind: fkind, id: vars.target_user_id });
+        acc.follows = { ...acc.follows, [vars.target_user_id]: fkind === 'follow' };
+        return json({ data: { [`xdt_${fkind}`]: { friendship_status: { following: fkind === 'follow', outgoing_request: false } } } });
+      }
       const kind = SAVE_DOCS[form.get('doc_id')];
       if (kind) {
         saveCalls.push({ kind, input: vars.input });
@@ -259,7 +270,8 @@ export async function freshContext(storage = {}) {
         const theirs = all.filter((m) => m.user && m.user.pk === vars.userID);
         const user = theirs[0] && theirs[0].user;
         if (!user) return json({ data: null });
-        const following = !theirs.some((m) => m.user.friendship_status && m.user.friendship_status.following === false);
+        const following = acc.follows && vars.userID in acc.follows ? acc.follows[vars.userID]
+          : !theirs.some((m) => m.user.friendship_status && m.user.friendship_status.following === false);
         return json({
           data: {
             xig_user_by_igid_v2: {

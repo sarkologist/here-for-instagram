@@ -471,9 +471,92 @@ main a[href*="variant=home"] {
   align-items: center;
   justify-content: center;
   height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
   border-radius: 8px;
   background: rgb(var(--ig-secondary-button-background, 239, 239, 239));
+  color: inherit;
+  font: inherit;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.sinsta-card-follow:hover:not(:disabled) {
+  background: rgb(var(--ig-secondary-button-hover, 219, 219, 219));
+}
+
+.sinsta-card-follow.sinsta-card-primary {
+  background: rgb(0, 149, 246);
+  color: #fff;
+}
+
+.sinsta-card-follow.sinsta-card-primary:hover:not(:disabled) {
+  background: rgb(24, 119, 242);
+}
+
+.sinsta-card-follow:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* "Unfollow @name?", as Instagram asks. */
+.sinsta-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.sinsta-confirm-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgb(var(--ig-elevated-background, var(--ig-primary-background, 255, 255, 255)));
+  color: rgb(var(--ig-primary-text, 0, 0, 0));
+  font: 14px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.sinsta-confirm-pic {
+  width: 90px;
+  height: 90px;
+  margin: 32px 0 16px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.sinsta-confirm-text {
+  margin: 0 24px 24px;
+  text-align: center;
+}
+
+.sinsta-confirm-box button {
+  align-self: stretch;
+  margin: 0;
+  padding: 14px;
+  border: 0;
+  border-top: 1px solid rgb(var(--ig-separator, 219, 219, 219));
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sinsta-confirm-box .sinsta-confirm-yes {
+  color: rgb(237, 73, 86);
+  font-weight: 700;
 }
 
 .sinsta-card .sinsta-fav-note {

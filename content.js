@@ -1217,7 +1217,9 @@
   function cardData(user) {
     const hit = cards.get(user);
     if (hit && Date.now() - hit.at < CARD_TTL_MS) return hit.job;
-    const job = lookUpId(user).then((id) => (id ? userCard(id) : null)).catch(() => null);
+    const job = lookUpId(user)
+      .then((id) => (id ? userCard(id).then((c) => c && Object.assign(c, { id })) : null))
+      .catch(() => null);
     cards.set(user, { at: Date.now(), job });
     job.then((got) => { if (!got) cards.delete(user); });
     return job;
@@ -1285,13 +1287,28 @@
       kids.push(el('div', { className: 'sinsta-card-empty' }, 'No posts yet'));
     }
 
-    // Only accounts you follow can be favourites.
+    // Follow, or Following (which asks before unfollowing) with the star:
+    // only accounts you follow can be favourites.
+    const row = el('div', { className: 'sinsta-card-row' });
+    const btn = el('button', { type: 'button', className: 'sinsta-card-follow', disabled: !!c.busy });
     if (c.youFollow) {
-      kids.push(el('div', { className: 'sinsta-card-row' },
-        el('span', { className: 'sinsta-card-follow' }, 'Following'), favButton(c.username)));
+      btn.textContent = 'Following';
+      btn.addEventListener('click', () => confirmUnfollow(c));
+      row.append(btn, favButton(c.username));
+    } else if (c.requested) {
+      btn.textContent = 'Requested';
+      btn.addEventListener('click', () => confirmUnfollow(c));
+      row.append(btn);
+    } else {
+      btn.textContent = c.followsYou ? 'Follow back' : 'Follow';
+      btn.classList.add('sinsta-card-primary');
+      btn.addEventListener('click', () => setFollow(c, true));
+      row.append(btn);
     }
+    kids.push(row);
 
     const node = el('div', { className: 'sinsta-card', role: 'dialog' }, ...kids);
+    node.dataset.user = c.username;
     // Its links go through Instagram's router, closing the player if it's
     // open, as the extension's other names do.
     node.addEventListener('click', (e) => {
@@ -1306,6 +1323,87 @@
     });
     return node;
   }
+
+  // Redraw the card in place if it's showing this account.
+  function redrawCard(c) {
+    if (!card || card.dataset.user !== c.username) return;
+    const old = card;
+    card = buildCard(c);
+    card.style.cssText = old.style.cssText;
+    old.replaceWith(card);
+    if (card.showPopover) {
+      card.popover = 'manual';
+      card.showPopover();
+    }
+  }
+
+  async function setFollow(c, on) {
+    if (c.busy || !c.id) return;
+    c.busy = true;
+    redrawCard(c);
+    const now = await Sinsta.follow(c.id, on);
+    c.busy = false;
+    if (now) {
+      if (c.youFollow !== now.following && c.followers != null) c.followers += now.following ? 1 : -1;
+      c.youFollow = now.following;
+      c.requested = now.requested;
+    }
+    redrawCard(c);
+    if (!now) cardNote(c, on ? "Couldn't follow. Try again." : "Couldn't unfollow. Try again.");
+  }
+
+  function cardNote(c, text) {
+    if (!card || card.dataset.user !== c.username) return;
+    const row = card.querySelector('.sinsta-card-row');
+    if (row) favNote(row.firstChild, text);
+  }
+
+  // As Instagram's card does: "Unfollow @name?" over the page.
+  let confirmBox = null;
+  function confirmUnfollow(c) {
+    hideCard();
+    closeConfirm();
+    const yes = el('button', { type: 'button', className: 'sinsta-confirm-yes' }, c.requested ? 'Withdraw request' : 'Unfollow');
+    const no = el('button', { type: 'button', className: 'sinsta-confirm-no' }, 'Cancel');
+    const box = el('div', { className: 'sinsta-confirm-box', role: 'dialog' },
+      el('img', { className: 'sinsta-confirm-pic', src: c.pic, alt: '' }),
+      el('div', { className: 'sinsta-confirm-text' },
+        c.requested ? `Withdraw your request to follow @${c.username}?` : `Unfollow @${c.username}?`),
+      yes, no);
+    const node = el('div', { className: 'sinsta-confirm' }, box);
+    confirmBox = node;
+    document.body.append(node);
+    if (node.showPopover) {
+      node.popover = 'manual';
+      node.showPopover();
+    }
+    yes.focus();
+    yes.addEventListener('click', () => {
+      closeConfirm();
+      setFollow(c, false);
+    });
+    no.addEventListener('click', closeConfirm);
+    node.addEventListener('click', (e) => {
+      if (e.target === node) closeConfirm();
+    });
+  }
+  function closeConfirm() {
+    if (!confirmBox) return;
+    confirmBox.remove();
+    confirmBox = null;
+  }
+  // Escape closes it, before the player (which would close) hears the key.
+  window.addEventListener('keydown', (e) => {
+    if (!confirmBox) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeConfirm();
+    } else {
+      // Keys press its buttons, not the player's behind it.
+      e.stopImmediatePropagation();
+    }
+  }, true);
 
   document.addEventListener('mouseover', (e) => {
     const t = e.target;
