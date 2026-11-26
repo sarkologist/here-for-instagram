@@ -162,6 +162,29 @@ test('Grid: a hovered video tile loads its video at once, and plays it after a m
   await page.waitForFunction((s) => !document.querySelector(`${s} .sr-preview`), tile);
 });
 
+test('Grid: a tile previews the smallest video sharp enough for it; the player plays the full one', async () => {
+  await freshContext(GRID);
+  await logIn('111');
+  feeds111();
+  const clip = media('Csizes', 'alice', { ago: 50, video: true });
+  clip.video_versions = [1080, 240, 640].map((w) => ({ width: w, height: w * 16 / 9, url: `${ORIGIN}/test/vid/Csizes-${w}.mp4` }));
+  accounts['111'].feeds.following.unshift(clip);
+  const asked = [];
+  page.on('request', (r) => { if (r.url().includes('/test/vid/Csizes')) asked.push(r.url().split('/').pop()); });
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await settled(() => page.evaluate(() => document.querySelectorAll('.sf-tile').length));
+  // Three columns of a 1280px window: over 240px wide, under 640.
+  const tile = '.sf-tile[href="/reel/Csizes/"]';
+  await page.hover(tile);
+  await page.waitForSelector(`${tile} .sr-preview.sr-on`, { timeout: 3000 });
+  assert.deepEqual(asked, ['Csizes-640.mp4']);
+  await page.click(tile);
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-reel-player').length === 1);
+  await settled(() => asked.length);
+  assert.deepEqual(asked, ['Csizes-640.mp4', 'Csizes-1080.mp4']);
+  assert.equal(await page.evaluate((s) => !!document.querySelector(`${s} .sr-preview`), tile), false);
+});
+
 test('Grid: a tile counts as seen once scrolled past, or once the pointer rests on it', async () => {
   await freshContext(GRID);
   await logIn('111');

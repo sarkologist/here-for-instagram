@@ -248,14 +248,17 @@ const Sinsta = (() => {
   }
 
   // One photo or video of a post: its sizes of picture (largest first), its
-  // video if any, and its shape.
+  // video if any (and its sizes of video, smallest first), and its shape.
   function slideOf(o) {
     const thumbs = ((o.image_versions2 && o.image_versions2.candidates) || []).slice().sort((a, b) => b.width - a.width);
     const video = (o.video_versions || [])[0];
+    const videos = (o.video_versions || []).filter((v) => v.url).map((v) => ({ url: v.url, width: v.width || 0 }))
+      .sort((a, b) => a.width - b.width);
     const big = thumbs[0] || {};
     return {
       thumbs,
       video: video ? video.url : null,
+      videos,
       w: o.original_width || big.width || 1,
       h: o.original_height || big.height || 1,
     };

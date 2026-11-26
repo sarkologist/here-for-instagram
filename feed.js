@@ -25,7 +25,7 @@
   const OLD_KEY = 'sinsta-reels'; // before Home was drawn here: { grid, columns }
   const MIN_COLS = 1;
   const MAX_COLS = 8;
-  const PREVIEW_MS = 250; // hover this long before a cover starts playing
+  const PREVIEW_MS = 100; // hover this long before a cover starts playing
   const WHEEL_STEP = 40; // px of scrolling that moves the player one post
   const WHEEL_IDLE = 200; // ms without scroll events that ends a gesture
   const SETTLE_MS = 150; // ms without scrolling after which a carousel has come to rest
@@ -1076,13 +1076,21 @@
     previewTile = null;
   }
 
+  // A slide's smallest video still sharp on its tile, as it loads soonest.
+  function tileVideo(s) {
+    if (!s.video) return null;
+    const px = (content.clientWidth || window.innerWidth) / cols() * (window.devicePixelRatio || 1);
+    const fit = (s.videos || []).find((v) => v.width >= px);
+    return fit ? fit.url : s.video;
+  }
+
   // The tile under the pointer, playing its photo's video if it has one. The
   // video starts loading at once, hidden, so the dwell before it plays also
   // covers its download rather than adding to it.
   function startPreview(a, delay = PREVIEW_MS) {
     previewTile = a;
     const it = itemOf(a);
-    const src = it && it.slides[slideOf(a)].video;
+    const src = it && tileVideo(it.slides[slideOf(a)]);
     if (!src) return;
     const v = shadowVideo({ muted: true, loop: true, playsInline: true, preload: 'auto', src }, 'cover');
     const host = hostOf(v);
@@ -1933,7 +1941,9 @@
     const same = tileNode && slideOf(tileNode) === start;
     const host = same && previewTile === tileNode && tileNode.querySelector('.sr-preview');
     let preview = host && previews.get(host);
-    if (host) host.remove();
+    // A smaller video than the player's is left behind, for stopPreview.
+    if (preview && preview.getAttribute('src') !== it.slides[start].video) preview = null;
+    else if (host) host.remove();
     stopPreview();
     if (!preview && same && listVideos.has(tileNode)) {
       preview = listVideos.get(tileNode);
