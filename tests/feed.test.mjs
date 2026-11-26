@@ -177,6 +177,44 @@ test('List: name, buttons and caption appear only while hovered', async () => {
   assert.match(await page.textContent('.sf-post .sf-cap'), /first line\nsecond line #space/);
 });
 
+test('A name the extension draws gets a profile card on hover, over the player too', async () => {
+  await open('following', LIST);
+  await posts();
+  await page.hover('.sf-post');
+  await page.hover('.sf-post .sf-user');
+  await page.waitForSelector('.sinsta-card');
+  const card = () => page.evaluate(() => {
+    const c = document.querySelector('.sinsta-card');
+    return c && {
+      user: c.querySelector('.sinsta-card-user').textContent,
+      stats: [...c.querySelectorAll('.sinsta-card-stat')].map((s) => s.textContent),
+      posts: [...c.querySelectorAll('.sinsta-card-posts a')].map((a) => a.getAttribute('href')),
+      star: !!c.querySelector('.sinsta-fav'),
+      onTop: c.matches(':popover-open'),
+    };
+  });
+  assert.deepEqual(await card(), {
+    user: 'alice', stats: ['3posts', '65.6Kfollowers', '418following'], posts: ['/p/Calice1/', '/p/Calice2/', '/p/Halice/'], star: true, onTop: true,
+  });
+  // Onto the card and it stays; off both and it goes.
+  await page.hover('.sinsta-card-stats');
+  await page.waitForTimeout(400);
+  assert.ok(await card());
+  await page.mouse.move(5, 890);
+  await page.waitForSelector('.sinsta-card', { state: 'detached' });
+
+  // In the player, the author's name, above the player.
+  await page.click('.sf-post .sf-media');
+  await page.waitForSelector('#sinsta-reel-player .sr-cuser');
+  await page.hover('#sinsta-reel-player .sr-cuser');
+  await page.waitForSelector('.sinsta-card');
+  const top = await page.evaluate(() => {
+    const r = document.querySelector('.sinsta-card').getBoundingClientRect();
+    return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2).closest('.sinsta-card') !== null;
+  });
+  assert.ok(top);
+});
+
 test('Grid: tiles in columns; clicking one opens the player with the caption beside it', async () => {
   await open('following', GRID);
   const tiles = await settled(() => page.evaluate(() => document.querySelectorAll('#sinsta-surface .sf-col .sf-tile').length));

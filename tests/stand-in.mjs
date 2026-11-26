@@ -225,6 +225,29 @@ export async function freshContext(storage = {}) {
         const reels = vars.reel_ids_arr.map((id) => acc.tray.find((r) => r.id === id)).filter(Boolean);
         return json({ data: { xdt_api__v1__feed__reels_media: { reels_media: reels } } });
       }
+      if (vars.userID) {
+        // A name's hover card: its posts are those in the account's feeds.
+        const all = Object.values(acc.feeds).flat().filter(Boolean)
+          .map((e) => e.media || (e.explore_story && e.explore_story.media) || e);
+        const theirs = all.filter((m) => m.user && m.user.pk === vars.userID);
+        const user = theirs[0] && theirs[0].user;
+        if (!user) return json({ data: null });
+        const following = !theirs.some((m) => m.user.friendship_status && m.user.friendship_status.following === false);
+        return json({
+          data: {
+            xig_user_by_igid_v2: {
+              user_dict: {
+                pk: user.pk, username: user.username, full_name: user.username.toUpperCase(), profile_pic_url: user.profile_pic_url,
+                is_verified: false, is_private: false, media_count: theirs.length, follower_count: 65600, following_count: 418,
+                friendship_status: { following, followed_by: false, is_feed_favorite: false },
+              },
+              polaris_ordered_timeline_connection: {
+                edges: theirs.slice(0, 3).map((m) => ({ node: { media_dict: { code: m.code, image_versions2: m.image_versions2 } } })),
+              },
+            },
+          },
+        });
+      }
       if (vars.username && vars.data) {
         // A profile's posts (`posts[username]`), in pages of 12.
         const posts = acc.posts && acc.posts[vars.username];
