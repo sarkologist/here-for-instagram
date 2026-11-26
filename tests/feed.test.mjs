@@ -275,6 +275,17 @@ test('A name the extension draws gets a profile card on hover, over the player t
   assert.ok(top);
 });
 
+test('Profile card: nine posts from the profile\'s grid, pinned first, when it can be read', async () => {
+  await open('following', LIST);
+  accounts['111'].posts = { alice: Array.from({ length: 12 }, (_, i) => media(`Pa${i}`, 'alice', { ago: 1000 + i })) };
+  await posts();
+  await page.hover('.sf-post');
+  await page.hover('.sf-post .sf-user');
+  await page.waitForSelector('.sinsta-card');
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.sinsta-card-posts a')].map((a) => a.getAttribute('href'))),
+    Array.from({ length: 9 }, (_, i) => `/p/Pa${i}/`));
+});
+
 test('Profile card: Following asks before unfollowing; Follow follows', async () => {
   await open('following', LIST);
   await posts();
