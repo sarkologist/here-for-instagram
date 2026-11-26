@@ -262,6 +262,24 @@ test('Save: the button saves a post and opens your collections; one of them or a
   assert.ok(await page.$('#sinsta-reel-player'));
 });
 
+test('Grid: a saved post\'s tile shows a bookmark beside its likes; S on a tile saves it and adds one', async () => {
+  await freshContext(GRID);
+  await logIn('111');
+  feeds111();
+  accounts['111'].feeds.following[0] = media('Calice1', 'alice', { ago: 100, saved: true });
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await settled(() => page.evaluate(() => document.querySelectorAll('#sinsta-surface .sf-tile').length));
+  const marks = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#sinsta-surface .sf-tile')]
+    .map((t) => [t.getAttribute('href'), !t.querySelector('.sf-tsaved').hidden])));
+  assert.deepEqual(await marks(), { '/p/Calice1/': true, '/p/Ccarol1/': false, '/reel/Calice2/': false });
+  await page.hover('.sf-tile[href="/p/Ccarol1/"]');
+  await page.keyboard.press('s');
+  await page.waitForSelector('.sf-tile[href="/p/Ccarol1/"] .sf-tsaved:not([hidden])');
+  assert.equal(saveCalls[0].kind, 'save');
+  // Shown with the rest of the overlay, on hover.
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sf-tile[href="/p/Ccarol1/"] .sf-tsaved')).display), 'flex');
+});
+
 test('Grid: tiles in columns; clicking one opens the player with the caption beside it', async () => {
   await open('following', GRID);
   const tiles = await settled(() => page.evaluate(() => document.querySelectorAll('#sinsta-surface .sf-col .sf-tile').length));
