@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls } from './stand-in.mjs';
+import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls } from './stand-in.mjs';
 
 const LIST = { 'sinsta-surface': { layout: 'list' } };
 const GRID = { 'sinsta-surface': { layout: 'grid', cols: { following: 3 } } };
@@ -213,6 +213,48 @@ test('A name the extension draws gets a profile card on hover, over the player t
     return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2).closest('.sinsta-card') !== null;
   });
   assert.ok(top);
+});
+
+test('Profile card: Following asks before unfollowing; Follow follows', async () => {
+  await open('following', LIST);
+  await posts();
+  const hoverAlice = async () => {
+    await page.mouse.move(5, 890);
+    await page.waitForSelector('.sinsta-card', { state: 'detached' });
+    await page.hover('.sf-post');
+    await page.hover('.sf-post .sf-user');
+    await page.waitForSelector('.sinsta-card .sinsta-card-follow:not(:disabled)');
+  };
+  const row = () => page.evaluate(() => ({
+    button: document.querySelector('.sinsta-card .sinsta-card-follow').textContent,
+    star: !!document.querySelector('.sinsta-card .sinsta-fav'),
+    followers: document.querySelectorAll('.sinsta-card-stat b')[1].textContent,
+  }));
+  await page.hover('.sf-post');
+  await page.hover('.sf-post .sf-user');
+  await page.waitForSelector('.sinsta-card .sinsta-card-follow');
+  assert.deepEqual(await row(), { button: 'Following', star: true, followers: '65.6K' });
+
+  // Escape, or Cancel, leaves things as they are.
+  await page.click('.sinsta-card .sinsta-card-follow');
+  await page.waitForSelector('.sinsta-confirm');
+  assert.equal(await page.textContent('.sinsta-confirm-text'), 'Unfollow @alice?');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.sinsta-confirm', { state: 'detached' });
+  assert.deepEqual(followCalls, []);
+
+  await hoverAlice();
+  await page.click('.sinsta-card .sinsta-card-follow');
+  await page.click('.sinsta-confirm-yes');
+  for (let i = 0; i < 100 && !followCalls.length; i++) await page.waitForTimeout(50);
+  assert.deepEqual(followCalls, [{ kind: 'unfollow', id: 'u-alice' }]);
+  await hoverAlice();
+  assert.deepEqual(await row(), { button: 'Follow', star: false, followers: '65.6K' });
+
+  await page.click('.sinsta-card .sinsta-card-follow');
+  await page.waitForFunction(() => document.querySelector('.sinsta-card .sinsta-card-follow')?.textContent === 'Following');
+  assert.deepEqual(followCalls.at(-1), { kind: 'follow', id: 'u-alice' });
+  assert.ok(await page.$('.sinsta-card .sinsta-fav'));
 });
 
 test('Save: the button saves a post and opens your collections; one of them or a new one takes it too', async () => {
