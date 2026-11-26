@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups } from './stand-in.mjs';
+import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls } from './stand-in.mjs';
 
 const LIST = { 'sinsta-surface': { layout: 'list' } };
 const GRID = { 'sinsta-surface': { layout: 'grid', cols: { following: 3 } } };
@@ -213,6 +213,53 @@ test('A name the extension draws gets a profile card on hover, over the player t
     return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2).closest('.sinsta-card') !== null;
   });
   assert.ok(top);
+});
+
+test('Save: the button saves a post and opens your collections; one of them or a new one takes it too', async () => {
+  await open('following', LIST);
+  await posts();
+  const first = await page.getAttribute('.sf-post', 'data-pk');
+  await page.hover('.sf-post');
+  await page.click('.sf-post .sf-save');
+  await page.waitForSelector('.sf-saveto .sf-saveto-row');
+  assert.ok(await page.evaluate(() => document.querySelector('.sf-post .sf-save').hasAttribute('data-on')));
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.sf-saveto-name')].map((n) => n.textContent)), ['trips', 'recipes']);
+  await page.click('.sf-saveto-row:has-text("recipes")');
+  await page.waitForSelector('.sf-toast:has-text("Saved to \\"recipes\\".")');
+  assert.equal(await page.$('.sf-saveto'), null);
+  assert.deepEqual(saveCalls, [
+    { kind: 'save', input: { container_module: 'feed_timeline', media_id: first, actor_id: '17841400000000001' } },
+    { kind: 'add', input: { collection_id: 'c2', media_id: first, actor_id: '17841400000000001' } },
+  ]);
+
+  // In the player: S unsaves it, and saves it again; + makes a collection.
+  await page.click('.sf-post .sf-media');
+  await page.waitForSelector('#sinsta-reel-player .sr-act[data-on][title^="Remove from saved"]');
+  await page.keyboard.press('s');
+  await page.waitForSelector('.sf-toast:has-text("Removed from saved.")');
+  assert.equal(saveCalls[2].kind, 'unsave');
+  await page.keyboard.press('s');
+  await page.waitForSelector('.sf-saveto .sf-saveto-row');
+  await page.click('.sf-saveto-add');
+  await page.waitForSelector('.sf-newcol .sf-newcol-name');
+  // Typing the name doesn't drive the player.
+  await page.keyboard.type('lakes');
+  assert.ok(await page.$('#sinsta-reel-player'));
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.sf-toast:has-text("Saved to \\"lakes\\".")');
+  assert.equal(await page.$('.sf-newcol'), null);
+  assert.deepEqual(saveCalls.slice(3), [
+    { kind: 'save', input: { container_module: 'feed_timeline', media_id: first, actor_id: '17841400000000001' } },
+    { kind: 'new', input: { added_media_ids: [first], name: 'lakes', actor_id: '17841400000000001' } },
+  ]);
+  // Escape closes the collections, not the player.
+  await page.keyboard.press('s');
+  await page.waitForSelector('.sf-toast:has-text("Removed from saved.")');
+  await page.keyboard.press('s');
+  await page.waitForSelector('.sf-saveto');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.sf-saveto', { state: 'detached' });
+  assert.ok(await page.$('#sinsta-reel-player'));
 });
 
 test('Grid: tiles in columns; clicking one opens the player with the caption beside it', async () => {

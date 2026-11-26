@@ -43,7 +43,7 @@ export const videoReel = (id, username) => {
 // post's own page (`posts`, by pk) has: 1s to 3s of a 4-second file.
 let pks = 1000;
 export const songs = {};
-export const media = (code, username, { following = true, ago = 3600, slides = 1, video = false, caption = '', song = null } = {}) => {
+export const media = (code, username, { following = true, ago = 3600, slides = 1, video = false, caption = '', song = null, saved = false } = {}) => {
   const pk = String(pks++);
   if (song) {
     songs[pk] = {
@@ -64,7 +64,7 @@ export const media = (code, username, { following = true, ago = 3600, slides = 1
       pk: `u-${username}`, username, profile_pic_url: `${ORIGIN}/test/pic/${username}.jpg`,
       ...(following === null ? {} : { friendship_status: { following } }),
     },
-    like_count: 12, comment_count: 3, caption: caption ? { text: caption } : null,
+    like_count: 12, comment_count: 3, caption: caption ? { text: caption } : null, has_viewer_saved: saved,
     ...pic(0),
     ...(slides > 1 ? { carousel_media: Array.from({ length: slides }, (_, i) => pic(i)) } : {}),
   };
@@ -79,10 +79,17 @@ export const suggested = (m) => ({ explore_story: { media: m } });
 // { ad: media }; null fails).
 export const accounts = {};
 export const songLookups = []; // pks of the posts asked for their song
+// Saving: { doc, input } of each save, unsave, add-to-collection and
+// new-collection mutation, in order.
+export const saveCalls = [];
+const SAVE_DOCS = {
+  '27365486596441074': 'save', '27371251859134880': 'unsave', '39663440886576281': 'add', '27305499509043563': 'new',
+};
 // Who has seen each of your own stories (by pk): { username, liked, reply }.
 export const storyViewers = {};
 function reset() {
   songLookups.length = 0;
+  saveCalls.length = 0;
   for (const k of Object.keys(storyViewers)) delete storyViewers[k];
   for (const k of Object.keys(accounts)) delete accounts[k];
   accounts['111'] = {
@@ -90,6 +97,7 @@ function reset() {
     favourites: ['3'],
     feeds: { following: null, favorites: null, home: null },
     explore: null,
+    collections: [{ id: 'c1', name: 'trips' }, { id: 'c2', name: 'recipes' }],
   };
   accounts['222'] = {
     tray: [reel('4', 'dave'), reel('5', 'fav_of_b', { ago: 1200 })],
@@ -99,7 +107,7 @@ function reset() {
 }
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8">
-<script>window.__tokens = ['"DTSGInitialData",[],{"token":"t-dtsg"}', '"LSD",[],{"token":"t-lsd"}', '"device_id":"t-device"'];</script>
+<script>window.__tokens = ['"DTSGInitialData",[],{"token":"t-dtsg"}', '"LSD",[],{"token":"t-lsd"}', '"device_id":"t-device"', '"RelayAPIConfigDefaults",[],{"accessToken":"","actorID":"17841400000000001"'];</script>
 <link rel="stylesheet" href="/test/ext/content.css">
 <script src="/test/ext/stories.js"></script><script src="/test/ext/content.js"></script><script src="/test/ext/feed.js"></script>
 </head><body><nav><div>${['Home', 'Reels', 'Explore', 'Messages', 'Notifications', 'Create']
@@ -220,7 +228,26 @@ export async function freshContext(storage = {}) {
       return json({ sectional_items: sections, more_available: more, next_max_id: more ? String(n + 1) : null, rank_token: 'r' });
     }
     if (path === '/api/graphql' || path === '/graphql/query') {
-      const vars = JSON.parse(new URLSearchParams(req.postData() || '').get('variables') || '{}');
+      const form = new URLSearchParams(req.postData() || '');
+      const vars = JSON.parse(form.get('variables') || '{}');
+      const kind = SAVE_DOCS[form.get('doc_id')];
+      if (kind) {
+        saveCalls.push({ kind, input: vars.input });
+        return json({ data: { [`xdt_${kind}`]: kind === 'new' ? { collection_id: 'c-new' } : { status: 'ok' } } });
+      }
+      if (vars.first === 20 && acc.collections) {
+        // Your collections, all on one page.
+        return json({
+          data: {
+            viewer: {
+              media_collections: {
+                edges: acc.collections.map((c) => ({ node: { collection_id: c.id, collection_name: c.name, cover_media: null } })),
+                page_info: { has_next_page: false, end_cursor: null },
+              },
+            },
+          },
+        });
+      }
       if (vars.reel_ids_arr) {
         const reels = vars.reel_ids_arr.map((id) => acc.tray.find((r) => r.id === id)).filter(Boolean);
         return json({ data: { xdt_api__v1__feed__reels_media: { reels_media: reels } } });

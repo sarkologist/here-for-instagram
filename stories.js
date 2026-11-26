@@ -25,6 +25,12 @@ const Sinsta = (() => {
   const DOC_STORY_UNLIKE = '26510485515280697'; // usePolarisStoriesV4LikeMutationUnlikeMutation
   const DOC_STORY_REPLY = '29327482173525974'; // IGDirectStoryShareReplyMutation
   const DOC_USER_CARD = '28949219061332276'; // PolarisUserHoverCardContentV2Query
+  const DOC_SAVE = '27365486596441074'; // usePolarisSaveMediaSaveMutation
+  const DOC_UNSAVE = '27371251859134880'; // usePolarisSaveMediaUnsaveMutation
+  const DOC_COLLECTIONS = '29115677831365401'; // PolarisSavedCollectionPickerQuery
+  const DOC_COLLECTIONS_MORE = '28466833206340367'; // PolarisSavedCollectionPickerPaginationQuery
+  const DOC_COLLECTION_ADD = '39663440886576281'; // usePolarisMediaSaveToCollectionAddMediaMutation
+  const DOC_COLLECTION_NEW = '27305499509043563'; // PolarisAPICreateCollectionMutation
   // Feature flags the feed query declares; values as Instagram's web app sends them.
   const FEED_FLAGS = {
     __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
@@ -122,7 +128,16 @@ const Sinsta = (() => {
       }
     }
     if (!dtsg || !lsd) return null;
-    const found = { dtsg, lsd, device };
+    // Your account's id as Instagram's own mutations name their actor.
+    let actor = null;
+    for (const s of document.scripts) {
+      const m = !s.src && s.textContent.match(/"RelayAPIConfigDefaults",\[\],\{[^}]*?"actorID":"(\d+)"/);
+      if (m) {
+        actor = m[1];
+        break;
+      }
+    }
+    const found = { dtsg, lsd, device, actor };
     if (device) cachedTokens = found; // else look for the device id again next time
     return found;
   }
@@ -305,6 +320,7 @@ const Sinsta = (() => {
       caption: (m.caption && m.caption.text) || '',
       likes: m.like_and_view_counts_disabled || m.like_count == null ? null : m.like_count,
       liked: !!m.has_liked,
+      saved: !!m.has_viewer_saved,
       comments: m.comment_count || 0,
       commentsOff: !!(m.comments_disabled || m.commenting_disabled_for_viewer),
       token: m.organic_tracking_token || null,
@@ -448,6 +464,60 @@ const Sinsta = (() => {
     const input = { media_id: pk, tracking_token: token || undefined };
     if (on) input.container_module = module;
     return !!mutated(await gql(on ? DOC_LIKE : DOC_UNLIKE, { input }, true));
+  }
+
+  // ---- Saved posts --------------------------------------------------------
+
+  // A mutation that names its actor, as Instagram's save mutations do.
+  async function acting(docId, input) {
+    const send = () => {
+      const t = tokens();
+      return gql(docId, { input: { ...input, actor_id: (t && t.actor) || undefined } }, true);
+    };
+    let got = mutated(await send());
+    if (!got) {
+      cachedTokens = null; // tokens may have rotated: re-read them once
+      got = mutated(await send());
+    }
+    return got;
+  }
+
+  // Save a post or reel (to "All posts"), or unsave it. Resolves to
+  // whether it worked.
+  async function savePost(pk, on) {
+    return !!(on
+      ? await acting(DOC_SAVE, { container_module: 'feed_timeline', media_id: pk })
+      : await acting(DOC_UNSAVE, { media_id: pk }));
+  }
+
+  // A page of your collections, as Instagram's "Collections" picker lists
+  // them, as { items: [{ id, name, cover }], after }, or null on failure.
+  async function collections(after) {
+    const res = await gql(after ? DOC_COLLECTIONS_MORE : DOC_COLLECTIONS, after ? { after, first: 20 } : { first: 20 }, true);
+    const conn = res && res.data && res.data.viewer && res.data.viewer.media_collections;
+    if (!conn) return null;
+    const cover = (m) => {
+      const cands = (m && m.image_versions2 && m.image_versions2.candidates) || [];
+      return (cands.find((c) => /_s150x150_/.test(c.url)) || cands[cands.length - 1] || {}).url || '';
+    };
+    const items = (conn.edges || []).map((e) => e && e.node).filter((n) => n && (n.collection_id || n.id))
+      .map((n) => ({ id: String(n.collection_id || n.id), name: n.collection_name || '', cover: cover(n.cover_media) }));
+    const info = conn.page_info || {};
+    return { items, after: info.has_next_page ? info.end_cursor : null };
+  }
+
+  // Add a saved post to one of your collections. Resolves to whether it worked.
+  async function addToCollection(collectionId, pk) {
+    return !!(await acting(DOC_COLLECTION_ADD, { collection_id: collectionId, media_id: pk }));
+  }
+
+  // Make a collection holding the post. Resolves to its id ('' when
+  // Instagram doesn't say), or null on failure.
+  async function newCollection(name, pk) {
+    const got = await acting(DOC_COLLECTION_NEW, { added_media_ids: [pk], name });
+    if (!got) return null;
+    const id = got.collection_id || got.id || (got.collection && (got.collection.collection_id || got.collection.id));
+    return id ? String(id) : '';
   }
 
   async function likeComment(pk, on) {
@@ -2539,6 +2609,6 @@ const Sinsta = (() => {
   return {
     api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
     mark, userIds, lookUpId, userCard, ago,
-    likeMedia, likeComment, comments, replies, addComment,
+    likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection,
   };
 })();

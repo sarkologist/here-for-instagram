@@ -2510,3 +2510,232 @@ html[data-sinsta-explore] {
 [data-sinsta-saved] a *::after {
   border-color: transparent !important;
 }
+
+/* Save: the button, the collections beside it, a new collection's box and
+   the note saying where a post went. */
+.sf-acts .sf-save {
+  margin-left: auto !important;
+}
+
+.sf-act.sf-save[data-on] {
+  color: #fff !important;
+}
+
+.sf-saveto,
+.sf-newcol-box,
+.sf-toast {
+  box-sizing: border-box;
+  color: rgb(var(--ig-primary-text, 0, 0, 0));
+  font: 14px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.sf-saveto {
+  position: fixed;
+  inset: auto;
+  z-index: 2147483000;
+  width: 240px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  background: rgb(var(--ig-elevated-background, var(--ig-primary-background, 255, 255, 255)));
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.sf-saveto-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 10px 16px;
+  border-bottom: 1px solid rgb(var(--ig-separator, 219, 219, 219));
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sf-saveto button {
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sf-saveto-add {
+  display: flex;
+  padding: 4px;
+}
+
+.sf-saveto-add svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.sf-saveto-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 0;
+  scrollbar-width: thin;
+}
+
+.sf-saveto-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 16px !important;
+  text-align: left;
+}
+
+.sf-saveto-row:hover {
+  background: rgb(var(--ig-secondary-background, 239, 239, 239)) !important;
+}
+
+.sf-saveto-row img,
+.sf-saveto-blank {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgb(var(--ig-secondary-background, 239, 239, 239));
+}
+
+.sf-saveto-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sf-saveto-note {
+  padding: 14px 16px;
+  color: rgb(var(--ig-secondary-text, 115, 115, 115));
+}
+
+.sf-newcol {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.sf-newcol-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgb(var(--ig-elevated-background, var(--ig-primary-background, 255, 255, 255)));
+}
+
+.sf-newcol-head {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  align-self: stretch;
+  padding: 6px;
+  border-bottom: 1px solid rgb(var(--ig-separator, 219, 219, 219));
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.sf-newcol button {
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sf-newcol-close {
+  display: flex;
+  padding: 6px;
+}
+
+.sf-newcol-close svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.sf-newcol-pic {
+  width: 64px;
+  height: 64px;
+  margin: 18px 0 14px;
+  object-fit: cover;
+}
+
+.sf-newcol-name {
+  box-sizing: border-box;
+  width: calc(100% - 32px);
+  margin: 0 16px;
+  padding: 12px;
+  border: 1px solid rgb(var(--ig-separator, 219, 219, 219));
+  border-radius: 8px;
+  background: rgb(var(--ig-secondary-background, 250, 250, 250));
+  color: inherit;
+  font: inherit;
+}
+
+.sf-newcol-error {
+  margin: 8px 16px 0;
+  color: rgb(237, 73, 86);
+  font-size: 13px;
+}
+
+.sf-newcol-save {
+  align-self: stretch;
+  margin-top: 16px !important;
+  padding: 14px !important;
+  border-top: 1px solid rgb(var(--ig-separator, 219, 219, 219)) !important;
+  color: rgb(0, 149, 246) !important;
+  font-weight: 600 !important;
+}
+
+.sf-newcol-save:disabled {
+  opacity: 0.4;
+  cursor: default !important;
+}
+
+.sf-toast {
+  position: fixed;
+  inset: auto 0 24px;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  margin: 0 auto;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(38, 38, 38);
+  color: #fff;
+}
+
+.sf-toast a {
+  color: rgb(0, 149, 246);
+  font-weight: 600;
+  text-decoration: none;
+}

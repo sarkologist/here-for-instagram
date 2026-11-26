@@ -1292,8 +1292,18 @@
     }
 
     const node = el('div', { className: 'sinsta-card', role: 'dialog' }, ...kids);
-    // A click on anything in it leaves the page for a profile or post.
-    node.addEventListener('click', (e) => { if (e.target.closest('a')) hideCard(); });
+    // Its links go through Instagram's router, closing the player if it's
+    // open, as the extension's other names do.
+    node.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href]');
+      if (!a) return;
+      hideCard();
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      const href = a.getAttribute('href');
+      if (Sinsta.surface && Sinsta.surface.leave) Sinsta.surface.leave(href);
+      else go(href);
+    });
     return node;
   }
 
