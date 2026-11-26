@@ -1208,6 +1208,8 @@ html[data-sinsta-explore] {
 
 #sinsta-surface.sf-inline {
   position: static;
+  margin-left: var(--sr-shift, 0);
+  width: var(--sr-width, auto);
   overflow: visible;
   background: none;
 }

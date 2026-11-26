@@ -1898,9 +1898,15 @@
   // the surface while the pointer is on it, so its width then isn't the room
   // it takes: keep the last measurement (or, before the first, take the
   // width it has narrow, twice the centre of its icons, which stay put), and
-  // measure again once the pointer has left and it has narrowed.
+  // measure again once the pointer has left and it has narrowed. Found
+  // wider than its icons need with the pointer off it, it may still be
+  // narrowing (or, before any measurement saw the pointer on it, never have
+  // been watched): that's taken only if it stays so.
   let measured = false;
   let leaveWatched = null;
+  let wideAt = 0; // when it was first found wide with the pointer off it
+  let wideLast = 0; // and last
+  let wideTimer = 0;
   function measure() {
     if (Date.now() - measuredAt < 1000) return;
     const navA = navLink();
@@ -1914,7 +1920,10 @@
         layer.addEventListener('mouseleave', () => {
           leaveWatched = null;
           measuredAt = Date.now() - 700; // and nothing measures before then
-          setTimeout(measure, 320);
+          setTimeout(() => {
+            measure();
+            schedule(); // (a profile's grid follows the measurement)
+          }, 320);
         }, { once: true });
       }
       const svg = !measured && navA.querySelector('svg');
@@ -1925,7 +1934,6 @@
       return;
     }
     measuredAt = Date.now();
-    measured = true;
     let left = 0;
     let bottom = 0;
     for (let e = navA; e && e !== document.body; e = e.parentElement) {
@@ -1934,6 +1942,23 @@
       else if (r.height && r.top > window.innerHeight / 2) bottom = Math.max(bottom, window.innerHeight - r.top);
       if (getComputedStyle(e).position === 'fixed') break;
     }
+    const svg = navA.querySelector('svg');
+    const narrow = svg ? svg.getBoundingClientRect().left + svg.getBoundingClientRect().right : 0;
+    if (narrow && left > narrow + 8) {
+      // (Sightings more than a moment apart don't add up.)
+      const now = Date.now();
+      if (now - wideLast > 600) wideAt = now;
+      wideLast = now;
+      if (now - wideAt < 400) {
+        // Keep the last measurement, and look again once it would have
+        // narrowed.
+        measuredAt = 0;
+        clearTimeout(wideTimer);
+        wideTimer = setTimeout(schedule, 450);
+        return;
+      }
+    } else wideLast = 0;
+    measured = true;
     for (const n of [root, float]) {
       n.style.setProperty('--sr-left', `${Math.round(left)}px`);
       n.style.setProperty('--sr-bottom', `${Math.round(bottom)}px`);
@@ -2012,15 +2037,17 @@
     const left = parseFloat(measured);
     const shift = `${Math.round(left - root.parentElement.getBoundingClientRect().left)}px`;
     const width = `${Math.round(document.documentElement.clientWidth - left)}px`;
-    if (root.style.marginLeft !== shift) root.style.marginLeft = shift;
-    if (root.style.width !== width) root.style.width = width;
+    // (Only .sf-inline uses these, so the surface can't keep them when
+    // Instagram takes the box away with the profile's page.)
+    if (root.style.getPropertyValue('--sr-shift') !== shift) root.style.setProperty('--sr-shift', shift);
+    if (root.style.getPropertyValue('--sr-width') !== width) root.style.setProperty('--sr-width', width);
   }
 
   function unplaceInline() {
     if (replaced) replaced.removeAttribute('data-sinsta-replaced');
     replaced = null;
-    root.style.marginLeft = '';
-    root.style.width = '';
+    root.style.removeProperty('--sr-shift');
+    root.style.removeProperty('--sr-width');
   }
 
   // On Explore the surface leaves Instagram's search box in sight above it.
@@ -2087,7 +2114,10 @@
         syncSearch(view);
       }
       if (inl) placeInline(view);
-      else surfaceHost().append(root);
+      else {
+        unplaceInline();
+        surfaceHost().append(root);
+      }
       active = true;
       measuredAt = 0;
       render(true);
