@@ -16,6 +16,6 @@ Paste the section below into "Notes to reviewer" when uploading a version.
 
 **Testing.** This needs a signed-in Instagram account, ideally one that follows a few accounts. To try it:
 1. Home shows the switcher (Algo / Following / Favourites).
-2. Hide seen is on by default in Following and Favourites.
+2. Hide seen is on by default.
 3. Switch between List and Grid in the tab bar, and click a post to open the player. Reels, Explore (Search) and a profile's Posts tab work the same way.
 4. Click a story in Following to open the extension's viewer.
