@@ -566,6 +566,148 @@ const Sinsta = (() => {
     }
   }
 
+  // ---- History -------------------------------------------------------------
+
+  // The player and the story viewer give each post and story its own
+  // history entry, at Instagram's own address for it (/p/<code>/,
+  // /stories/<name>/<pk>/), so Back and Forward go through them as through
+  // pages. Instagram's router is never told: the entries are pushed without
+  // a popstate, and the popstates that land on them, or come back from them
+  // to where they were opened (the base), stop here, before Instagram's own
+  // listener (this one is registered at document start). To Instagram, and
+  // to here(), the page stays on the base.
+  const nav = (() => {
+    const SESSION = Math.random().toString(36).slice(2);
+    const owners = {}; // 'player', 'story': { restore(data), leave() }
+    const bases = new Map(); // base id -> Instagram's state on the base entry
+    let bids = 0;
+    let entry = null; // { s, href, routed }: the current entry, while it's ours
+    let known = location.href; // where Instagram's router last was
+    let relaying = false;
+    const page = () => window.wrappedJSObject || window;
+    const clone = (o) => (typeof cloneInto === 'function' ? cloneInto(o, window) : o);
+
+    function ours(state) {
+      try {
+        const s = state && typeof state.sinsta === 'string' && JSON.parse(state.sinsta);
+        return s && s.session === SESSION && owners[s.owner] ? s : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function write(s, url, push) {
+      page().history[push ? 'pushState' : 'replaceState'](clone({ sinsta: JSON.stringify(s) }), '', url);
+      entry = { s, href: location.href };
+    }
+
+    // What `owner` shows is now at `url`, described by `data` (for restore).
+    // A new entry, unless the current one is already there (as after Back);
+    // `push` makes one even at the same address.
+    function at(owner, url, data, push = false) {
+      try {
+        const href = new URL(url, location.href).href;
+        const cur = entry;
+        if (cur && cur.s.owner === owner) {
+          const same = !push && (cur.href === href || cur.routed);
+          write({ ...cur.s, depth: cur.s.depth + (same ? 0 : 1), data }, url, !same);
+          return;
+        }
+        const base = here().href;
+        const bid = cur ? cur.s.bid : ++bids;
+        if (!cur) bases.set(bid, page().history.state);
+        write({ session: SESSION, owner, base, bid, depth: cur ? cur.s.depth + 1 : 1, data }, url, true);
+      } catch (e) {
+        console.warn('Here for Instagram: history', e);
+      }
+    }
+
+    // `owner` has closed. `step`: closed by the person, which is a step of
+    // its own, back on the base's address, so Back from there reopens what
+    // it closed on. Otherwise it closed for a page Instagram goes on to,
+    // from which Back comes back.
+    function done(owner, step) {
+      const cur = entry;
+      if (!cur || cur.s.owner !== owner) return;
+      entry = null;
+      if (!step) return;
+      try {
+        const st = bases.has(cur.s.bid) ? bases.get(cur.s.bid) : null;
+        page().history.pushState(st, '', cur.s.base);
+      } catch (e) {
+        console.warn('Here for Instagram: history', e);
+      }
+      known = location.href;
+    }
+
+    // Instagram is on another page (Back from it landed on one of ours): it
+    // goes back to the base as from that page, and what was showing opens on
+    // it again.
+    function route(s) {
+      const h = page().history;
+      h.replaceState(bases.has(s.bid) ? bases.get(s.bid) : null, '', s.base);
+      entry = { s, href: location.href, routed: true };
+      let init;
+      try {
+        init = clone({});
+        init.state = h.state;
+      } catch (_) {
+        init = clone({ state: {} });
+      }
+      relaying = true;
+      try {
+        page().dispatchEvent(new (page().PopStateEvent)('popstate', init));
+      } finally {
+        relaying = false;
+      }
+      known = location.href;
+    }
+
+    window.addEventListener('popstate', (e) => {
+      if (relaying) return;
+      const s = ours(e.state);
+      const was = entry;
+      if (s) {
+        e.stopImmediatePropagation();
+        if (was && was.s.owner !== s.owner) owners[was.s.owner].leave();
+        entry = { s, href: location.href };
+        if (!was && known !== s.base) route(s);
+        owners[s.owner].restore(s.data);
+        return;
+      }
+      entry = null;
+      // Back (or, after closing, Forward) to the base: Instagram is there already.
+      const home = was && location.href === was.s.base;
+      if (was) owners[was.s.owner].leave();
+      known = location.href;
+      if (home) e.stopImmediatePropagation();
+    }, true);
+
+    // Instagram going on to another page while one of ours was current.
+    new MutationObserver(() => {
+      if (entry && location.href !== entry.href) {
+        const owner = entry.s.owner;
+        entry = null;
+        owners[owner].leave();
+      }
+      if (!entry) known = location.href;
+    }).observe(document, { childList: true, subtree: true });
+
+    // The address Instagram is on: the base while one of ours is current.
+    function here() {
+      return new URL(entry && location.href === entry.href ? entry.s.base : location.href);
+    }
+
+    return {
+      at,
+      done,
+      here,
+      own: (owner, handlers) => { owners[owner] = handlers; },
+      // The current entry's data, if it's `owner`'s.
+      data: (owner) => (entry && entry.s.owner === owner ? entry.s.data : null),
+    };
+  })();
+
   // ---- DOM helpers --------------------------------------------------------
 
   // Every element the extension adds carries the id of the copy that made
@@ -722,6 +864,10 @@ const Sinsta = (() => {
   let card = null; // the current story's shared card: { href, label }
   let bubbleOn = false; // its "Name ›" bubble is showing
   let listing = false; // the list of who has seen your story is open
+  let sids = 0;
+  let sid = 0; // this opening of the viewer, for its history entries
+  const viewings = new Map(); // sid -> { list, onClose }, to reopen from history
+  let wantListing = false; // show() opens the list (a history entry had it open)
   let downAt = 0;
   let typing = false; // the reply box has focus
   let sending = false; // a reply or reaction is on its way
@@ -819,7 +965,7 @@ const Sinsta = (() => {
     }
     e.preventDefault();
     const href = link.getAttribute('href');
-    close();
+    close(false);
     go(href);
   });
 
@@ -838,7 +984,7 @@ const Sinsta = (() => {
     const held = Date.now() - downAt;
     release();
     if (held >= 250) return;
-    if (listing) return setListing(false);
+    if (listing) return showListing(false);
     if (bubbleOn) return setBubble(false);
     if (card && onCard(e)) return setBubble(true);
     const box = stage.getBoundingClientRect();
@@ -876,7 +1022,7 @@ const Sinsta = (() => {
     outsideDown = null;
     if (!down || !open || scrolling || !outside(e.target)) return;
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10 || down.typing) return;
-    if (down.listing) return setListing(false);
+    if (down.listing) return showListing(false);
     if (down.bubble) return setBubble(false);
     close();
   });
@@ -908,13 +1054,13 @@ const Sinsta = (() => {
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const actions = {
-      Escape: () => (listing ? setListing(false) : close()),
+      Escape: () => (listing ? showListing(false) : close()),
       ArrowRight: () => (e.shiftKey ? jump(1) : step(1)),
       ArrowLeft: () => (e.shiftKey ? jump(-1) : step(-1)),
       ' ': () => { spacePaused = !spacePaused; syncPause(); },
       m: () => setMuted(!muted),
       l: toggleLike,
-      v: () => setListing(!listing),
+      v: () => showListing(!listing),
       '<': () => setSpeed(shiftSpeed(speed, -1)),
       '>': () => setSpeed(shiftSpeed(speed, 1)),
     };
@@ -1081,6 +1227,16 @@ const Sinsta = (() => {
     shown();
   }
 
+  // Opened or closed by the person: either is a history step, so Back
+  // undoes it.
+  function showListing(on) {
+    const was = listing;
+    setListing(on);
+    const d = nav.data('story');
+    if (listing === was || !d) return;
+    nav.at('story', location.href, { ...d, listing }, true);
+  }
+
   function setListing(on) {
     const cur = currentItem();
     on = !!(on && cur && cur.reel.id === me());
@@ -1145,8 +1301,8 @@ const Sinsta = (() => {
       renderSeen();
     });
   }
-  viewersClose.addEventListener('click', () => setListing(false));
-  seenBtn.addEventListener('click', () => setListing(!listing));
+  viewersClose.addEventListener('click', () => showListing(false));
+  seenBtn.addEventListener('click', () => showListing(!listing));
 
   // ---- Data ---------------------------------------------------------------
 
@@ -2084,7 +2240,7 @@ const Sinsta = (() => {
     const items = media.get(reel.id);
     if (!items) {
       // Instagram no longer answers our query: hand over to its own viewer.
-      close();
+      close(false);
       go(`/stories/${reel.username}/`);
       return;
     }
@@ -2108,6 +2264,9 @@ const Sinsta = (() => {
     }));
     timeText.textContent = ago(item.takenAt);
     syncFoot(reel, item);
+    if (wantListing) setListing(true);
+    wantListing = false;
+    nav.at('story', `/stories/${reel.username}/${item.pk}/`, { sid, ri, ii, listing });
     muteBtn.hidden = speedBtn.hidden = seek.row.hidden = item.type !== 'video';
     renderStickers(item);
 
@@ -2244,10 +2403,17 @@ const Sinsta = (() => {
       end = reels.findIndex((r, i) => i > index && !r.unseen);
       if (end < 0) end = reels.length;
     }
-    list = reels.slice(0, end);
-    for (const reel of list) delete reel.leftAt;
+    const row = reels.slice(0, end);
+    for (const reel of row) delete reel.leftAt;
+    sid = ++sids;
+    viewings.set(sid, { list: row, onClose: hooks && hooks.onClose });
+    start(row, index, START);
+  }
+
+  function start(reels, index, item) {
+    list = reels;
     ri = index;
-    ii = START;
+    ii = item;
     dir = 1;
     open = true;
     spacePaused = false;
@@ -2256,7 +2422,7 @@ const Sinsta = (() => {
     replyInput.value = '';
     delete foot.dataset.reel;
     toast.hidden = true;
-    onClose = hooks && hooks.onClose;
+    onClose = viewings.get(sid).onClose;
     setMuted(muted);
     loadAhead(); // first: the request needn't wait for the layout below
     for (const video of document.querySelectorAll('main video')) video.pause();
@@ -2268,9 +2434,11 @@ const Sinsta = (() => {
     show();
   }
 
-  function close() {
+  // `step`: closed by the person (see nav.done).
+  function close(step = true) {
     if (!open) return;
     open = false;
+    nav.done('story', step);
     token++;
     cancelAnimationFrame(raf);
     for (const node of preloaded.values()) unload(node);
@@ -2289,8 +2457,36 @@ const Sinsta = (() => {
     if (onClose) onClose();
   }
 
+  // Back or Forward to one of the viewer's entries.
+  nav.own('story', {
+    restore(d) {
+      const v = viewings.get(d.sid);
+      if (!v) return;
+      if (!open || sid !== d.sid) {
+        close(false);
+        sid = d.sid;
+        wantListing = d.listing;
+        start(v.list, d.ri, d.ii);
+        return;
+      }
+      if (d.ri === ri && d.ii === ii) {
+        setListing(d.listing);
+        return;
+      }
+      if (d.ri !== ri) {
+        dir = d.ri > ri ? 1 : -1;
+        leave();
+      }
+      ri = d.ri;
+      ii = d.ii;
+      wantListing = d.listing;
+      show();
+    },
+    leave: () => close(false),
+  });
+
   return {
-    api, go, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
+    api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
     mark, userIds, lookUpId, ago,
     likeMedia, likeComment, comments, replies, addComment,
   };

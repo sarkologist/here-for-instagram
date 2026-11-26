@@ -9,7 +9,7 @@
   // draws these views itself, and Explore's grid; what's here filters
   // Instagram's own page, which a view falls back to when its feed can't be
   // loaded.
-  const { api, go, el, mark, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, userIds, lookUpId } = Sinsta;
+  const { api, go, nav, el, mark, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, userIds, lookUpId } = Sinsta;
 
   const VIEWS = [
     {
@@ -158,7 +158,7 @@
       if (excluded(a, view)) return true;
       const id = hiding && postId(a);
       const t = id ? seen.get(id) : undefined;
-      if (t === undefined || t >= visitStart) return false;
+      if (t === undefined || t >= visitSec()) return false;
       hiddenSeen++;
       return true;
     });
@@ -206,6 +206,9 @@
   let seen = null; // Map post id -> unix seconds; null until loaded
   let prefs = { hideSeen: true };
   let visitStart = Date.now() / 1000;
+  // Seen times are whole seconds: one in the second the visit started is
+  // this visit's.
+  const visitSec = () => Math.floor(visitStart);
   let visitView = null;
   let saveTimer = 0;
   const unmarked = new Set(); // post ids marked as not seen this visit
@@ -319,7 +322,7 @@
   function buildSeenCss() {
     if (!seen) return;
     const ids = [...seen]
-      .filter(([id, t]) => t < visitStart && /^[\w-]+$/.test(id))
+      .filter(([id, t]) => t < visitSec() && /^[\w-]+$/.test(id))
       .sort((a, b) => b[1] - a[1])
       .slice(0, MAX_CSS_IDS)
       .map(([id]) => `[href*="/${id}/"]`);
@@ -401,7 +404,7 @@
     for (const article of articles) {
       const id = postId(article);
       const t = id ? seen.get(id) : undefined;
-      const wasSeen = t !== undefined && t < visitStart;
+      const wasSeen = t !== undefined && t < visitSec();
       if (wasSeen) hiddenSeen++;
       const hide = wasSeen || excluded(article, view);
       article.classList.toggle(HIDE, !!hide);
@@ -693,7 +696,7 @@
       return;
     }
     const href = a.getAttribute('href');
-    if (href === location.pathname + location.search) toTop();
+    if (href === nav.here().pathname + nav.here().search) toTop();
     else go(href);
   });
 
@@ -707,12 +710,12 @@
     if (!last || last.id === 'algo') return;
     e.preventDefault();
     e.stopPropagation();
-    if (location.pathname === '/' && currentView() === last.id) toTop();
+    if (nav.here().pathname === '/' && currentView() === last.id) toTop();
     else go(last.href);
   }, true);
 
   function currentView() {
-    const variant = new URLSearchParams(location.search).get('variant');
+    const variant = new URLSearchParams(nav.here().search).get('variant');
     return variant === 'following' || variant === 'favorites' ? variant : 'algo';
   }
 
@@ -809,9 +812,10 @@
     ensureSavedItem();
     ensureFavButtons();
     syncBadgeTip();
-    const onReels = /^\/reels(\/|$)/.test(location.pathname);
-    const onExplore = /^\/explore\/?$/.test(location.pathname);
-    const view = location.pathname === '/' ? currentView() : onReels ? 'reels' : onExplore ? 'explore' : null;
+    const { pathname } = nav.here(); // under the player's or viewer's own address
+    const onReels = /^\/reels(\/|$)/.test(pathname);
+    const onExplore = /^\/explore\/?$/.test(pathname);
+    const view = pathname === '/' ? currentView() : onReels ? 'reels' : onExplore ? 'explore' : null;
     document.documentElement.toggleAttribute('data-sinsta-favourites', view === 'favorites');
     document.documentElement.toggleAttribute('data-sinsta-following', view === 'following');
     // A profile's Posts tab, when feed.js draws its grid: the bar (Hide
@@ -1009,7 +1013,7 @@
   // carousel. Without a story, the click goes on to Instagram (on your own
   // profile it changes the photo).
   function profileAvatar(target) {
-    const user = (location.pathname.match(/^\/([\w.]+)\//) || [])[1];
+    const user = (nav.here().pathname.match(/^\/([\w.]+)\//) || [])[1];
     const btn = user && target.closest && target.closest('header [role="button"]');
     if (!btn || btn.closest('a[href]') || btn.querySelector('a[href]')) return null;
     const img = btn.querySelector('img');
@@ -1048,9 +1052,9 @@
     e.preventDefault();
     e.stopPropagation();
     const target = e.target;
-    const path = location.pathname;
+    const path = nav.here().pathname;
     const reel = await profileReel(user);
-    if (!target.isConnected || location.pathname !== path) return;
+    if (!target.isConnected || nav.here().pathname !== path) return;
     if (reel) {
       openViewer([reel], 0);
     } else if (reel === undefined) {
@@ -1185,7 +1189,7 @@
       watchedProfile = profile;
     }
     if (savedItem && savedItem.isConnected && savedItem.previousElementSibling === profile && savedSig === sig) {
-      savedItem.querySelector('a').setAttribute('aria-current', String(location.pathname === href));
+      savedItem.querySelector('a').setAttribute('aria-current', String(nav.here().pathname === href));
       syncSavedLabel(profile);
       return;
     }
@@ -1330,7 +1334,7 @@
     // Seen before this visit started.
     seenBefore(code) {
       const t = seen ? seen.get(code) : undefined;
-      return t !== undefined && t < visitStart;
+      return t !== undefined && t < visitSec();
     },
     // When a post was counted as seen (unix seconds), if it was.
     seenAt: (code) => (seen ? seen.get(code) : undefined),
