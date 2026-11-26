@@ -633,6 +633,35 @@ test('Profile: the grid reaches out of Instagram\'s column to the room beside th
     return r.width > 1000 && Math.abs(r.right - document.documentElement.clientWidth) <= 1;
   });
 });
+test('Profile: the grid keeps its place while the sidebar narrows after a hover, and takes a sidebar wide for good', async () => {
+  await openProfile();
+  await tiles();
+  // Instagram's sidebar, fixed on the left, narrow but for its icons.
+  await page.addStyleTag({ content: 'body > nav { position: fixed; top: 0; bottom: 0; left: 0; width: 72px; overflow: hidden; z-index: 10 } body > nav svg { display: block; width: 24px; height: 24px; margin-left: 24px }' });
+  const nudge = () => page.evaluate(() => document.body.append(document.createElement('i')));
+  const left = () => page.evaluate(() => Math.round(document.querySelector('#sinsta-surface').getBoundingClientRect().left));
+  await page.waitForTimeout(1100);
+  await nudge();
+  await page.waitForFunction(() => Math.round(document.querySelector('#sinsta-surface').getBoundingClientRect().left) === 72);
+  await page.waitForTimeout(1100);
+  // The pointer has just left it: it's still wide when the page changes,
+  // and narrows a moment later.
+  await page.evaluate(() => { document.querySelector('body > nav').style.width = '238px'; });
+  await nudge();
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { document.querySelector('body > nav').style.width = ''; });
+  await nudge();
+  for (let i = 0; i < 8; i++) {
+    assert.equal(await left(), 72);
+    await page.waitForTimeout(100);
+  }
+  // Wide for good (Instagram's labelled sidebar): the grid makes room.
+  await page.waitForTimeout(1100);
+  await page.evaluate(() => { document.querySelector('body > nav').style.width = '238px'; });
+  await nudge();
+  await page.waitForFunction(() => Math.round(document.querySelector('#sinsta-surface').getBoundingClientRect().left) === 238, null, { timeout: 3000 });
+});
+
 test('Profile, then straight to Home as Instagram swaps the page: the surface is beside the sidebar again', async () => {
   await freshContext(GRID);
   await logIn('111');
