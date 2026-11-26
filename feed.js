@@ -25,7 +25,6 @@
   const OLD_KEY = 'sinsta-reels'; // before Home was drawn here: { grid, columns }
   const MIN_COLS = 1;
   const MAX_COLS = 8;
-  const PREVIEW_MS = 100; // hover this long before a cover starts playing
   const WHEEL_STEP = 40; // px of scrolling that moves the player one post
   const WHEEL_IDLE = 200; // ms without scroll events that ends a gesture
   const SETTLE_MS = 150; // ms without scrolling after which a carousel has come to rest
@@ -493,7 +492,7 @@
       if (badge) badge.hidden = !it.slides[i].video;
       if (previewTile === node) {
         stopPreview();
-        startPreview(node, 0);
+        startPreview(node);
       }
       return;
     }
@@ -1064,12 +1063,10 @@
 
   // Hovering a grid tile plays it silently, as the app's grids do.
   let previewTile = null;
-  let previewTimer = 0;
   let hovered = null; // the post under the pointer
   const previews = new WeakMap(); // .sr-preview host -> its video
 
   function stopPreview() {
-    clearTimeout(previewTimer);
     if (!previewTile) return;
     const host = previewTile.querySelector('.sr-preview');
     if (host) unload(previews.get(host));
@@ -1084,10 +1081,9 @@
     return fit ? fit.url : s.video;
   }
 
-  // The tile under the pointer, playing its photo's video if it has one. The
-  // video starts loading at once, hidden, so the dwell before it plays also
-  // covers its download rather than adding to it.
-  function startPreview(a, delay = PREVIEW_MS) {
+  // The tile under the pointer, playing its photo's video if it has one,
+  // shown once its first frame is in.
+  function startPreview(a) {
     previewTile = a;
     const it = itemOf(a);
     const src = it && tileVideo(it.slides[slideOf(a)]);
@@ -1098,9 +1094,7 @@
     previews.set(host, v);
     v.addEventListener('playing', () => host.classList.add('sr-on'), { once: true });
     a.querySelector('.sf-track').children[slideOf(a)].append(host);
-    const play = () => v.play().catch(() => {});
-    if (delay) previewTimer = setTimeout(play, delay);
-    else play();
+    v.play().catch(() => {});
   }
 
   content.addEventListener('pointerover', (e) => {

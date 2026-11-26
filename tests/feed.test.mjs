@@ -145,7 +145,7 @@ test('Grid: a seen post\'s tile shows the mark; clicking it doesn\'t open the po
   assert.equal(await page.evaluate(() => document.querySelectorAll('#sinsta-reel-player').length), 0);
 });
 
-test('Grid: a hovered video tile loads its video at once, and plays it after a moment', async () => {
+test('Grid: a hovered video tile plays its video at once', async () => {
   await open('following', GRID);
   await settled(() => page.evaluate(() => document.querySelectorAll('.sf-tile').length));
   const tile = '.sf-tile[href="/reel/Calice2/"]';
@@ -153,9 +153,8 @@ test('Grid: a hovered video tile loads its video at once, and plays it after a m
   const asked = page.waitForRequest((r) => r.url().includes('/test/vid/Calice2')).then(() => Date.now());
   const t0 = Date.now();
   await page.hover(tile);
-  // Fetched during the dwell, not after it.
-  assert.ok((await asked) - t0 < 150, 'video requested on hover');
-  assert.equal(await page.evaluate((s) => !!document.querySelector(`${s} .sr-preview.sr-on`), tile), false);
+  // Fetched on hover, with no dwell first.
+  assert.ok((await asked) - t0 < 100, 'video requested on hover');
   await page.waitForSelector(`${tile} .sr-preview.sr-on`, { timeout: 3000 });
   // Leaving the tile drops it.
   await page.mouse.move(0, 0);
