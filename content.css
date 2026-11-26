@@ -1620,6 +1620,25 @@ html[data-sinsta-explore] {
   stroke-linejoin: round;
 }
 
+/* Beside the likes when you've saved the post. */
+.sf-tsaved {
+  display: flex;
+  margin-left: 2px;
+}
+
+.sf-tsaved[hidden] {
+  display: none;
+}
+
+.sf-tsaved svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
 /* List: just the photos; name, buttons and caption over them on hover. */
 .sf-list {
   display: flex;

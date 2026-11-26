@@ -331,9 +331,10 @@
     if (it.slides.length > 1) a.append(dotsOf(it));
     const likes = el('span', { className: 'sf-tlikes' });
     if (it.likes != null) likes.append(icon(HEART), compact(it.likes));
+    const kept = el('span', { className: 'sf-tsaved', title: 'Saved', hidden: !it.saved }, icon(BOOKMARK));
     const info = el('div', { className: 'sf-tinfo' },
       el('div', { className: 'sf-tcap' }, it.caption),
-      el('div', { className: 'sf-trow' }, avatar(it, 'sf-tpic'), el('span', { className: 'sf-tuser' }, it.username), likes));
+      el('div', { className: 'sf-trow' }, avatar(it, 'sf-tpic'), el('span', { className: 'sf-tuser' }, it.username), likes, kept));
     a.append(info);
     return a;
   }
@@ -768,6 +769,8 @@
   function syncEverywhere(it) {
     const art = nodeOf(it.pk);
     if (art && art.matches('.sf-post')) syncPost(art, it);
+    const kept = art && art.querySelector('.sf-tsaved');
+    if (kept) kept.hidden = !it.saved;
     if (playerOpen && list()[pi] === it) syncActions();
   }
 
