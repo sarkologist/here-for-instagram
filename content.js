@@ -643,9 +643,32 @@
   const seenCount = el('span', { className: 'sinsta-count' });
   const seenToggle = el('button', { className: 'sinsta-toggle', type: 'button' }, icon(EYE_OFF), 'Hide seen', seenCount);
   const slot = el('div', { className: 'sinsta-slot' });
+  // The extension's wordmark, "here.", at the start of its own bar
+  // (Instagram's logo stays as it is). TeX Gyre Bonum Bold, outlined.
+  function wordmark() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = mark(document.createElementNS(NS, 'svg'));
+    svg.setAttribute('viewBox', '0 0 344 100');
+    svg.setAttribute('class', 'sinsta-mark');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Here for Instagram');
+    const title = document.createElementNS(NS, 'title');
+    title.textContent = 'Here for Instagram';
+    svg.append(title);
+    for (const [d, cls] of [
+      ['M85.8 98.2V87.2L80.9 86.3C75.8 85.3 74.9 83.6 74.9 76V50.2C74.9 32.4 61.7 28.9 53.7 28.9C46.4 28.9 40.4 30.7 32.7 35V0H23.9C15.2 3.7 6.1 5.8 0 5.8V16.8L2.7 17.1C10.3 17.9 10.7 21.4 10.7 28.1V76C10.7 83.6 9.8 85.3 4.7 86.3L0 87.2V98.2H40.4V87.2L38.7 86.6C33 84.4 32.7 83.9 32.7 76V48.8C36 46 42.9 43.6 47.2 43.6C51 43.6 52.9 46.3 52.9 52V76C52.9 83.9 52.6 84.4 46.9 86.6L45.2 87.2V98.2ZM163.6 78.8 152.2 73.3C146.9 81.1 141.4 84.8 134.5 84.8C123.9 84.8 118 77.3 118 63.8H162C162 54.1 161.1 48.6 158.5 44C153.2 34.6 142.2 28.9 129.2 28.9C108.3 28.9 93.5 43.4 93.5 63.9C93.5 84.5 109 99.5 130.4 99.5C150.3 99.5 158.3 87.4 163.6 78.8ZM138 53.3H118.9C119.3 45.9 122.9 41.4 129 41.4C135.1 41.4 137.7 44.8 138 53.3ZM230.7 41.4C230.7 34.3 225.4 28.9 218.5 28.9C212.9 28.9 209.5 30.4 200.5 36.8V30.1H192.1L171 34.1V45L173.4 45.3C179.4 46 180.9 48.2 180.9 56.4V76C180.9 83.7 180.1 85.1 174.9 86.3L171 87.2V98.2H212.8V87.2L208.8 86.3C203.7 85.1 202.8 83.7 202.8 76V49.7C204.7 48 206.1 47.5 208.3 47.5C212.3 47.5 213.3 51.7 219.9 51.7C226.1 51.7 230.7 47.4 230.7 41.4ZM304.7 78.8 293.4 73.3C288.1 81.1 282.5 84.8 275.6 84.8C265 84.8 259.2 77.3 259.2 63.8H303.1C303.1 54.1 302.2 48.6 299.6 44C294.3 34.6 283.3 28.9 270.3 28.9C249.4 28.9 234.6 43.4 234.6 63.9C234.6 84.5 250.1 99.5 271.5 99.5C291.5 99.5 299.5 87.4 304.7 78.8ZM279.1 53.3H260C260.4 45.9 264 41.4 270.1 41.4C276.3 41.4 278.8 44.8 279.1 53.3Z', ''],
+      ['M344 87.7C344 80.9 338.5 75.4 331.8 75.4C325 75.4 319.4 80.9 319.4 87.5C319.4 94.4 324.8 100 331.6 100C338.4 100 344 94.4 344 87.7Z', 'sinsta-mark-dot'],
+    ]) {
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', d);
+      if (cls) path.setAttribute('class', cls);
+      svg.append(path);
+    }
+    return svg;
+  }
   const stories = el('div', { className: 'sinsta-stories', hidden: true });
   const bar = el('div', { id: 'sinsta-bar' },
-    el('div', { className: 'sinsta-controls' }, tabs, seenToggle, picks, slot),
+    el('div', { className: 'sinsta-controls' }, wordmark(), tabs, seenToggle, picks, slot),
     stories);
 
   seenToggle.addEventListener('click', (e) => {
