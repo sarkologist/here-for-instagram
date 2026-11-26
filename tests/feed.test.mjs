@@ -46,6 +46,17 @@ test('Following: newest first, without favourites, over a hidden Instagram page'
   assert.equal(await page.evaluate(() => !!document.querySelector('#sinsta-surface #sinsta-bar .sinsta-stories')), true);
 });
 
+test('The feed loads with whichever of Instagram\'s two feed query ids the session accepts', async () => {
+  for (const doc of ['40856843000596438', '29639616438977013']) {
+    await freshContext(LIST);
+    await logIn('111');
+    feeds111();
+    accounts['111'].feedDocs = [doc];
+    await page.goto(`${ORIGIN}/?variant=following`);
+    assert.deepEqual(await posts(), ['alice', 'carol', 'alice'], doc);
+  }
+});
+
 test('Favourites: only favourites', async () => {
   await open('favorites', LIST);
   assert.deepEqual(await posts(), ['fav_of_a']);

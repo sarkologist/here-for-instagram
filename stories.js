@@ -13,7 +13,10 @@ const Sinsta = (() => {
   const DOC_SEEN = '26234228992942885'; // PolarisStoriesV3SeenMutation
   const DOC_FAV = '27833939016209017'; // usePolarisUpdateFeedFavoritesMutation
   const DOC_BADGE = '26853171684350625'; // usePolarisNotificationsNavItemQuery
-  const DOC_FEED = '29639616438977013'; // PolarisFeedRootPaginationCachedQuery_subscribe
+  // PolarisFeedRootPaginationCachedQuery_subscribe: the id Instagram's web
+  // app sends now, then the one it sent before (since retired for some
+  // sessions), tried in that order.
+  const DOC_FEEDS = ['40856843000596438', '29639616438977013'];
   const DOC_CLIPS = '29386172244354956'; // PolarisClipsTabDesktopPaginationQuery
   const DOC_PROFILE_POSTS = '39818828461098125'; // PolarisProfilePostsTabContentQuery_connection
   const DOC_LIKE = '27182485238052618'; // usePolarisLikeMediaXIGLikeMutation
@@ -41,6 +44,8 @@ const Sinsta = (() => {
     __relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider: false,
     __relay_internal__pv__PolarisAdDebugToolEnabledrelayprovider: false,
     __relay_internal__pv__PolarisSuggestedUserFeedUnitCardsEnabledrelayprovider: true,
+    __relay_internal__pv__PolarisDSA16EntrypointEnabledrelayprovider: false,
+    __relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider: false,
   };
   const PROFILE_FLAGS = {
     __relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider: true,
@@ -162,10 +167,11 @@ const Sinsta = (() => {
   // One page of one of Instagram's home feeds (`variant`: following,
   // favorites or home), as the query's connection, or null on failure.
   // Reports nothing as viewed.
+  let feedDoc = 0; // index into DOC_FEEDS of the id that last worked
   async function feedConnection(variant, after) {
     const t = tokens();
     if (!t || !t.device) return null;
-    const res = await gql(DOC_FEED, {
+    const variables = {
       after: after || null,
       before: null,
       data: {
@@ -182,9 +188,21 @@ const Sinsta = (() => {
       last: null,
       variant,
       ...FEED_FLAGS,
-    });
-    return (res && res.data && res.data.xdt_api__v1__feed__timeline__connection) || null;
+    };
+    let res = null;
+    for (let n = 0; n < DOC_FEEDS.length; n++) {
+      const i = (feedDoc + n) % DOC_FEEDS.length;
+      res = await gql(DOC_FEEDS[i], variables);
+      const conn = res && res.data && res.data.xdt_api__v1__feed__timeline__connection;
+      if (conn) {
+        feedDoc = i;
+        return conn;
+      }
+    }
+    console.warn('Here for Instagram: the home feed query failed', variant, res && (res.errors || res));
+    return null;
   }
+
 
   // One page of a home feed's posts and reels, as { items, after } where
   // `after` is null at the end, or null on failure.

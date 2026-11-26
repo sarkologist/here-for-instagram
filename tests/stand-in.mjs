@@ -303,6 +303,10 @@ export async function freshContext(storage = {}) {
         });
       }
       if (vars.variant && vars.data) {
+        // The feed query ids this session accepts (`feedDocs`; all if unset).
+        if (acc.feedDocs && !acc.feedDocs.includes(form.get('doc_id'))) {
+          return json({ errors: [{ message: 'execution error', severity: 'CRITICAL' }] });
+        }
         const edges = acc.feeds[vars.variant];
         // As on Instagram: the home feed fails with a pagination source, the
         // others need theirs.
