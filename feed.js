@@ -16,7 +16,7 @@
 
   const {
     go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor, ago,
-    likeMedia, likeComment, comments, replies, addComment,
+    likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
   const home = () => Sinsta.home || null;
@@ -47,6 +47,7 @@
   const SOUND_ON = ['M4 9v6h4l5 4V5L8 9z', 'M16.5 8.5a5 5 0 0 1 0 7'];
   const PLAY = ['M8 5v14l11-7z'];
   const CHECK = ['M6.5 12.5l3.5 3.5 7.5-8'];
+  const BOOKMARK = ['M6 3.5h12v17l-6-4.6-6 4.6z'];
 
   const VIEWS = ['following', 'favorites', 'algo', 'reels', 'explore'];
   const SEEN_VIEWS = new Set(['following', 'favorites', 'algo', 'explore']); // where "Hide seen" applies, with profiles
@@ -375,7 +376,9 @@
     const cmt = button('sf-act', 'Comments (C)', COMMENT);
     cmt.dataset.act = 'comments';
     const open = el('a', { className: 'sf-act', href: link(it), title: 'Open post' }, icon(LINK));
-    const acts = el('div', { className: 'sf-acts' }, like, cmt, open);
+    const keep = button('sf-act sf-save', 'Save (S)', BOOKMARK);
+    keep.dataset.act = 'save';
+    const acts = el('div', { className: 'sf-acts' }, like, cmt, open, keep);
     const likes = el('div', { className: 'sf-likes' });
     const foot = el('div', { className: 'sf-foot' }, acts, likes);
     if (it.caption) foot.append(el('div', { className: 'sf-cap' }, ...richText(it.caption)));
@@ -396,6 +399,9 @@
     const like = art.querySelector('[data-act="like"]');
     like.toggleAttribute('data-on', it.liked);
     like.title = it.liked ? 'Unlike (L)' : 'Like (L)';
+    const keep = art.querySelector('[data-act="save"]');
+    keep.toggleAttribute('data-on', it.saved);
+    keep.title = it.saved ? 'Remove from saved (S)' : 'Save (S)';
     const likes = art.querySelector('.sf-likes');
     const text = it.likes != null ? `${it.likes.toLocaleString('en')} like${it.likes === 1 ? '' : 's'}` : '';
     if (likes.textContent !== text) likes.textContent = text;
@@ -767,6 +773,254 @@
 
   const plainClick = (e) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 
+  // ---- Saving -------------------------------------------------------------
+
+  // As on Instagram: saving puts a post in "All posts" and opens a list of
+  // your collections beside the button, to put it in one too or make a new
+  // one; a note at the bottom says where it went.
+  const saving = new WeakSet(); // posts whose save is on its way
+
+  // `from`: the button it was saved with, for the collections to open by.
+  async function toggleSave(it, from) {
+    if (!it || saving.has(it)) return;
+    const on = !it.saved;
+    const flip = (v) => {
+      it.saved = v;
+      syncEverywhere(it);
+    };
+    saving.add(it);
+    flip(on);
+    closeSaveTo();
+    const picking = on && from && from.isConnected;
+    if (picking) openSaveTo(it, from);
+    const ok = await savePost(it.pk, on);
+    saving.delete(it);
+    if (!ok) {
+      flip(!on);
+      closeSaveTo();
+      toast(on ? "Couldn't save the post." : "Couldn't remove the post from saved.");
+    } else if (!on) {
+      toast('Removed from saved.');
+    } else if (!picking) {
+      toast('Saved.', 'View saved', savedHref(null));
+    }
+  }
+
+  // Your collections, loaded once a page (and more as the list scrolls).
+  let colls = null; // { items, after }
+  let collsJob = null;
+  function loadCollections(more = false) {
+    if (collsJob) return collsJob;
+    if (colls && !(more && colls.after)) return Promise.resolve(colls);
+    const prev = colls;
+    collsJob = collections(prev ? prev.after : null).then((got) => {
+      collsJob = null;
+      if (!got) return prev; // null if nothing could be loaded
+      colls = { items: [...(prev ? prev.items : []), ...got.items], after: got.after };
+      return colls;
+    });
+    return collsJob;
+  }
+
+  // Your username, from the sidebar's Saved link (or Profile's).
+  function myName() {
+    for (const a of document.querySelectorAll('nav a[href], a[href$="/saved/"]')) {
+      const m = (a.getAttribute('href') || '').match(/^\/([\w.]+)\/saved\/$/);
+      if (m) return m[1];
+    }
+    return null;
+  }
+  function savedHref(col) {
+    const me = myName();
+    if (!me) return null;
+    if (!col || !col.id) return `/${me}/saved/`;
+    // Instagram goes by the id; the name part is only for show.
+    const slug = col.name.toLowerCase().replace(/[^a-z0-9_]+/g, '-').replace(/^-+|-+$/g, '') || 'collection';
+    return `/${me}/saved/${slug}/${col.id}/`;
+  }
+
+  // Leave for a page of Instagram's, closing the player if it's open.
+  function leave(href) {
+    closeSaveTo();
+    closeNewCollection();
+    if (playerOpen) closePlayer();
+    go(href);
+  }
+
+  let saveTo = null; // { node, it, from }
+
+  function openSaveTo(it, from) {
+    const listNode = el('div', { className: 'sf-saveto-list' }, el('div', { className: 'sf-saveto-note' }, 'Loading…'));
+    const add = button('sf-saveto-add', 'New collection', PLUS);
+    const node = el('div', { className: 'sf-saveto', role: 'dialog', ariaLabel: 'Collections' },
+      el('div', { className: 'sf-saveto-head' }, el('span', {}, 'Collections'), add), listNode);
+    saveTo = { node, it, from };
+    onTop(node);
+    placeSaveTo();
+    add.addEventListener('click', () => {
+      closeSaveTo();
+      openNewCollection(it);
+    });
+    const fill = (got) => {
+      if (!saveTo || saveTo.node !== node) return;
+      if (!got) {
+        listNode.replaceChildren(el('div', { className: 'sf-saveto-note' }, "Couldn't load your collections."));
+        return;
+      }
+      if (!got.items.length) {
+        listNode.replaceChildren(el('div', { className: 'sf-saveto-note' }, 'No collections yet.'));
+        return;
+      }
+      listNode.replaceChildren(...got.items.map((c) => {
+        const row = el('button', { type: 'button', className: 'sf-saveto-row' },
+          c.cover ? el('img', { src: c.cover, alt: '' }) : el('span', { className: 'sf-saveto-blank' }),
+          el('span', { className: 'sf-saveto-name' }, c.name));
+        row.addEventListener('click', () => putIn(it, c));
+        return row;
+      }));
+      placeSaveTo(); // taller now
+    };
+    loadCollections().then(fill);
+    listNode.addEventListener('scroll', () => {
+      if (listNode.scrollTop + listNode.clientHeight < listNode.scrollHeight - 40) return;
+      if (colls && colls.after && !collsJob) loadCollections(true).then(fill);
+    });
+  }
+
+  function placeSaveTo() {
+    if (!saveTo) return;
+    const { node, from } = saveTo;
+    const r = from.getBoundingClientRect();
+    const w = node.offsetWidth;
+    const h = node.offsetHeight;
+    // Above the button if there's room, else below; inside the window.
+    let top = r.top - h - 8;
+    if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - h - 8);
+    const left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+    node.style.setProperty('top', `${Math.max(8, top)}px`, 'important');
+    node.style.setProperty('left', `${left}px`, 'important');
+  }
+
+  function closeSaveTo() {
+    if (!saveTo) return;
+    saveTo.node.remove();
+    saveTo = null;
+  }
+
+  async function putIn(it, col) {
+    closeSaveTo();
+    const ok = await addToCollection(col.id, it.pk);
+    if (ok) toast(`Saved to "${col.name}".`, 'View collection', savedHref(col));
+    else toast(`Couldn't save to "${col.name}".`);
+  }
+
+  let newCol = null; // { node, it }
+
+  function openNewCollection(it) {
+    const input = el('input', { type: 'text', className: 'sf-newcol-name', placeholder: 'Collection name', maxLength: 64 });
+    const ok = el('button', { type: 'button', className: 'sf-newcol-save', disabled: true }, 'Save');
+    const shut = button('sf-newcol-close', 'Close', CLOSE);
+    const err = el('div', { className: 'sf-newcol-error', hidden: true });
+    const thumb = it.thumbs && it.thumbs.length ? it.thumbs[it.thumbs.length - 1].url : '';
+    const box = el('div', { className: 'sf-newcol-box', role: 'dialog', ariaLabel: 'New collection' },
+      el('div', { className: 'sf-newcol-head' }, shut, el('span', {}, 'New collection'), el('span')),
+      thumb ? el('img', { className: 'sf-newcol-pic', src: thumb, alt: '' }) : '',
+      input, err, ok);
+    const node = el('div', { className: 'sf-newcol' }, box);
+    newCol = { node, it, input, submit };
+    onTop(node);
+    input.focus();
+    input.addEventListener('input', () => {
+      ok.disabled = !input.value.trim();
+    });
+    shut.addEventListener('click', closeNewCollection);
+    node.addEventListener('click', (e) => {
+      if (e.target === node) closeNewCollection();
+    });
+    ok.addEventListener('click', submit);
+    async function submit() {
+      const name = input.value.trim();
+      if (!name || ok.dataset.busy) return;
+      ok.dataset.busy = '1';
+      ok.disabled = true;
+      err.hidden = true;
+      const id = await newCollection(name, it.pk);
+      delete ok.dataset.busy;
+      if (id === null) {
+        ok.disabled = false;
+        err.textContent = "Couldn't make the collection. Try again.";
+        err.hidden = false;
+        return;
+      }
+      closeNewCollection();
+      colls = null; // list it next time
+      toast(`Saved to "${name}".`, id ? 'View collection' : 'View saved', savedHref(id ? { id, name } : null));
+    }
+  }
+
+  function closeNewCollection() {
+    if (!newCol) return;
+    newCol.node.remove();
+    newCol = null;
+  }
+
+  let toastNode = null;
+  function toast(text, label, href) {
+    if (toastNode) toastNode.remove();
+    const node = el('div', { className: 'sf-toast', role: 'status' }, el('span', {}, text));
+    if (label && href) {
+      const a = el('a', { href }, label);
+      a.addEventListener('click', (e) => {
+        if (!plainClick(e)) return;
+        e.preventDefault();
+        node.remove();
+        leave(href);
+      });
+      node.append(a);
+    }
+    toastNode = node;
+    onTop(node);
+    setTimeout(() => {
+      if (toastNode === node) toastNode = null;
+      node.remove();
+    }, 5000);
+  }
+
+  // The collections close on a click elsewhere, a scroll, or another post.
+  document.addEventListener('pointerdown', (e) => {
+    if (saveTo && !saveTo.node.contains(e.target) && !saveTo.from.contains(e.target)) closeSaveTo();
+  }, true);
+  window.addEventListener('resize', closeSaveTo);
+  window.addEventListener('scroll', (e) => {
+    if (saveTo && !saveTo.node.contains(e.target)) closeSaveTo();
+  }, true);
+
+  // Keys for the collections and the new collection's box: Escape closes
+  // them, and typing a name stays in the box. Whether the key was theirs.
+  function onSaveKey(e) {
+    if (newCol) {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeNewCollection();
+      } else if (e.key === 'Enter' && e.target === newCol.input && !e.isComposing) {
+        e.preventDefault();
+        newCol.submit();
+      }
+      return true;
+    }
+    if (saveTo && e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSaveTo();
+      return true;
+    }
+    return false;
+  }
+  window.addEventListener('keydown', (e) => {
+    if ((saveTo || newCol) && !playerOpen) onSaveKey(e);
+  }, true);
+
   content.addEventListener('click', (e) => {
     const node = e.target.closest('[data-pk]');
     const it = itemOf(node);
@@ -777,6 +1031,7 @@
       e.stopPropagation();
       const a = act.dataset.act;
       if (a === 'like') toggleLike(it, () => syncEverywhere(it));
+      else if (a === 'save') toggleSave(it, act);
       else if (a === 'seen') {
         const h = home();
         if (h) h.setSeen(it.code, h.seenAt(it.code) === undefined);
@@ -1061,8 +1316,9 @@
   }
   const likeBtn = action('Like (L)', HEART);
   const commentBtn = action('Comments (C)', COMMENT);
+  const saveBtn = action('Save (S)', BOOKMARK);
   const linkBtn = el('a', { className: 'sr-act', title: 'Open post' }, icon(LINK));
-  const actions = el('div', { className: 'sr-actions' }, likeBtn, commentBtn, linkBtn);
+  const actions = el('div', { className: 'sr-actions' }, likeBtn, commentBtn, saveBtn, linkBtn);
 
   // Beside the post: its author, its caption in full, then the comments.
   const cList = el('div', { className: 'sr-clist' });
@@ -1159,6 +1415,7 @@
     toggleLike(it, () => syncEverywhere(it));
   });
   commentBtn.addEventListener('click', toggleComments);
+  saveBtn.addEventListener('click', () => toggleSave(list()[pi], saveBtn));
   cClose.addEventListener('click', toggleComments);
   function syncActions() {
     const it = list()[pi];
@@ -1167,6 +1424,8 @@
     likeBtn.title = it.liked ? 'Unlike (L)' : 'Like (L)';
     likeBtn.lastChild.textContent = it.likes != null ? compact(it.likes) : '';
     commentBtn.lastChild.textContent = it.comments ? compact(it.comments) : '';
+    saveBtn.toggleAttribute('data-on', it.saved);
+    saveBtn.title = it.saved ? 'Remove from saved (S)' : 'Save (S)';
     commentBtn.toggleAttribute('data-on', !panel.hidden);
   }
 
@@ -1650,6 +1909,7 @@
   function step(delta) {
     const n = pi + delta;
     if (n < 0 || n >= list().length) return;
+    closeSaveTo();
     pi = n;
     show();
   }
@@ -1692,6 +1952,8 @@
   function closePlayer(step = false) {
     if (!playerOpen) return;
     playerOpen = false;
+    closeSaveTo();
+    closeNewCollection();
     nav.done('player', step);
     if (video) unload(video);
     if (preload) unload(preload.video);
@@ -1752,7 +2014,7 @@
   // Registered once, at document start, so it runs before Instagram's own
   // key handlers, which could otherwise swallow the keys.
   window.addEventListener('keydown', (e) => {
-    if (playerOpen) onPlayerKey(e);
+    if (playerOpen && !onSaveKey(e)) onPlayerKey(e);
   }, true);
 
   function onPlayerKey(e) {
@@ -1771,6 +2033,7 @@
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const it = list()[pi];
     const like = () => toggleLike(it, () => syncEverywhere(it));
+    const keep = () => toggleSave(it, saveBtn);
     // Sideways keys go through a carousel's photos, else to the next post.
     const side = (d) => () => (it && it.slides.length > 1 ? slide(d) : step(d));
     const keys = {
@@ -1787,6 +2050,8 @@
       L: like,
       c: toggleComments,
       C: toggleComments,
+      s: keep,
+      S: keep,
       '<': () => setSpeed(shiftSpeed(prefs.speed, -1)),
       '>': () => setSpeed(shiftSpeed(prefs.speed, 1)),
       Escape: () => closePlayer(true),
@@ -1802,7 +2067,7 @@
 
   // While the surface is up, scrolling keys scroll it rather than reaching
   // Instagram's hidden page; G switches list and grid, − / + change the
-  // number of columns, and L and C act on the post under the pointer.
+  // number of columns, and L, C and S act on the post under the pointer.
   const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
   window.addEventListener('keydown', (e) => {
     if (!cur || covered() || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1833,6 +2098,11 @@
     if (it && (e.key === 'c' || e.key === 'C')) {
       take();
       openPlayer(shown.indexOf(it), { comments: true });
+      return;
+    }
+    if (it && (e.key === 's' || e.key === 'S')) {
+      take();
+      toggleSave(it, hovered.querySelector('[data-act="save"]'));
       return;
     }
     // Inline, the keys scroll the page, as usual.
@@ -2216,6 +2486,8 @@
   // For content.js: where the tab bar goes, and whether Instagram's page
   // is covered.
   Sinsta.surface = {
+    // Go to one of Instagram's pages from over the surface or the player.
+    leave,
     // The surface's header, or (over Instagram's Reels player) the floating
     // box; null where the bar belongs on Instagram's page.
     barHost(view) {
