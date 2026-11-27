@@ -312,9 +312,11 @@ const Sinsta = (() => {
 
   // One page of one of Instagram's home feeds (`variant`: following,
   // favorites or home), as the query's connection, or null on failure.
-  // Reports nothing as viewed.
+  // `first`: how many posts. Instagram goes by it only for the first page
+  // (no `after`), up to 150 at least; later pages come in its own sizes,
+  // 4 to 12. Reports nothing as viewed.
   let feedDoc = 0; // index into DOC_FEEDS of the id that last worked
-  async function feedConnection(variant, after, opts) {
+  async function feedConnection(variant, after, opts, first = 12) {
     const t = tokens();
     if (!t || !t.device) {
       console.warn('Here for Instagram: no session tokens in the page for the feed', JSON.stringify(tokenProbe));
@@ -333,7 +335,7 @@ const Sinsta = (() => {
         ...(variant === 'home' ? {} : { pagination_source: variant }),
         feed_view_info: '[]',
       },
-      first: 12,
+      first,
       last: null,
       variant,
       ...FEED_FLAGS,
@@ -355,9 +357,10 @@ const Sinsta = (() => {
 
 
   // One page of a home feed's posts and reels, as { items, after } where
-  // `after` is null at the end, or null on failure.
-  async function feedPage(variant, after) {
-    const conn = await feedConnection(variant, after);
+  // `after` is null at the end, or null on failure. `first`: see
+  // feedConnection.
+  async function feedPage(variant, after, first) {
+    const conn = await feedConnection(variant, after, undefined, first);
     if (!conn) return null;
     const items = [];
     for (const e of conn.edges || []) {

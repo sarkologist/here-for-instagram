@@ -185,11 +185,13 @@ test('Every request to Instagram goes through one limiter: a burst of 4, then on
 });
 
 test('Feed pages are paced: 2.5 s apart, three on their own, then more only as you scroll', async () => {
+  // A favourite's posts, which Following leaves out: the screen stays empty
+  // without a run of seen posts to jump past.
   const codes = Array.from({ length: 72 }, (_, i) => `Cs${i}`);
-  await freshContext({ ...LIST, 'sinsta-seen': Object.fromEntries(codes.map((c) => [c, NOW - 86400])) });
+  await freshContext(LIST);
   await logIn('111');
   feeds111();
-  accounts['111'].feeds.following = codes.map((c, i) => media(c, 'alice', { ago: 100 + i }));
+  accounts['111'].feeds.following = codes.map((c, i) => media(c, 'fav_of_a', { ago: 100 + i }));
   await page.goto(`${ORIGIN}/?variant=following`);
   const FEED = ['40856843000596438', '29639616438977013'];
   const pages = () => queryLog.filter((q) => FEED.includes(q.doc));
@@ -203,6 +205,37 @@ test('Feed pages are paced: 2.5 s apart, three on their own, then more only as y
   await page.waitForFunction(() => !/Scroll for more/.test(document.querySelector('#sinsta-surface').innerText), null, { timeout: 5000 });
   for (let i = 0; i < 50 && pages().length < 5; i++) await page.waitForTimeout(100);
   assert.equal(pages().length, 5);
+});
+
+test('Hide seen: past a run of seen posts, one deep first page reaches the posts after it', async () => {
+  const codes = Array.from({ length: 60 }, (_, i) => `Cs${i}`);
+  await freshContext({ ...LIST, 'sinsta-seen': Object.fromEntries(codes.map((c) => [c, NOW - 86400])) });
+  await logIn('111');
+  feeds111();
+  accounts['111'].feeds.following = [
+    ...codes.map((c, i) => media(c, 'alice', { ago: 100 + i })),
+    ...['Cn1', 'Cn2', 'Cn3'].map((c, i) => media(c, 'carol', { ago: 1000 + i })),
+  ];
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-post').length === 3, null, { timeout: 15000 });
+  assert.deepEqual(await posts(), ['carol', 'carol', 'carol']);
+  const FEED = ['40856843000596438', '29639616438977013'];
+  // A page of 12 seen posts, then the top again, 100 further.
+  assert.deepEqual(queryLog.filter((q) => FEED.includes(q.doc)).map((q) => [q.vars.after, q.vars.first]), [[null, 12], [null, 112]]);
+  assert.match(await page.textContent('#sinsta-surface .sr-status'), /that's as far back as this feed goes/);
+});
+
+test('Hide seen off: the feed pages on through seen posts', async () => {
+  const codes = Array.from({ length: 30 }, (_, i) => `Cs${i}`);
+  await freshContext({ ...LIST, 'sinsta-seen': Object.fromEntries(codes.map((c) => [c, NOW - 86400])), 'sinsta-prefs': { hideSeen: false } });
+  await logIn('111');
+  feeds111();
+  accounts['111'].feeds.following = codes.map((c, i) => media(c, 'alice', { ago: 100 + i }));
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await posts();
+  await page.waitForTimeout(3000);
+  const FEED = ['40856843000596438', '29639616438977013'];
+  assert.ok(queryLog.filter((q) => FEED.includes(q.doc)).every((q) => q.vars.first === 12));
 });
 
 test('Hide seen counts the posts it leaves out', async () => {
