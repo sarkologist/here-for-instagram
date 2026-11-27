@@ -46,6 +46,7 @@ const Sinsta = (() => {
   const DOC_COLLECTIONS = '29115677831365401'; // PolarisSavedCollectionPickerQuery
   const DOC_COLLECTIONS_MORE = '28466833206340367'; // PolarisSavedCollectionPickerPaginationQuery
   const DOC_COLLECTION_ADD = '39663440886576281'; // usePolarisMediaSaveToCollectionAddMediaMutation
+  const DOC_COLLECTION_REMOVE = '28735296319489844'; // usePolarisMediaSaveToCollectionRemoveMediaMutation
   const DOC_COLLECTION_NEW = '27305499509043563'; // PolarisAPICreateCollectionMutation
   // Feature flags the feed query declares; values as Instagram's web app sends them.
   const FEED_FLAGS = {
@@ -498,6 +499,8 @@ const Sinsta = (() => {
       likes: m.like_and_view_counts_disabled || m.like_count == null ? null : m.like_count,
       liked: !!m.has_liked,
       saved: !!m.has_viewer_saved,
+      // The ids of the collections it's in (besides "All posts").
+      inCollections: Array.isArray(m.saved_collection_ids) ? m.saved_collection_ids.map(String) : [],
       comments: m.comment_count || 0,
       commentsOff: !!(m.comments_disabled || m.commenting_disabled_for_viewer),
       token: m.organic_tracking_token || null,
@@ -826,6 +829,12 @@ const Sinsta = (() => {
   // Add a saved post to one of your collections. Resolves to whether it worked.
   async function addToCollection(collectionId, pk) {
     return !!(await acting(DOC_COLLECTION_ADD, { collection_id: collectionId, media_id: pk }));
+  }
+
+  // Take a post out of one of your collections; it stays saved. Resolves to
+  // whether it worked.
+  async function removeFromCollection(collectionId, pk) {
+    return !!(await acting(DOC_COLLECTION_REMOVE, { collection_id: collectionId, media_id: pk }));
   }
 
   // Make a collection holding the post. Resolves to its id ('' when
@@ -2922,6 +2931,6 @@ const Sinsta = (() => {
   return {
     api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, profileTabPage, complete, searchPage, reelByCode, feedPage, songFor,
     mark, userIds, lookUpId, userCard, ago, allowBackground, heldBack,
-    likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection, follow,
+    likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, removeFromCollection, newCollection, follow,
   };
 })();

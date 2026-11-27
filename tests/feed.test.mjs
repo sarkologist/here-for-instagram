@@ -427,7 +427,10 @@ test('Save: the button saves a post and opens your collections; one of them or a
   assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.sf-saveto-name')].map((n) => n.textContent)), ['trips', 'recipes']);
   await page.click('.sf-saveto-row:has-text("recipes")');
   await page.waitForSelector('.sf-toast:has-text("Saved to \\"recipes\\".")');
-  assert.equal(await page.$('.sf-saveto'), null);
+  // The list stays open, with the collection ticked.
+  await page.waitForSelector('.sf-saveto-row[data-on]:has-text("recipes")');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.sf-saveto', { state: 'detached' });
   assert.deepEqual(saveCalls, [
     { kind: 'save', input: { container_module: 'feed_timeline', media_id: first, actor_id: '17841400000000001' } },
     { kind: 'add', input: { collection_id: 'c2', media_id: first, actor_id: '17841400000000001' } },
@@ -461,6 +464,53 @@ test('Save: the button saves a post and opens your collections; one of them or a
   await page.keyboard.press('Escape');
   await page.waitForSelector('.sf-saveto', { state: 'detached' });
   assert.ok(await page.$('#sinsta-reel-player'));
+});
+
+test('Save: resting on the button opens your collections, ticking the ones the post is in; a click takes it out of one or puts it in', async () => {
+  await freshContext(LIST);
+  await logIn('111');
+  feeds111();
+  accounts['111'].feeds.following[0] = media('Calice1', 'alice', { ago: 100, saved: true, inCollections: ['c1'] });
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await posts();
+  const [first, second] = await page.$$eval('.sf-post', (ns) => ns.map((n) => n.dataset.pk));
+  const ticked = () => page.$$eval('.sf-saveto-row[data-on] .sf-saveto-name', (ns) => ns.map((n) => n.textContent));
+  const hoverSave = async (art) => {
+    await page.$eval(art, (n) => n.scrollIntoView({ block: 'center' }));
+    await page.hover(art);
+    await page.hover(`${art} .sf-save`);
+    await page.waitForSelector('.sf-saveto .sf-saveto-row');
+  };
+
+  // A saved post in "trips": out of trips, into recipes, still saved.
+  const one = `.sf-post[data-pk="${first}"]`;
+  await hoverSave(one);
+  assert.deepEqual(await ticked(), ['trips']);
+  await page.click('.sf-saveto-row:has-text("trips")');
+  await page.waitForSelector('.sf-toast:has-text("Removed from \\"trips\\".")');
+  await page.click('.sf-saveto-row:has-text("recipes")');
+  await page.waitForSelector('.sf-toast:has-text("Saved to \\"recipes\\".")');
+  assert.deepEqual(await ticked(), ['recipes']);
+  assert.ok(await page.$eval(`${one} .sf-save`, (b) => b.hasAttribute('data-on')));
+  assert.deepEqual(saveCalls.map((c) => [c.kind, c.input.media_id, c.input.collection_id]),
+    [['remove', first, 'c1'], ['add', first, 'c2']]);
+  // Leaving closes the list; it opens again as it was left.
+  await page.mouse.move(0, 0);
+  await page.waitForSelector('.sf-saveto', { state: 'detached' });
+  await hoverSave(one);
+  assert.deepEqual(await ticked(), ['recipes']);
+  await page.mouse.move(0, 0);
+  await page.waitForSelector('.sf-saveto', { state: 'detached' });
+
+  // An unsaved post: putting it in a collection saves it first.
+  const two = `.sf-post[data-pk="${second}"]`;
+  await hoverSave(two);
+  assert.deepEqual(await ticked(), []);
+  await page.click('.sf-saveto-row:has-text("trips")');
+  await page.waitForSelector('.sf-toast:has-text("Saved to \\"trips\\".")');
+  assert.ok(await page.$eval(`${two} .sf-save`, (b) => b.hasAttribute('data-on')));
+  assert.deepEqual(saveCalls.slice(2).map((c) => [c.kind, c.input.media_id, c.input.collection_id]),
+    [['save', second, undefined], ['add', second, 'c1']]);
 });
 
 test('Grid: a saved post\'s tile shows a bookmark beside its likes; S on a tile saves it and adds one', async () => {
