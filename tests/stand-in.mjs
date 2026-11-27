@@ -83,6 +83,7 @@ export const songLookups = []; // pks of the posts asked for their song
 // new-collection mutation, in order.
 export const saveCalls = [];
 export const queryLog = [];
+export const requestLog = []; // every request to Instagram's API: { path, at }
 // Following: { kind: 'follow' | 'unfollow', id } of each mutation, and
 // whom each account follows now, by user id, where that changed.
 export const followCalls = [];
@@ -96,6 +97,7 @@ function reset() {
   songLookups.length = 0;
   saveCalls.length = 0;
   queryLog.length = 0;
+  requestLog.length = 0;
   followCalls.length = 0;
   for (const k of Object.keys(storyViewers)) delete storyViewers[k];
   for (const k of Object.keys(accounts)) delete accounts[k];
@@ -196,6 +198,7 @@ export async function freshContext(storage = {}) {
     if (path.startsWith('/test/vid/')) return route.fulfill({ contentType: 'video/webm', body: readFileSync(VIDEO) });
     // Every song the same 4 seconds of a tone.
     if (path.startsWith('/test/aud/')) return route.fulfill({ contentType: 'audio/webm', body: readFileSync(SONG) });
+    if (/^\/(api|graphql)\//.test(path)) requestLog.push({ path, at: Date.now() });
     if (!acc) return route.fulfill({ status: 401, body: '' });
     const info = path.match(/^\/api\/v1\/media\/(\d+)\/info\/$/);
     if (info) {

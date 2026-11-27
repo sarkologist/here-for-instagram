@@ -69,28 +69,73 @@ const Sinsta = (() => {
 
   // ---- Pacing ---------------------------------------------------------------
 
-  // Instagram flags sessions whose traffic doesn't look like a person's. So
-  // requests nobody asked for this moment (profile cards, prefetching, the
-  // notification checks) share a budget per minute, and as soon as
-  // Instagram pushes back (a "Page not found" page instead of data, 401,
-  // 403, 429, "please wait") they stop for half an hour, and failed loads
-  // aren't retried. What you do yourself (open, like, save, scroll) still
-  // goes through.
+  // Instagram flags sessions whose traffic doesn't look like a person's, so
+  // every request to it goes through one limiter here: a burst of a few (a
+  // page load), then one every REFILL_MS, never more than PER_MIN a minute.
+  // Requests over that wait their turn. Background ones (`background`:
+  // prefetching, profile cards, notification checks, which nobody asked for
+  // this moment) go after the rest, share BACKGROUND_PER_MIN, and are
+  // dropped rather than queued when over it, when the queue is busy, or
+  // once Instagram has pushed back (a page instead of data, 401, 403, 429,
+  // "please wait"): then they stop for PAUSE_MS, and failed loads aren't
+  // retried.
+  const BURST = 4;
+  const REFILL_MS = 300;
+  const PER_MIN = 60;
   const BACKGROUND_PER_MIN = 20;
   const PAUSE_MS = 30 * 60 * 1000;
-  const backgroundAt = []; // when recent background requests were allowed
+  const started = []; // when recent requests started
+  const backgroundStarted = []; // the background ones among them
+  let tokens_ = BURST;
+  let refilledAt = Date.now();
+  const waiting = []; // [{ background, go }] in arrival order
+  let pumpTimer = 0;
   let pausedUntil = 0;
   const heldBack = () => Date.now() < pausedUntil;
+  const recent = (list, now) => {
+    while (list.length && now - list[0] > 60000) list.shift();
+    return list.length;
+  };
 
-  // Whether background work needing `cost` requests may go now; if so, it
-  // is counted against the budget.
+  // Whether background work needing `cost` requests would be let through now.
   function allowBackground(cost = 1) {
-    const now = Date.now();
-    if (heldBack()) return false;
-    while (backgroundAt.length && now - backgroundAt[0] > 60000) backgroundAt.shift();
-    if (backgroundAt.length + cost > BACKGROUND_PER_MIN) return false;
-    for (let i = 0; i < cost; i++) backgroundAt.push(now);
-    return true;
+    return !heldBack() && recent(backgroundStarted, Date.now()) + cost <= BACKGROUND_PER_MIN;
+  }
+
+  // Resolves to true when the request may start, or false if it is dropped.
+  function admit(background) {
+    if (background && (!allowBackground(1) || waiting.length > 1)) return Promise.resolve(false);
+    return new Promise((go) => {
+      waiting.push({ background, go });
+      pump();
+    });
+  }
+
+  function pump() {
+    clearTimeout(pumpTimer);
+    while (waiting.length) {
+      const now = Date.now();
+      tokens_ = Math.min(BURST, tokens_ + Math.floor((now - refilledAt) / REFILL_MS));
+      if (tokens_ === BURST) refilledAt = now;
+      else refilledAt += Math.floor((now - refilledAt) / REFILL_MS) * REFILL_MS;
+      const full = recent(started, now) >= PER_MIN;
+      if (!tokens_ || full) {
+        const wait = full ? started[0] + 60000 - now : refilledAt + REFILL_MS - now;
+        pumpTimer = setTimeout(pump, Math.max(10, wait));
+        return;
+      }
+      // Requests someone is waiting for go before background ones.
+      const i = Math.max(0, waiting.findIndex((w) => !w.background));
+      const [next] = waiting.splice(i, 1);
+      if (next.background && !allowBackground(1)) {
+        next.go(false);
+        continue;
+      }
+      tokens_--;
+      started.push(now);
+      if (next.background) backgroundStarted.push(now);
+      next.go(true);
+    }
   }
 
   function pushback(why) {
@@ -99,10 +144,17 @@ const Sinsta = (() => {
     if (was) return;
     console.warn(`Here for Instagram: Instagram pushed back (${why}); background requests stop for 30 minutes.`);
     window.dispatchEvent(new CustomEvent('sinsta-pushback'));
+    // Background requests already waiting don't go either.
+    for (let i = waiting.length - 1; i >= 0; i--) {
+      if (waiting[i].background) waiting.splice(i, 1)[0].go(false);
+    }
   }
 
   let lastFailure = ''; // why the last request failed, for the console
-  async function request(path, init) {
+  // `opts.background`: see Pacing. `opts.text`: the page itself is wanted,
+  // not JSON.
+  async function request(path, init, opts = {}) {
+    if (!(await admit(!!opts.background))) return null;
     const url = location.origin + path;
     const where = path.split('?')[0];
     // Firefox: content.fetch sends the request exactly as the page would;
@@ -125,6 +177,7 @@ const Sinsta = (() => {
         if ([401, 403, 429].includes(res.status)) pushback(lastFailure);
         return null;
       }
+      if (opts.text) return text;
       let json;
       try {
         json = JSON.parse(text);
@@ -145,8 +198,8 @@ const Sinsta = (() => {
   }
 
 
-  function api(path) {
-    return request(path, { headers: { 'x-ig-app-id': APP_ID }, credentials: 'include' });
+  function api(path, opts) {
+    return request(path, { headers: { 'x-ig-app-id': APP_ID }, credentials: 'include' }, opts);
   }
 
   // Some reads work on /graphql/query with just the CSRF cookie. Mutations
@@ -169,7 +222,7 @@ const Sinsta = (() => {
 
   // A persisted GraphQL query: reads go to /graphql/query; mutations
   // (`mutation` true) to /api/graphql with the page's session tokens.
-  function gql(docId, variables, mutation) {
+  function gql(docId, variables, mutation, opts) {
     const params = { doc_id: docId, variables: typeof variables === 'string' ? variables : JSON.stringify(variables) };
     const headers = {
       'content-type': 'application/x-www-form-urlencoded',
@@ -187,7 +240,7 @@ const Sinsta = (() => {
       credentials: 'include',
       headers,
       body: new URLSearchParams(params).toString(),
-    });
+    }, opts);
   }
 
 
@@ -238,7 +291,7 @@ const Sinsta = (() => {
   async function appOnlyNotifications() {
     const t = tokens();
     if (!t || !t.device) return null;
-    const res = await gql(DOC_BADGE, { device_id: t.device }, true);
+    const res = await gql(DOC_BADGE, { device_id: t.device }, true, { background: true });
     const badge = res && res.data && res.data.xdt_notification_badge;
     const counts = badge && badge.badge_count;
     if (!counts) return null;
@@ -250,7 +303,7 @@ const Sinsta = (() => {
   // favorites or home), as the query's connection, or null on failure.
   // Reports nothing as viewed.
   let feedDoc = 0; // index into DOC_FEEDS of the id that last worked
-  async function feedConnection(variant, after) {
+  async function feedConnection(variant, after, opts) {
     const t = tokens();
     if (!t || !t.device) {
       console.warn('Here for Instagram: no session tokens in the page for the feed', JSON.stringify(tokenProbe));
@@ -277,7 +330,7 @@ const Sinsta = (() => {
     let res = null;
     for (let n = 0; n < DOC_FEEDS.length && !(n && heldBack()); n++) {
       const i = (feedDoc + n) % DOC_FEEDS.length;
-      res = await gql(DOC_FEEDS[i], variables);
+      res = await gql(DOC_FEEDS[i], variables, false, opts);
       const conn = res && res.data && res.data.xdt_api__v1__feed__timeline__connection;
       if (conn) {
         feedDoc = i;
@@ -315,11 +368,11 @@ const Sinsta = (() => {
 
   // Posts by followed accounts published since `since` (unix seconds), newest
   // first, from the chronological Following feed. Reports nothing as viewed.
-  async function recentPosts(since, maxPages = 4) {
+  async function recentPosts(since, maxPages = 4, opts) {
     const out = [];
     let after = null;
     for (let page = 0; page < maxPages; page++) {
-      const conn = await feedConnection('following', after);
+      const conn = await feedConnection('following', after, opts);
       if (!conn) return page ? out : null;
       let older = false;
       for (const e of conn.edges || []) {
@@ -396,10 +449,11 @@ const Sinsta = (() => {
   // A post's song (see songOf), asking Instagram for the post when its
   // feed left the song out; null if it has none or can't be loaded.
   const songLookups = new Map();
-  function songFor(it) {
+  // `opts`: as for request() (a song looked up ahead is background).
+  function songFor(it, opts) {
     if (it.song !== undefined) return Promise.resolve(it.song);
     if (!songLookups.has(it.pk)) {
-      songLookups.set(it.pk, api(`/api/v1/media/${it.pk}/info/`).then((res) => {
+      songLookups.set(it.pk, api(`/api/v1/media/${it.pk}/info/`, opts).then((res) => {
         const m = res && res.items && res.items[0];
         // A failed lookup is tried again next time.
         if (m) it.song = songOf(m);
@@ -499,7 +553,7 @@ const Sinsta = (() => {
   // One page of an account's posts, as its profile's Posts tab shows them
   // (pinned ones first), as { items, after } where `after` is null at the
   // end, or null on failure.
-  async function profilePage(username, after) {
+  async function profilePage(username, after, opts) {
     const res = await gql(DOC_PROFILE_POSTS, {
       after: after || null,
       before: null,
@@ -515,7 +569,7 @@ const Sinsta = (() => {
       last: null,
       username,
       ...PROFILE_FLAGS,
-    }, true);
+    }, true, opts);
     const conn = res && res.data && res.data.xdt_api__v1__feed__user_timeline_graphql_connection;
     if (!conn) return null;
     const items = (conn.edges || []).map((e) => mediaItem(e && e.node)).filter(Boolean);
@@ -1051,7 +1105,8 @@ const Sinsta = (() => {
   // following, youFollow, followsYou, favourite, recent: [{ code, thumb }] },
   // or null on failure.
   async function userCard(userId) {
-    const send = () => gql(DOC_USER_CARD, { userID: String(userId) }, true);
+    // Only profile cards ask, which nobody waits for: background.
+    const send = () => gql(DOC_USER_CARD, { userID: String(userId) }, true, { background: true });
     const of = (res) => res && res.data && res.data.xig_user_by_igid_v2;
     let got = of(await send());
     if (!got) {
@@ -1090,18 +1145,12 @@ const Sinsta = (() => {
   // Favourites' ids come with the favourites list. For anyone else, the only
   // lookup left on the web (web_profile_info is gone) is the profile page,
   // which is large, so it is fetched on click rather than on hover.
-  async function lookUpId(user) {
+  async function lookUpId(user, opts) {
     if (userIds.has(user)) return userIds.get(user);
-    // Firefox: content.fetch sends the request as the page would.
-    const f = typeof content === 'object' && content && content.fetch ? content.fetch.bind(content) : window.fetch.bind(window);
-    try {
-      const res = await f(`${location.origin}/${encodeURIComponent(user)}/`, { credentials: 'include' });
-      const id = ((await res.text()).match(/"profile_id":"(\d+)"/) || [])[1];
-      if (id) userIds.set(user, id);
-      return id || null;
-    } catch (_) {
-      return null;
-    }
+    const page = await request(`/${encodeURIComponent(user)}/`, { credentials: 'include' }, { ...opts, text: true });
+    const id = ((page || '').match(/"profile_id":"(\d+)"/) || [])[1];
+    if (id) userIds.set(user, id);
+    return id || null;
   }
 
   // ---- Viewer state -------------------------------------------------------
@@ -1648,12 +1697,12 @@ const Sinsta = (() => {
   // One request for several accounts' stories. Since November 2026 this
   // query needs /api/graphql and the session tokens: /graphql/query
   // answers it with an HTML page.
-  function loadReels(ids) {
+  function loadReels(ids, opts) {
     const send = () => gql(DOC_REELS, {
       media_id: null,
       reel_ids_arr: ids,
       __relay_internal__pv__PolarisCommunityNoteStoriesLabelEnabledrelayprovider: true,
-    }, true);
+    }, true, opts);
     const reelsOf = (data) => data && data.data && data.data.xdt_api__v1__feed__reels_media;
     const job = send().then((data) => {
       if (reelsOf(data)) return data;
@@ -1687,9 +1736,9 @@ const Sinsta = (() => {
   // which is ranked and cut off at 120 accounts, this misses nobody. The
   // stories themselves are kept for the viewer, so they open instantly.
   // Larger batches than 10 accounts make Instagram fail the whole request.
-  async function fetchReels(ids) {
+  async function fetchReels(ids, opts) {
     const batches = [];
-    for (let i = 0; i < ids.length; i += 10) batches.push(loadReels(ids.slice(i, i + 10)));
+    for (let i = 0; i < ids.length; i += 10) batches.push(loadReels(ids.slice(i, i + 10), opts));
     const results = await Promise.all(batches);
     if (results.some((r) => r === null)) return null;
     return results.flat().map((r) => {
