@@ -160,10 +160,12 @@ row.querySelector('.back').addEventListener('click', () => {
 </script></main>`);
 
 // Search results (/explore/search/keyword/?q=), as Instagram renders them:
-// the query as a heading, then its grid and a loader.
-const SEARCH = (q) => PAGE.replace(/<main>.*<\/main>/, `<main><div class="serp">
-<div class="head"><span>${q.replace(/[<&]/g, '')}</span></div>
-<div class="results"><div class="grid"><div><a href="/p/Snative/"><img alt=""></a></div></div><div class="loader"></div></div>
+// in a narrow column, the query as a heading (for "cats", a heading that
+// isn't the query), then, in a box that clips, its grid and a loader.
+const SEARCH = (q) => PAGE.replace(/<main>.*<\/main>/, `<main><div class="serp" style="max-width: 600px; margin: 0 auto; padding: 0 20px">
+<div class="head"><span>${q === 'cats' ? 'Top results' : q.replace(/[<&]/g, '')}</span></div>
+<div class="results" style="overflow-x: hidden"><div class="grid"><div><a href="/p/Snative/"><img alt=""></a></div>
+<div><a href="/p/Snative2/"><img alt=""></a></div></div><div class="loader"></div></div>
 </div></main>`);
 
 // Profiles there are pages for: alice and carol have stories, nostory doesn't.

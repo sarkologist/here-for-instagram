@@ -2358,10 +2358,16 @@
       const q = view.slice('search:'.length);
       const heading = [...document.querySelectorAll('main h1, main h2, main span')]
         .find((n) => !n.childElementCount && n.textContent.trim() === q && n.compareDocumentPosition(all[0]) & Node.DOCUMENT_POSITION_FOLLOWING);
-      if (!heading) return lcaOf(all[0], all[all.length - 1]);
-      const lca = lcaOf(heading.parentElement, all[0]);
       let block = all[0];
-      while (block.parentElement !== lca) block = block.parentElement;
+      if (heading) {
+        const lca = lcaOf(heading.parentElement, all[0]);
+        while (block.parentElement !== lca) block = block.parentElement;
+      } else block = lcaOf(all[0], all[all.length - 1]);
+      // Out of any box that clips, which would crop the grid as it reaches
+      // out to the room beside the sidebar.
+      for (let e = block.parentElement; e && e.tagName !== 'MAIN'; e = e.parentElement) {
+        if (getComputedStyle(e).overflowX !== 'visible') block = e;
+      }
       return block;
     }
     const tab = document.querySelector(`main a[href="/${view.slice('profile:'.length)}/"][aria-selected="true"]`);
@@ -2389,7 +2395,10 @@
     const measured = root.style.getPropertyValue('--sr-left');
     if (!measured) return;
     const left = parseFloat(measured);
-    const shift = `${Math.round(left - root.parentElement.getBoundingClientRect().left)}px`;
+    // (From the parent's content box, where the box starts unshifted.)
+    const parent = root.parentElement;
+    const start = parent.getBoundingClientRect().left + parent.clientLeft + parseFloat(getComputedStyle(parent).paddingLeft);
+    const shift = `${Math.round(left - start)}px`;
     const width = `${Math.round(document.documentElement.clientWidth - left)}px`;
     // (Only .sf-inline uses these, so the surface can't keep them when
     // Instagram takes the box away with the profile's page.)

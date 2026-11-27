@@ -1176,3 +1176,26 @@ test('Search results that can\'t be loaded stay Instagram\'s own page', async ()
   }));
   assert.deepEqual(got, { surface: false, native: 'block' });
 });
+
+test('Search results: the grid reaches the room beside the sidebar, uncropped, whatever the heading', async () => {
+  for (const q of ['#sunset', 'cats']) {
+    await openSearch(q);
+    await page.waitForFunction(() => document.querySelectorAll('main #sinsta-surface.sf-inline .sf-tile').length >= 6);
+    const got = await page.evaluate(() => {
+      const r = document.querySelector('#sinsta-surface').getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      const clipped = [...document.querySelectorAll('#sinsta-surface .sf-tile')].some((t) => {
+        const b = t.getBoundingClientRect();
+        let e = t.parentElement;
+        for (; e && e !== document.body; e = e.parentElement) {
+          if (getComputedStyle(e).overflowX === 'visible') continue;
+          const c = e.getBoundingClientRect();
+          if (b.left < c.left - 1 || b.right > c.right + 1) return true;
+        }
+        return b.left < -1 || b.right > vw + 1;
+      });
+      return { wide: r.width > 1000, right: Math.abs(r.right - vw) <= 1, clipped };
+    });
+    assert.deepEqual(got, { wide: true, right: true, clipped: false }, q);
+  }
+});
