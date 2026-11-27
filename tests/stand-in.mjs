@@ -43,7 +43,7 @@ export const videoReel = (id, username) => {
 // post's own page (`posts`, by pk) has: 1s to 3s of a 4-second file.
 let pks = 1000;
 export const songs = {};
-export const media = (code, username, { following = true, ago = 3600, slides = 1, video = false, caption = '', song = null, saved = false } = {}) => {
+export const media = (code, username, { following = true, ago = 3600, slides = 1, video = false, caption = '', song = null, saved = false, inCollections = null } = {}) => {
   const pk = String(pks++);
   if (song) {
     songs[pk] = {
@@ -65,6 +65,7 @@ export const media = (code, username, { following = true, ago = 3600, slides = 1
       ...(following === null ? {} : { friendship_status: { following } }),
     },
     like_count: 12, comment_count: 3, caption: caption ? { text: caption } : null, has_viewer_saved: saved,
+    ...(inCollections ? { saved_collection_ids: inCollections } : {}),
     ...pic(0),
     ...(slides > 1 ? { carousel_media: Array.from({ length: slides }, (_, i) => pic(i)) } : {}),
   };
@@ -110,7 +111,7 @@ export const requestLog = []; // every request to Instagram's API: { path, at }
 export const followCalls = [];
 const FOLLOW_DOCS = { '30480713304862233': 'follow', '25174972798866458': 'unfollow' };
 const SAVE_DOCS = {
-  '27365486596441074': 'save', '27371251859134880': 'unsave', '39663440886576281': 'add', '27305499509043563': 'new',
+  '27365486596441074': 'save', '27371251859134880': 'unsave', '39663440886576281': 'add', '28735296319489844': 'remove', '27305499509043563': 'new',
 };
 // Who has seen each of your own stories (by pk): { username, liked, reply }.
 export const storyViewers = {};

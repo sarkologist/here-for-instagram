@@ -16,7 +16,7 @@
 
   const {
     go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, profileTabPage, complete, searchPage, reelByCode, feedPage, songFor, ago,
-    likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection,
+    likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, removeFromCollection, newCollection,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
   const home = () => Sinsta.home || null;
@@ -801,8 +801,9 @@
   // As on Instagram: saving puts a post in "All posts" and opens a list of
   // your collections beside the button, to put it in one too or make a new
   // one; a note at the bottom says where it went. The pointer resting on the
-  // button opens the list too, saved or not, so a saved post can go in
-  // another collection without being unsaved first.
+  // button opens the list too, saved or not. The collections the post is in
+  // are ticked, and clicking one puts it in or takes it out, so a saved post
+  // can be moved between them without being unsaved.
   const saving = new WeakSet(); // posts whose save is on its way
 
   // `from`: the button it was saved with, for the collections to open by.
@@ -827,6 +828,7 @@
       closeSaveTo();
       toast(on ? "Couldn't save the post." : "Couldn't remove the post from saved.");
     } else if (!on) {
+      it.inCollections = []; // unsaving takes it out of them all
       toast('Removed from saved.');
     } else if (!picking) {
       toast('Saved.', 'View saved', savedHref(null));
@@ -929,10 +931,13 @@
         return;
       }
       listNode.replaceChildren(...got.items.map((c) => {
+        const tick = icon(CHECK);
+        tick.classList.add('sf-saveto-tick');
         const row = el('button', { type: 'button', className: 'sf-saveto-row' },
           c.cover ? el('img', { src: c.cover, alt: '' }) : el('span', { className: 'sf-saveto-blank' }),
-          el('span', { className: 'sf-saveto-name' }, c.name));
-        row.addEventListener('click', () => putIn(it, c));
+          el('span', { className: 'sf-saveto-name' }, c.name), tick);
+        markIn(row, isIn(it, c));
+        row.addEventListener('click', () => toggleIn(it, c, row));
         return row;
       }));
       placeSaveTo(); // taller now
@@ -981,12 +986,33 @@
     return ok;
   }
 
-  async function putIn(it, col) {
-    closeSaveTo();
-    if (!(await ensureSaved(it))) return;
-    const ok = await addToCollection(col.id, it.pk);
-    if (ok) toast(`Saved to "${col.name}".`, 'View collection', savedHref(col));
-    else toast(`Couldn't save to "${col.name}".`);
+  const isIn = (it, col) => (it.inCollections || []).includes(col.id);
+  function markIn(row, on) {
+    row.toggleAttribute('data-on', on);
+    row.setAttribute('aria-pressed', String(on));
+    row.title = on ? 'Remove from this collection' : 'Save to this collection';
+  }
+
+  // Put the post in the collection, or take it out if it's in. The list
+  // stays open, to change others too.
+  async function toggleIn(it, col, row) {
+    if (row.dataset.busy) return;
+    const on = !isIn(it, col);
+    const set = (v) => {
+      const rest = (it.inCollections || []).filter((id) => id !== col.id);
+      it.inCollections = v ? [...rest, col.id] : rest;
+      markIn(row, v);
+    };
+    row.dataset.busy = '1';
+    set(on);
+    const ok = (!on || (await ensureSaved(it))) && (await (on ? addToCollection : removeFromCollection)(col.id, it.pk));
+    delete row.dataset.busy;
+    if (!ok) {
+      set(!on);
+      toast(on ? `Couldn't save to "${col.name}".` : `Couldn't remove from "${col.name}".`);
+    } else {
+      toast(on ? `Saved to "${col.name}".` : `Removed from "${col.name}".`, 'View collection', savedHref(col));
+    }
   }
 
   let newCol = null; // { node, it }
@@ -1029,6 +1055,7 @@
       }
       closeNewCollection();
       colls = null; // list it next time
+      if (id) it.inCollections = [...(it.inCollections || []), id];
       toast(`Saved to "${name}".`, id ? 'View collection' : 'View saved', savedHref(id ? { id, name } : null));
     }
   }
