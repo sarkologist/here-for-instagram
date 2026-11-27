@@ -77,7 +77,7 @@
       const q = (new URLSearchParams(search).get('q') || '').trim();
       return q ? `search:${q}` : null;
     }
-    const [, user, tab] = pathname.match(/^\/([\w.]+)\/(?:(reels|reposts|tagged)\/?)?$/) || [];
+    const [, user, tab] = pathname.match(/^\/([\w.]+)(?:\/(reels|reposts|tagged))?\/?$/) || [];
     if (user && document.querySelector(`main a[href="/${user}/${tab ? `${tab}/` : ''}"][aria-selected="true"]`)) return `profile:${user}${tab ? `/${tab}` : ''}`;
     if (pathname !== '/') return null;
     const variant = new URLSearchParams(search).get('variant');
