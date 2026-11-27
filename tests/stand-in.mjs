@@ -58,7 +58,7 @@ export const media = (code, username, { following = true, ago = 3600, slides = 1
     image_versions2: { candidates: [{ width: 1080, height: 1350, url: `${ORIGIN}/test/pic/${code}-${n}.jpg` }] },
     ...(video ? { video_versions: [{ url: `${ORIGIN}/test/vid/${code}.mp4` }] } : {}),
   });
-  return {
+  return allMedia[pk] = {
     pk, id: `${pk}_1`, code, taken_at: NOW - ago, product_type: video ? 'clips' : slides > 1 ? 'carousel_container' : 'feed',
     user: {
       pk: `u-${username}`, username, profile_pic_url: `${ORIGIN}/test/pic/${username}.jpg`,
@@ -68,6 +68,19 @@ export const media = (code, username, { following = true, ago = 3600, slides = 1
     ...pic(0),
     ...(slides > 1 ? { carousel_media: Array.from({ length: slides }, (_, i) => pic(i)) } : {}),
   };
+};
+const allMedia = {}; // by pk, for the post's own page
+// A post as a profile's Reels, Reposts and Tagged tabs send it: its videos
+// without their files, and (`caption` false, as on Reels) no caption.
+export const lite = (m, { caption = true } = {}) => {
+  const strip = (o) => {
+    const { video_versions, ...rest } = o;
+    return video_versions ? { ...rest, media_type: 2 } : rest;
+  };
+  const out = strip(m);
+  if (out.carousel_media) out.carousel_media = out.carousel_media.map(strip);
+  if (!caption) delete out.caption;
+  return out;
 };
 export const ad = (m) => ({ ad: true, media: m });
 // A suggested post, as the home feed sends it.
@@ -84,6 +97,12 @@ export const songLookups = []; // pks of the posts asked for their song
 // new-collection mutation, in order.
 export const saveCalls = [];
 export const searchCalls = [];
+export const tabCalls = []; // { kind, more, vars } of each profile tab query
+const PROFILE_TAB_DOCS = {
+  '30033462306341888': ['reels', false], '29174105612283268': ['reels', true],
+  '29526776690267830': ['reposts', false], '29382351751449718': ['reposts', true],
+  '29179217291735675': ['tagged', false], '28828779876794122': ['tagged', true],
+};
 export const queryLog = [];
 export const requestLog = []; // every request to Instagram's API: { path, at }
 // Following: { kind: 'follow' | 'unfollow', id } of each mutation, and
@@ -99,6 +118,7 @@ function reset() {
   songLookups.length = 0;
   saveCalls.length = 0;
   searchCalls.length = 0;
+  tabCalls.length = 0;
   queryLog.length = 0;
   requestLog.length = 0;
   followCalls.length = 0;
@@ -135,7 +155,7 @@ const PROFILE = (id, username, tab = '') => PAGE.replace(/<main>.*<\/main>/, `<s
 document.addEventListener('click', (e) => { if (e.target.closest('[role=button]')) window.__igClicks++; });</script>
 <main><div class="profile"><header><section><div role="button" tabindex="0"><span role="link" tabindex="-1">
 <img alt="${username}'s profile picture" src="/test/pic/${id}.jpg"></span></div></section></header>
-<div class="tabs">${['', 'reels/', 'tagged/'].map((t) => `<a role="link" aria-selected="${t === tab}" href="/${username}/${t}">${t || 'posts'}</a>`).join('')}</div>
+<div class="tabs">${['', 'reels/', 'reposts/', 'tagged/'].map((t) => `<a role="link" aria-selected="${t === tab}" href="/${username}/${t}">${t || 'posts'}</a>`).join('')}</div>
 <div class="grid"><div><a href="/p/Pnative${tab ? '-' + tab.slice(0, -1) : ''}/"><img alt=""></a></div></div></div></main>`);
 // Explore, as Instagram renders it: a search box above its grid. Focusing
 // the box turns the page into search results, with a Back button beside
@@ -203,7 +223,7 @@ export async function freshContext(storage = {}) {
     if (path === '/' || /^\/reels\//.test(path)) return route.fulfill({ contentType: 'text/html', body: PAGE });
     if (path === '/explore/') return route.fulfill({ contentType: 'text/html', body: EXPLORE });
     if (path === '/explore/search/keyword/') return route.fulfill({ contentType: 'text/html', body: SEARCH(new URL(req.url()).searchParams.get('q') || '') });
-    const profile = path.match(/^\/([\w.]+)\/((?:reels|tagged)\/)?$/);
+    const profile = path.match(/^\/([\w.]+)\/((?:reels|reposts|tagged)\/)?$/);
     if (profile && PROFILES[profile[1]]) return route.fulfill({ contentType: 'text/html', body: PROFILE(PROFILES[profile[1]], profile[1], profile[2] || '') });
     const ext = path.match(/^\/test\/ext\/([\w.]+)$/);
     if (ext) return route.fulfill({ contentType: ext[1].endsWith('.css') ? 'text/css' : 'text/javascript', body: readFileSync(join(ROOT, ext[1])) });
@@ -216,7 +236,7 @@ export async function freshContext(storage = {}) {
     const info = path.match(/^\/api\/v1\/media\/(\d+)\/info\/$/);
     if (info) {
       songLookups.push(info[1]);
-      return json({ items: [{ pk: info[1], media_type: 1, music_metadata: songs[info[1]] || null }] });
+      return json({ items: [{ media_type: 1, ...allMedia[info[1]], pk: info[1], music_metadata: songs[info[1]] || null }] });
     }
     if (path === '/api/v1/feed/reels_tray/') return json({ tray: acc.tray });
     const seenBy = path.match(/^\/api\/v1\/media\/(\d+)\/list_reel_media_viewer\/$/);
@@ -316,6 +336,26 @@ export async function freshContext(storage = {}) {
             },
           },
         });
+      }
+      const tabKind = PROFILE_TAB_DOCS[form.get('doc_id')];
+      if (tabKind) {
+        // A profile's Reels, Reposts or Tagged tab (`tabs[username][kind]`),
+        // in pages of 12, the cursor being the index to start at.
+        const [kind, more] = tabKind;
+        tabCalls.push({ kind, more, vars });
+        const id = String(vars.user_id || vars.id);
+        const name = id.startsWith('u-') ? id.slice(2) : Object.keys(PROFILES).find((n) => PROFILES[n] === id);
+        const all = acc.tabs && acc.tabs[name] && acc.tabs[name][kind];
+        if (!all) return json({ data: null });
+        const start = Number(vars.after || vars.max_id || 0);
+        const page = all.slice(start, start + 12);
+        const next = start + 12 < all.length ? String(start + 12) : null;
+        const pageInfo = { has_next_page: !!next, end_cursor: next };
+        if (kind === 'reels') return json({ data: { fetch__XDTUserDict: { id, clips_connection: { edges: page.map((m) => ({ node: { media: m } })), page_info: pageInfo } } } });
+        if (kind === 'reposts') {
+          return json({ data: { fetch__XDTUserDict: { id, user_reposts_timeline: { repost_grid_items: page.map((m) => ({ media: m })), repost_more_available: !!next, repost_next_max_id: next } } } });
+        }
+        return json({ data: { xdt_api__v1__usertags__user_id__feed_connection: { edges: page.map((m) => ({ node: m })), page_info: pageInfo } } });
       }
       if (vars.query && vars.serp_session_id) {
         // Search results, in pages of 6 in units of 3, the cursor being the

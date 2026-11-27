@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls, queryLog, requestLog, searchCalls } from './stand-in.mjs';
+import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls, queryLog, requestLog, searchCalls, tabCalls, lite } from './stand-in.mjs';
 
 const LIST = { 'sinsta-surface': { layout: 'list' } };
 const GRID = { 'sinsta-surface': { layout: 'grid', cols: { following: 3 } } };
@@ -1004,11 +1004,9 @@ test('Profile, then straight to Home as Instagram swaps the page: the surface is
   assert.ok(Math.abs(box.right - box.page) <= 1, `right ${box.right} vs ${box.page}`);
 });
 
-test('Profile: Reels and Tagged stay Instagram\'s own; so do posts that can\'t be loaded', async () => {
-  await openProfile(GRID, '/alice/reels/');
-  await page.waitForTimeout(800);
-  assert.equal(await page.evaluate(() => !!document.querySelector('#sinsta-surface')), false);
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('main .grid')).display), 'block');
+test('Profile: tabs whose posts can\'t be loaded stay Instagram\'s own', async () => {
+  await openProfile(GRID, '/alice/reels/'); // (no reels to be had)
+  await page.waitForFunction(() => !document.querySelector('#sinsta-surface') && getComputedStyle(document.querySelector('main .grid')).display === 'block', null, { timeout: 8000 });
   await freshContext(GRID);
   await logIn('111');
   await page.goto(`${ORIGIN}/carol/`);
@@ -1198,4 +1196,77 @@ test('Search results: the grid reaches the room beside the sidebar, uncropped, w
     });
     assert.deepEqual(got, { wide: true, right: true, clipped: false }, q);
   }
+});
+
+// ---- A profile's Reels, Reposts and Tagged tabs -------------------------------
+
+async function openTab(tab, storage = GRID) {
+  await freshContext(storage);
+  await logIn('111');
+  accounts['111'].posts = { alice: [media('Pa1', 'alice'), media('Pa2', 'alice')] };
+  accounts['111'].tabs = {
+    alice: {
+      reels: Array.from({ length: 14 }, (_, i) => lite(media(`Ra${i + 1}`, 'alice', { video: true, caption: `reel ${i + 1}` }), { caption: false })),
+      reposts: [lite(media('Rp1', 'bob', { caption: 'by bob' })), lite(media('Rp2', 'carol', { video: true, caption: 'by carol' }))],
+      tagged: Array.from({ length: 14 }, (_, i) => lite(media(`Tg${i + 1}`, `tagger${i % 3}`, { slides: i === 0 ? 2 : 1 }))),
+    },
+  };
+  await page.goto(`${ORIGIN}/alice/${tab}/`);
+}
+
+test('Profile Reels: reels in 9:16 tiles in place of Instagram\'s; opening one fetches its video and caption', async () => {
+  await openTab('reels');
+  await page.waitForFunction(() => document.querySelectorAll('main #sinsta-surface.sf-inline .sf-tile').length >= 12);
+  const got = await page.evaluate(() => {
+    const t = document.querySelector('#sinsta-surface .sf-tile[href*="Ra1"]');
+    const r = t.getBoundingClientRect();
+    return {
+      native: getComputedStyle(document.querySelector('main .grid')).display,
+      tall: Math.abs(r.height / r.width - 16 / 9) < 0.05,
+      badge: !!t.querySelector('.sf-badge:not([hidden])'),
+    };
+  });
+  assert.deepEqual(got, { native: 'none', tall: true, badge: true });
+  // The account's id came from its posts' first page; the tab's own query
+  // asked by it.
+  assert.equal(tabCalls[0].kind, 'reels');
+  assert.equal(tabCalls[0].vars.user_id, 'u-alice');
+  // Nothing fetched per tile until one is opened.
+  assert.equal(songLookups.length, 0);
+  await page.click('#sinsta-surface .sf-tile[href*="Ra1"]');
+  await page.waitForFunction(() => {
+    const p = document.querySelector('#sinsta-reel-player');
+    return p && p.textContent.includes('reel 1') && document.querySelector('#sinsta-reel-player .sr-video');
+  });
+  // One fetch for it, and one ahead for the next.
+  await page.waitForTimeout(500);
+  assert.ok(songLookups.length >= 1 && songLookups.length <= 2, `fetched ${songLookups.length}`);
+  // Its own column count.
+  await page.keyboard.press('Escape');
+  await page.click('#sinsta-surface .sf-step[title^="More"]');
+  const cols = await page.evaluate(() => JSON.parse(localStorage.getItem('sinsta-surface') || '{}').cols || {});
+  assert.equal(cols['profile-reels'], 5);
+  assert.notEqual(cols.profile, 5);
+});
+
+test('Profile Reels: later pages ask with the connection query and its cursor', async () => {
+  await openTab('reels');
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length >= 12);
+  for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 800);
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length === 14, null, { timeout: 10000 });
+  const more = tabCalls.find((c) => c.more);
+  assert.equal(more.vars.after, '12');
+  assert.equal(more.vars.id, 'u-alice');
+});
+
+test('Profile Reposts and Tagged: other accounts\' posts in the same tiles', async () => {
+  await openTab('reposts');
+  await page.waitForFunction(() => document.querySelectorAll('main #sinsta-surface.sf-inline .sf-tile').length === 2);
+  assert.ok(await page.evaluate(() => !!document.querySelector('.sf-tile[href*="Rp2"] .sf-badge:not([hidden])')));
+  await page.click('#sinsta-surface .sf-tile[href*="Rp2"]');
+  await page.waitForFunction(() => document.querySelector('#sinsta-reel-player .sr-video'));
+  await openTab('tagged');
+  await page.waitForFunction(() => document.querySelectorAll('main #sinsta-surface.sf-inline .sf-tile').length >= 12);
+  assert.equal(tabCalls.filter((c) => c.kind === 'tagged')[0].vars.count, 12);
+  assert.ok(await page.evaluate(() => document.querySelector('.sf-tile[href*="Tg1/"] .sf-dots, .sf-tile[href*="Tg1/"] [class*="dot"]') !== null));
 });
