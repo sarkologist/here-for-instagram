@@ -30,6 +30,10 @@
   const SETTLE_MS = 150; // ms without scrolling after which a carousel has come to rest
   const SEEN_MS = 1000; // as in content.js: on screen this long counts as seen
   const RUN_LIMIT = 120; // seen posts in a row before pausing, as in content.js
+  // Feed pages come no faster than someone scrolling would ask for them:
+  // Instagram restricts accounts whose web feed is paged like a scraper's.
+  const PAGE_GAP_MS = 2500; // between pages
+  const AUTO_PAGES = 3; // pages fetched to fill the screen before waiting for a scroll
   const storage = typeof browser === 'object' && browser.storage && browser.storage.local;
 
   const GRID = ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z'];
@@ -1136,9 +1140,23 @@
     return feedPage(view === 'algo' ? 'home' : view, after);
   }
 
-  async function loadMore(view = cur) {
+  let pageAt = 0; // when the last feed page was asked for
+  let pageTimer = 0;
+  let autoPages = 0; // pages fetched since the last scroll, keyboard or touch
+
+  // `auto`: fetched to fill the screen, not because the reader asked.
+  async function loadMore(view = cur, auto = false) {
     const f = feed(view);
     if (f.loading || f.ended || f.unavailable) return;
+    // A view's first page comes at once; later ones keep their distance.
+    const wait = f.items.length ? pageAt + PAGE_GAP_MS - Date.now() : 0;
+    if (wait > 0) {
+      clearTimeout(pageTimer);
+      pageTimer = setTimeout(() => loadMore(view, auto), wait);
+      return;
+    }
+    pageAt = Date.now();
+    if (auto) autoPages++;
     f.loading = true;
     f.failed = false;
     if (view === cur) syncStatus();
@@ -1231,7 +1249,8 @@
     if (h) h.setHiddenCount(count);
     const hidden = count > 0;
     // Redrawing it would wake the MutationObserver, which runs this again.
-    const key = [cur, f.loading, f.failed, f.ended, run, f.runLimit, hidden].join('|');
+    const waiting = !f.loading && !f.failed && !f.ended && autoPages >= AUTO_PAGES && run < f.runLimit;
+    const key = [cur, f.loading, f.failed, f.ended, run, f.runLimit, hidden, waiting].join('|');
     if (key === statusKey) return;
     statusKey = key;
     status.replaceChildren();
@@ -1246,6 +1265,8 @@
       const retry = el('button', { type: 'button', className: 'sr-retry' }, 'Try again');
       retry.addEventListener('click', () => loadMore());
       status.append(el('p', {}, cur === 'reels' ? "Couldn't load reels." : "Couldn't load more posts."), retry);
+    } else if (waiting) {
+      status.append(el('p', {}, run ? `Scroll for more (skipped ${run} you've seen)` : 'Scroll for more'));
     } else if (run >= f.runLimit && cur === 'algo' && hidden) {
       status.append(el('p', { className: 'sf-strong' }, `No new suggestions in the last ${run} posts.`), caughtUpButtons(f));
     } else if (run >= f.runLimit && cur === 'algo') {
@@ -1270,13 +1291,35 @@
 
   // Keep a screen and a half of posts below the fold (unless paused after a
   // long run of seen ones).
+  // Fetch the next page if the bottom is near. Past AUTO_PAGES without the
+  // reader moving (seen posts hidden, or Algo skipping followed accounts,
+  // leave the screen short), wait for them to scroll.
   function fill() {
     if (!active || !cur) return;
     const f = feed(cur);
     if (f.loading || f.ended || f.failed || f.unavailable || seenRun(cur) >= f.runLimit) return;
     const v = viewBox();
-    if (root.getBoundingClientRect().bottom - v.bottom < v.height * 1.5) loadMore();
+    if (root.getBoundingClientRect().bottom - v.bottom >= v.height * 1.5) return;
+    if (autoPages >= AUTO_PAGES) {
+      syncStatus();
+      return;
+    }
+    loadMore(cur, true);
   }
+  // The reader moving on lets the feed fetch again.
+  const moved = () => {
+    if (autoPages < AUTO_PAGES) {
+      autoPages = 0;
+      return;
+    }
+    autoPages = 0;
+    syncStatus();
+    fill();
+  };
+  for (const type of ['wheel', 'touchmove', 'pointerdown']) window.addEventListener(type, moved, { passive: true, capture: true });
+  window.addEventListener('keydown', (e) => {
+    if (['ArrowDown', 'PageDown', 'End', ' ', 'j'].includes(e.key)) moved();
+  }, true);
 
   root.addEventListener('scroll', fill, { passive: true });
   window.addEventListener('scroll', () => inline() && fill(), { passive: true });

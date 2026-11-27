@@ -237,7 +237,7 @@ export async function freshContext(storage = {}) {
     // Every query asked, as { path, doc } (`blocked`: the session's queries
     // all get Instagram's "Page not found" page).
     if (path === '/api/graphql' || path === '/graphql/query') {
-      queryLog.push({ path, doc: new URLSearchParams(req.postData() || '').get('doc_id') });
+      queryLog.push({ path, doc: new URLSearchParams(req.postData() || '').get('doc_id'), at: Date.now() });
       if (acc && acc.blocked) return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html><title>Page Not Found • Instagram</title></html>' });
     }
     // Without the CSRF token (`requireCsrf`), Instagram answers queries with

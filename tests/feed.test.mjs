@@ -155,6 +155,27 @@ test('Hide seen leaves out posts seen before this visit; off, they show dimmed',
   assert.equal(await page.evaluate(() => document.querySelectorAll('.sf-post.sf-seen').length), 1);
 });
 
+test('Feed pages are paced: 2.5 s apart, three on their own, then more only as you scroll', async () => {
+  const codes = Array.from({ length: 72 }, (_, i) => `Cs${i}`);
+  await freshContext({ ...LIST, 'sinsta-seen': Object.fromEntries(codes.map((c) => [c, NOW - 86400])) });
+  await logIn('111');
+  feeds111();
+  accounts['111'].feeds.following = codes.map((c, i) => media(c, 'alice', { ago: 100 + i }));
+  await page.goto(`${ORIGIN}/?variant=following`);
+  const FEED = ['40856843000596438', '29639616438977013'];
+  const pages = () => queryLog.filter((q) => FEED.includes(q.doc));
+  await page.waitForFunction(() => /Scroll for more/.test(document.querySelector('#sinsta-surface').innerText), null, { timeout: 15000 });
+  await page.waitForTimeout(3000); // nothing more comes on its own
+  assert.equal(pages().length, 4); // the first page, then three to fill the screen
+  const gaps = pages().slice(1).map((q, i) => q.at - pages()[i].at);
+  assert.ok(gaps.every((g) => g >= 2400), `gaps: ${gaps}`);
+  await page.mouse.move(640, 450);
+  await page.mouse.wheel(0, 400);
+  await page.waitForFunction(() => !/Scroll for more/.test(document.querySelector('#sinsta-surface').innerText), null, { timeout: 5000 });
+  for (let i = 0; i < 50 && pages().length < 5; i++) await page.waitForTimeout(100);
+  assert.equal(pages().length, 5);
+});
+
 test('Hide seen counts the posts it leaves out', async () => {
   const seen = { 'sinsta-seen': { Ccarol1: NOW - 86400 } };
   await open('following', { ...LIST, ...seen });
@@ -248,7 +269,8 @@ test('Grid: a tile counts as seen once scrolled past, or once the pointer rests 
   feeds111();
   accounts['111'].feeds.following = Array.from({ length: 24 }, (_, i) => media(`Cg${i}`, 'alice', { ago: 100 + i }));
   await page.goto(`${ORIGIN}/?variant=following`);
-  await settled(() => page.evaluate(() => document.querySelectorAll('.sf-tile').length));
+  // The second page comes a moment after the first (pages are paced).
+  await page.waitForFunction(() => document.querySelectorAll('.sf-tile').length === 24, null, { timeout: 10000 });
   const on = (code) => page.evaluate((c) => document.querySelector(`.sf-tile[href="/p/${c}/"] .sf-mark`).hasAttribute('data-on'), code);
   await page.mouse.move(0, 0);
   await page.waitForTimeout(1500);
@@ -511,6 +533,8 @@ test('Algo skips past the posts of accounts you follow to Instagram\'s suggestio
     suggested(media('Hs1', 'stranger', { following: false })),
   ];
   await page.goto(ORIGIN + '/');
+  // Paced: a page every 2.5 s, three of them before the suggestion.
+  await page.waitForFunction(() => [...document.querySelectorAll('#sinsta-surface .sf-post .sf-user')].some((a) => a.textContent === 'stranger'), null, { timeout: 15000 });
   assert.deepEqual(await posts(), ['stranger']);
 });
 
@@ -764,6 +788,7 @@ const tiles = () => settled(() => page.evaluate(() => [...document.querySelector
 
 test('Explore: its grid in the same tiles as Home, under Instagram\'s search box', async () => {
   await openExplore({ ...GRID, 'sinsta-prefs': { lastView: 'following' } });
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length >= 6, null, { timeout: 10000 });
   const got = await tiles();
   assert.ok(got.length >= 6, `tiles: ${got}`);
   assert.ok(got.includes('/p/Ea/') && got.includes('/reel/Eb/') && got.includes('/p/Ec/'));
@@ -786,9 +811,13 @@ test('Explore: its grid in the same tiles as Home, under Instagram\'s search box
     layout: !!document.querySelector('#sinsta-surface .sf-switch').offsetParent,
   }));
   assert.deepEqual(bar, { tabs: 0, toggle: true, layout: true });
-  // More loads as you scroll.
-  await page.evaluate(() => document.querySelector('#sinsta-surface').scrollTo(0, 1e6));
-  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length >= 17);
+  // More loads as you scroll (with the wheel: the reader moving), paced.
+  await page.mouse.move(640, 450);
+  for (let i = 0; i < 12 && await page.evaluate(() => document.querySelectorAll('#sinsta-surface .sf-tile').length) < 17; i++) {
+    await page.mouse.wheel(0, 3000);
+    await page.waitForTimeout(1000);
+  }
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length >= 17, null, { timeout: 10000 });
   // Visiting Explore leaves the Home view to reopen as it was.
   const prefs = await page.evaluate(() => new Promise((r) => setTimeout(() => r(JSON.parse(localStorage.getItem('sinsta-prefs'))), 300)));
   assert.equal(prefs.lastView, 'following');
@@ -812,7 +841,7 @@ test('Explore: the surface makes way for search results until Back', async () =>
   await page.click('main [role="button"]');
   await page.locator('main input').blur();
   await page.waitForFunction(() => document.documentElement.hasAttribute('data-sinsta-surface'));
-  assert.ok((await tiles()).length >= 6);
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length >= 6, null, { timeout: 10000 });
 });
 
 test('Explore falls back to Instagram\'s page when its grid can\'t be loaded', async () => {
