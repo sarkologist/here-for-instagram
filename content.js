@@ -10,6 +10,7 @@
   // Instagram's own page, which a view falls back to when its feed can't be
   // loaded.
   const { api, go, nav, el, mark, icon, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, userIds, lookUpId, userCard } = Sinsta;
+  const BACKGROUND = { background: true }; // for requests nobody is waiting for (see stories.js)
 
   const VIEWS = [
     {
@@ -950,9 +951,9 @@
     // for accounts you care about.
     await loadFavourites();
     const [tray, favs, posts] = await Promise.all([
-      api('/api/v1/feed/reels_tray/'),
-      favIds ? fetchReels([...favIds]) : null,
-      recentPosts(since),
+      api('/api/v1/feed/reels_tray/', BACKGROUND),
+      favIds ? fetchReels([...favIds], BACKGROUND) : null,
+      recentPosts(since, 4, BACKGROUND),
     ]);
     if (key !== guessKey) return;
     const reelsById = new Map();
@@ -1055,8 +1056,9 @@
     if (got && Date.now() - got.at < 60000) return got.job;
     if (background && !Sinsta.allowBackground(2)) return Promise.resolve(undefined);
     const job = (async () => {
-      const id = await lookUpId(user);
-      const reels = id ? await fetchReels([id]) : null;
+      const opts = background ? BACKGROUND : undefined;
+      const id = await lookUpId(user, opts);
+      const reels = id ? await fetchReels([id], opts) : null;
       if (!reels) {
         profileReels.delete(user);
         return undefined;
@@ -1229,7 +1231,7 @@
     // Instagram's card query has only the latest three posts; the profile's
     // own grid query has its first nine as the profile shows them (pinned
     // first). Private accounts you don't follow have only the card's.
-    const grid = Sinsta.profilePage(user).catch(() => null);
+    const grid = Sinsta.profilePage(user, null, BACKGROUND).catch(() => null);
     const job = lookUpId(user)
       .then(async (id) => {
         const c = id && await userCard(id);

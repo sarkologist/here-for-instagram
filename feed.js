@@ -1927,7 +1927,7 @@
     const next = list()[pi + 1];
     if (next && next.slides[0].video) preload = { index: pi + 1, video: makeVideo(next.slides[0]) };
     else if (next && next.slides[0].thumbs.length) new Image().src = next.slides[0].thumbs[0].url;
-    if (next && next.song === undefined && Sinsta.allowBackground(1)) songFor(next);
+    if (next && next.song === undefined) songFor(next, { background: true });
     if (list().length - pi < 6) {
       loadMore();
       grow();

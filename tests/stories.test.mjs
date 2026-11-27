@@ -151,10 +151,13 @@ test('Your own story: how many saw, liked and replied, and who', async () => {
   assert.deepEqual(await row('following'), ['me_myself', 'carol']);
   await page.click('.sinsta-story');
   const pill = page.locator('#sinsta-viewer .sv-seen');
-  // Every page is read, so the counts are whole.
-  await pill.filter({ hasText: '25' }).filter({ hasText: '2' }).waitFor();
+  // Every page is read, so the counts are whole (the second page comes a
+  // moment later: requests are paced).
+  await pill.waitFor();
   const counts = () => page.evaluate(() => [...document.querySelectorAll('#sinsta-viewer .sv-seen .sv-stat')]
     .map((s) => (s.hidden ? '-' : `${s.title} ${s.textContent}`)));
+  await page.waitForFunction(() => [...document.querySelectorAll('#sinsta-viewer .sv-seen .sv-stat')]
+    .map((s) => (s.hidden ? '-' : `${s.title} ${s.textContent}`)).join('|') === 'Viewers 25|Likes 2|Replies 2', null, { timeout: 5000 });
   assert.deepEqual(await counts(), ['Viewers 25', 'Likes 2', 'Replies 2']);
   const foot = () => page.evaluate(() => ({
     reply: !document.querySelector('#sinsta-viewer .sv-reply').hidden,

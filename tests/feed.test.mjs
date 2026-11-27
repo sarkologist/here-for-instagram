@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls, queryLog } from './stand-in.mjs';
+import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls, queryLog, requestLog } from './stand-in.mjs';
 
 const LIST = { 'sinsta-surface': { layout: 'list' } };
 const GRID = { 'sinsta-surface': { layout: 'grid', cols: { following: 3 } } };
@@ -153,6 +153,35 @@ test('Hide seen leaves out posts seen before this visit; off, they show dimmed',
   await open('following', { ...LIST, ...seen, 'sinsta-prefs': { hideSeen: false } });
   assert.deepEqual(await posts(), ['alice', 'carol', 'alice']);
   assert.equal(await page.evaluate(() => document.querySelectorAll('.sf-post.sf-seen').length), 1);
+});
+
+test('Every request to Instagram goes through one limiter: a burst of 4, then one per 300 ms, 60 a minute', async () => {
+  await freshContext(LIST);
+  await logIn('111');
+  feeds111();
+  accounts['111'].feeds.following = Array.from({ length: 24 }, (_, i) => media(`Cl${i}`, `user${i}`, { ago: 100 + i }));
+  await page.goto(`${ORIGIN}/?variant=following`);
+  await posts();
+  // A busy minute: through the player as fast as the keys go, each post
+  // loading its comments and looking up its song, names hovered on the way.
+  await page.click('.sf-post .sf-media');
+  await page.waitForSelector('#sinsta-reel-player .sr-cuser');
+  for (let i = 0; i < 20; i++) {
+    await page.keyboard.press('ArrowDown');
+    if (i % 4 === 0) await page.hover('#sinsta-reel-player .sr-cuser');
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(3000);
+  const at = requestLog.map((r) => r.at);
+  assert.ok(at.length > 12, `only ${at.length} requests`);
+  for (let i = 0; i < at.length; i++) {
+    for (let j = i + 1; j < at.length; j++) {
+      // A little slack for the time between the page sending and the stand-in hearing.
+      const allowed = 4 + Math.floor((at[j] - at[i] + 60) / 300);
+      assert.ok(j - i + 1 <= allowed, `${j - i + 1} requests in ${at[j] - at[i]} ms`);
+    }
+    assert.ok(at.filter((t) => t >= at[i] && t < at[i] + 60000).length <= 60);
+  }
 });
 
 test('Feed pages are paced: 2.5 s apart, three on their own, then more only as you scroll', async () => {
