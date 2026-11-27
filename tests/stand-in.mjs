@@ -75,13 +75,15 @@ export const suggested = (m) => ({ explore_story: { media: m } });
 
 // What Instagram tells each logged-in account: its stories tray, its
 // favourites, its home feeds (`feeds[variant]`: edges, newest first;
-// null makes the query fail) and Explore's grid (`explore`: media, or
-// { ad: media }; null fails).
+// null makes the query fail), Explore's grid (`explore`: media, or
+// { ad: media }; null fails) and search results (`search[query]`: media;
+// missing fails). `searchCalls`: the variables of each search query.
 export const accounts = {};
 export const songLookups = []; // pks of the posts asked for their song
 // Saving: { doc, input } of each save, unsave, add-to-collection and
 // new-collection mutation, in order.
 export const saveCalls = [];
+export const searchCalls = [];
 export const queryLog = [];
 export const requestLog = []; // every request to Instagram's API: { path, at }
 // Following: { kind: 'follow' | 'unfollow', id } of each mutation, and
@@ -96,6 +98,7 @@ export const storyViewers = {};
 function reset() {
   songLookups.length = 0;
   saveCalls.length = 0;
+  searchCalls.length = 0;
   queryLog.length = 0;
   requestLog.length = 0;
   followCalls.length = 0;
@@ -156,6 +159,15 @@ row.querySelector('.back').addEventListener('click', () => {
 });
 </script></main>`);
 
+// Search results (/explore/search/keyword/?q=), as Instagram renders them:
+// in a narrow column, the query as a heading (for "cats", a heading that
+// isn't the query), then, in a box that clips, its grid and a loader.
+const SEARCH = (q) => PAGE.replace(/<main>.*<\/main>/, `<main><div class="serp" style="max-width: 600px; margin: 0 auto; padding: 0 20px">
+<div class="head"><span>${q === 'cats' ? 'Top results' : q.replace(/[<&]/g, '')}</span></div>
+<div class="results" style="overflow-x: hidden"><div class="grid"><div><a href="/p/Snative/"><img alt=""></a></div>
+<div><a href="/p/Snative2/"><img alt=""></a></div></div><div class="loader"></div></div>
+</div></main>`);
+
 // Profiles there are pages for: alice and carol have stories, nostory doesn't.
 // What their Posts tabs hold is up to each account (`posts`).
 const PROFILES = { alice: '1', carol: '2', nostory: '9' };
@@ -190,6 +202,7 @@ export async function freshContext(storage = {}) {
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
     if (path === '/' || /^\/reels\//.test(path)) return route.fulfill({ contentType: 'text/html', body: PAGE });
     if (path === '/explore/') return route.fulfill({ contentType: 'text/html', body: EXPLORE });
+    if (path === '/explore/search/keyword/') return route.fulfill({ contentType: 'text/html', body: SEARCH(new URL(req.url()).searchParams.get('q') || '') });
     const profile = path.match(/^\/([\w.]+)\/((?:reels|tagged)\/)?$/);
     if (profile && PROFILES[profile[1]]) return route.fulfill({ contentType: 'text/html', body: PROFILE(PROFILES[profile[1]], profile[1], profile[2] || '') });
     const ext = path.match(/^\/test\/ext\/([\w.]+)$/);
@@ -300,6 +313,25 @@ export async function freshContext(storage = {}) {
               polaris_ordered_timeline_connection: {
                 edges: theirs.slice(0, 3).map((m) => ({ node: { media_dict: { code: m.code, image_versions2: m.image_versions2 } } })),
               },
+            },
+          },
+        });
+      }
+      if (vars.query && vars.serp_session_id) {
+        // Search results, in pages of 6 in units of 3, the cursor being the
+        // index to start at.
+        searchCalls.push({ path, at: Date.now(), ...vars });
+        const all = acc.search && acc.search[vars.query];
+        if (!all) return json({ data: null });
+        const start = Number(vars.after || 0);
+        const page = all.slice(start, start + 6);
+        const more = start + 6 < all.length;
+        return json({
+          data: {
+            xdt_fbsearch__top_serp_graphql: {
+              edges: [page.slice(0, 3), page.slice(3)].filter((u) => u.length)
+                .map((u) => ({ node: { __typename: 'XDTTopSerpMediaGridUnit', rank_token: 'r', items: u } })),
+              page_info: { has_next_page: more, end_cursor: more ? String(start + 6) : null },
             },
           },
         });

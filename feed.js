@@ -1,4 +1,4 @@
-// Home's views, Reels and Explore, drawn by the extension.
+// Home's views, Reels, Explore, search results and profiles, drawn by the extension.
 //
 // Following, Favourites and Algo show Instagram's home feeds, Reels its
 // Reels feed and Explore the grid under its search box, read with the
@@ -15,7 +15,7 @@
   'use strict';
 
   const {
-    go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor, ago,
+    go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, searchPage, reelByCode, feedPage, songFor, ago,
     likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
@@ -57,20 +57,25 @@
 
   let prefs = {
     layout: 'grid',
-    cols: { following: 4, favorites: 3, algo: 3, reels: 4, explore: 4, profile: 4 },
+    cols: { following: 4, favorites: 3, algo: 3, reels: 4, explore: 4, profile: 4, search: 4 },
     muted: false,
     volume: 1,
     speed: 1,
     comments: true,
   };
 
-  // The view Home, Reels, Explore or a profile's Posts tab is on, from the
-  // address (and, for a profile, its tabs: other pages have such addresses
-  // too). A profile's view is 'profile:<username>'.
+  // The view Home, Reels, Explore, search results or a profile's Posts tab
+  // is on, from the address (and, for a profile, its tabs: other pages have
+  // such addresses too). A profile's view is 'profile:<username>'; search
+  // results' 'search:<query>'.
   function viewOf() {
     const { pathname, search } = nav.here(); // under the player's or viewer's own address
     if (/^\/reels(\/|$)/.test(pathname)) return 'reels';
     if (/^\/explore\/?$/.test(pathname)) return 'explore';
+    if (/^\/explore\/search\/keyword\/?$/.test(pathname)) {
+      const q = (new URLSearchParams(search).get('q') || '').trim();
+      return q ? `search:${q}` : null;
+    }
     const user = (pathname.match(/^\/([\w.]+)\/?$/) || [])[1];
     if (user && document.querySelector(`main a[href="/${user}/"][aria-selected="true"]`)) return `profile:${user}`;
     if (pathname !== '/') return null;
@@ -129,11 +134,13 @@
   more.addEventListener('click', () => setColumns(cols() + 1));
 
   const isProfile = (view) => !!view && view.startsWith('profile:');
-  // A profile's grid sits in Instagram's page, which scrolls, rather than
-  // over it.
-  const inline = () => isProfile(cur);
-  // Profiles share one column count.
-  const colsKey = (view) => (isProfile(view) ? 'profile' : view);
+  const isSearch = (view) => !!view && view.startsWith('search:');
+  // A profile's grid, and search results', sit in Instagram's page, which
+  // scrolls, rather than over it.
+  const isInline = (view) => isProfile(view) || isSearch(view);
+  const inline = () => isInline(cur);
+  // Profiles share one column count; so do searches.
+  const colsKey = (view) => (isProfile(view) ? 'profile' : isSearch(view) ? 'search' : view);
   const cols = () => prefs.cols[colsKey(cur)] || 3;
   const isGrid = () => prefs.layout === 'grid';
 
@@ -206,7 +213,7 @@
 
   function hidingSeen(view) {
     const h = home();
-    return (SEEN_VIEWS.has(view) || isProfile(view)) && !!h && h.hideSeen();
+    return (SEEN_VIEWS.has(view) || isInline(view)) && !!h && h.hideSeen();
   }
 
   // A post's seen mark: on once it counts as seen, and a button to mark it
@@ -1137,6 +1144,7 @@
     if (view === 'reels') return reelsPage(after);
     if (view === 'explore') return explorePage(after);
     if (isProfile(view)) return profilePage(view.slice('profile:'.length), after);
+    if (isSearch(view)) return searchPage(view.slice('search:'.length), after);
     return feedPage(view === 'algo' ? 'home' : view, after);
   }
 
@@ -1281,10 +1289,11 @@
       status.append(el('p', { className: 'sf-strong' }, `You're caught up: the last ${run} posts were ones you've seen.`), caughtUpButtons(f));
     } else if (f.ended) {
       if (hidden) {
-        status.append(el('p', { className: 'sf-strong' }, inline() ? "You're caught up: you've seen the rest of their posts."
-          : "You're caught up: that's as far back as this feed goes."), caughtUpButtons(f));
+        status.append(el('p', { className: 'sf-strong' }, isSearch(cur) ? "You're caught up: you've seen the rest of the results."
+          : inline() ? "You're caught up: you've seen the rest of their posts."
+            : "You're caught up: that's as far back as this feed goes."), caughtUpButtons(f));
       }
-      else status.append(el('p', {}, cur === 'reels' || cur === 'explore' ? "That's all Instagram has for now."
+      else status.append(el('p', {}, cur === 'reels' || cur === 'explore' || isSearch(cur) ? "That's all Instagram has for now."
         : inline() ? "That's all of their posts." : "That's as far back as this feed goes."));
     }
   }
@@ -2317,27 +2326,53 @@
     if (focused) root.focus({ preventScroll: true });
   }
 
-  // Whether the surface shows this view: home views, Explore and profiles
-  // unless their feed couldn't be loaded (or, on Explore, while searching;
-  // on a profile, until Instagram's grid is there to take the place of),
-  // Reels in the grid layout.
+  // Whether the surface shows this view: home views, Explore, search results
+  // and profiles unless their feed couldn't be loaded (or, on Explore, while
+  // searching; on a profile or search results, until Instagram's grid is
+  // there to take the place of), Reels in the grid layout.
   function wants(view) {
     if (!view) return false;
     if (view === 'reels') return isGrid();
     if (view === 'explore' && searching) return false;
-    if (isProfile(view) && !gridBlock(view)) return false;
+    if (isInline(view) && !gridBlock(view)) return false;
     return !feed(view).unavailable;
   }
 
   // A profile's Posts grid: the box, after the header and the tabs, that
-  // holds Instagram's tiles. Inline, the surface goes after it, in its
-  // place, and it's hidden.
+  // holds Instagram's tiles; search results', the box after the heading
+  // (the query) that holds them, or, without such a heading, the tiles'
+  // own box. Inline, the surface goes after it, in its place, and it's
+  // hidden (so Instagram's page doesn't load more of its own as it would
+  // on scrolling).
   let replaced = null;
   function gridBlock(view) {
+    const tiles = () => [...document.querySelectorAll('main a[href*="/p/"], main a[href*="/reel/"]')].filter((a) => !root.contains(a));
+    const lcaOf = (a, b) => {
+      let x = a;
+      while (x && !x.contains(b)) x = x.parentElement;
+      return x;
+    };
+    if (isSearch(view)) {
+      const all = tiles();
+      if (!all.length) return null;
+      const q = view.slice('search:'.length);
+      const heading = [...document.querySelectorAll('main h1, main h2, main span')]
+        .find((n) => !n.childElementCount && n.textContent.trim() === q && n.compareDocumentPosition(all[0]) & Node.DOCUMENT_POSITION_FOLLOWING);
+      let block = all[0];
+      if (heading) {
+        const lca = lcaOf(heading.parentElement, all[0]);
+        while (block.parentElement !== lca) block = block.parentElement;
+      } else block = lcaOf(all[0], all[all.length - 1]);
+      // Out of any box that clips, which would crop the grid as it reaches
+      // out to the room beside the sidebar.
+      for (let e = block.parentElement; e && e.tagName !== 'MAIN'; e = e.parentElement) {
+        if (getComputedStyle(e).overflowX !== 'visible') block = e;
+      }
+      return block;
+    }
     const tab = document.querySelector(`main a[href="/${view.slice('profile:'.length)}/"][aria-selected="true"]`);
     if (!tab) return null;
-    const tile = [...document.querySelectorAll('main a[href*="/p/"], main a[href*="/reel/"]')]
-      .find((a) => !root.contains(a) && tab.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const tile = tiles().find((a) => tab.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
     let lca = tile && tab.parentElement;
     while (lca && !lca.contains(tile)) lca = lca.parentElement;
     if (!lca) return null;
@@ -2360,7 +2395,10 @@
     const measured = root.style.getPropertyValue('--sr-left');
     if (!measured) return;
     const left = parseFloat(measured);
-    const shift = `${Math.round(left - root.parentElement.getBoundingClientRect().left)}px`;
+    // (From the parent's content box, where the box starts unshifted.)
+    const parent = root.parentElement;
+    const start = parent.getBoundingClientRect().left + parent.clientLeft + parseFloat(getComputedStyle(parent).paddingLeft);
+    const shift = `${Math.round(left - start)}px`;
     const width = `${Math.round(document.documentElement.clientWidth - left)}px`;
     // (Only .sf-inline uses these, so the surface can't keep them when
     // Instagram takes the box away with the profile's page.)
