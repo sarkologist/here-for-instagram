@@ -46,8 +46,10 @@ Instagram's Home mixes the accounts you follow with suggestions, ads and reshuff
 - Replying, reacting and liking all still work.
 
 **Small things**
-- A star on account cards adds or removes Favourites.
+- Rest the pointer on a name for its profile card: counts, nine of its posts, Follow (Unfollow asks first) and a star that adds or removes Favourites.
+- Save posts from the list or the player (or press S), straight into one of your collections or a new one; saved posts show a bookmark in the grid.
 - Saved gets its own place in the main menu.
+- Gentle on Instagram: feed pages load at a scrolling pace, and if Instagram pushes back, the extension stops asking for a while instead of retrying.
 
 **Private**
 Everything is stored in your browser. The extension talks only to Instagram, as Instagram's own website does, and sends nothing to its developer or anyone else.
@@ -86,6 +88,14 @@ Captions, in order:
 - Paste [reviewer-notes.md](reviewer-notes.md) into "Notes to reviewer". The code isn't minified, so no source zip is needed.
 
 ## Release notes
+
+### 2.0.1
+
+- Gentler on Instagram: feed pages come at a scrolling pace (2.5 seconds apart; up to three on their own, then "Scroll for more"), requests nobody asked for are capped, and if Instagram pushes back, the extension stops asking for 30 minutes instead of retrying.
+- Profile cards: rest the pointer on a name in the list, grid, player or comments for a card like Instagram's, with nine posts, Follow (Unfollow asks first) and the Favourites star.
+- Save: a save button in the list and player (and S), with your collections beside it and a box for a new one. Saved posts show a bookmark in the grid.
+- Grid: hovered videos start sooner.
+- Feeds load with Instagram's newer feed query, and when the page hides its CSRF cookie from scripts.
 
 ### 2.0.0
 
