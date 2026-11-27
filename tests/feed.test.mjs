@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls, queryLog, requestLog } from './stand-in.mjs';
+import { ORIGIN, NOW, accounts, media, ad, suggested, page, freshContext, logIn, settled, songLookups, saveCalls, followCalls, queryLog, requestLog, searchCalls } from './stand-in.mjs';
 
 const LIST = { 'sinsta-surface': { layout: 'list' } };
 const GRID = { 'sinsta-surface': { layout: 'grid', cols: { following: 3 } } };
@@ -1119,4 +1119,60 @@ test('Player: Back from a profile opened from it reopens the post over the feed'
   await page.keyboard.press('Escape');
   await closed();
   await page.waitForFunction(() => location.pathname + location.search === '/?variant=following');
+});
+
+// ---- Search results ---------------------------------------------------------
+
+async function openSearch(q = '#sunset', storage = GRID) {
+  await freshContext(storage);
+  await logIn('111');
+  accounts['111'].search = { [q]: Array.from({ length: 30 }, (_, i) => media(`Ps${i + 1}`, `user${i % 4}`, { following: null })) };
+  await page.goto(`${ORIGIN}/explore/search/keyword/?q=${encodeURIComponent(q)}`);
+}
+
+test('Search results: the same tiles, in the page under the query, in place of Instagram\'s grid', async () => {
+  await openSearch();
+  await page.waitForFunction(() => document.querySelectorAll('main #sinsta-surface.sf-inline .sf-tile').length >= 6);
+  const got = await page.evaluate(() => ({
+    first: [1, 2, 3, 4, 5, 6].every((n) => document.querySelector(`#sinsta-surface .sf-tile[href="/p/Ps${n}/"]`)),
+    heading: !!document.querySelector('main .head span').offsetParent,
+    native: getComputedStyle(document.querySelector('main .results')).display,
+    afterNative: document.querySelector('main .results').nextElementSibling === document.querySelector('#sinsta-surface'),
+    bar: !!document.querySelector('#sinsta-surface .sf-controls'),
+  }));
+  assert.deepEqual(got, { first: true, heading: true, native: 'none', afterNative: true, bar: true });
+  // Instagram's own query, with the page's session tokens, one search
+  // session for every page of the query.
+  assert.equal(searchCalls[0].path, '/api/graphql');
+  assert.equal(searchCalls[0].query, '#sunset');
+  for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 800);
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length >= 12, null, { timeout: 10000 });
+  assert.ok(searchCalls.length >= 2);
+  assert.equal(new Set(searchCalls.map((c) => c.search_session_id)).size, 1);
+  assert.equal(searchCalls[1].after, '6');
+  await page.click('#sinsta-surface .sf-tile[href="/p/Ps2/"]');
+  await page.waitForSelector('#sinsta-reel-player');
+});
+
+test('Search results: pages keep their distance, as on the feeds', async () => {
+  await openSearch();
+  await page.waitForFunction(() => document.querySelectorAll('#sinsta-surface .sf-tile').length >= 6);
+  for (let i = 0; i < 20; i++) await page.mouse.wheel(0, 800);
+  await page.waitForTimeout(6000);
+  assert.ok(searchCalls.length >= 2);
+  const times = searchCalls.map((c) => c.at);
+  for (let i = 1; i < times.length; i++) assert.ok(times[i] - times[i - 1] >= 2400, `pages ${times[i] - times[i - 1]}ms apart`);
+});
+
+test('Search results that can\'t be loaded stay Instagram\'s own page', async () => {
+  await freshContext(GRID);
+  await logIn('111');
+  await page.goto(`${ORIGIN}/explore/search/keyword/?q=cats`);
+  for (let i = 0; i < 80 && searchCalls.length < 3; i++) await page.waitForTimeout(100);
+  await page.waitForTimeout(1500);
+  const got = await page.evaluate(() => ({
+    surface: !!document.querySelector('#sinsta-surface .sf-tile'),
+    native: getComputedStyle(document.querySelector('main .results')).display,
+  }));
+  assert.deepEqual(got, { surface: false, native: 'block' });
 });

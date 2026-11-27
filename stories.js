@@ -19,6 +19,7 @@ const Sinsta = (() => {
   const DOC_FEEDS = ['40856843000596438', '29639616438977013'];
   const DOC_CLIPS = '29386172244354956'; // PolarisClipsTabDesktopPaginationQuery
   const DOC_PROFILE_POSTS = '39818828461098125'; // PolarisProfilePostsTabContentQuery_connection
+  const DOC_SEARCH = '28175842718758182'; // PolarisKeywordSearchExplorePageRelayPaginationQuery
   const DOC_LIKE = '27182485238052618'; // usePolarisLikeMediaXIGLikeMutation
   const DOC_UNLIKE = '27345296031770102'; // usePolarisLikeMediaXIGUnlikeMutation
   const DOC_COMMENT = '30184188691181526'; // usePolarisCommentSubmitMutation
@@ -615,6 +616,37 @@ const Sinsta = (() => {
         ...(res.session_paging_token ? { session_paging_token: res.session_paging_token } : {}),
       }) : null,
     };
+  }
+
+  // One page of a search's posts, as Instagram's search results page shows
+  // them (/explore/search/keyword/?q=, where hashtag pages lead too), as
+  // { items, after } where `after` is null at the end, or null on failure.
+  // Each query keeps one search session for the page's life, as Instagram's
+  // page does while you scroll its results.
+  const searchSessions = new Map(); // query -> session id
+  async function searchPage(query, after) {
+    if (!searchSessions.has(query)) searchSessions.set(query, crypto.randomUUID());
+    const session = searchSessions.get(query);
+    const res = await gql(DOC_SEARCH, {
+      after: after || null,
+      first: 24,
+      query,
+      search_session_id: session,
+      serp_session_id: session,
+    }, true);
+    const conn = res && res.data && res.data.xdt_fbsearch__top_serp_graphql;
+    if (!conn) return null;
+    const items = [];
+    for (const e of conn.edges || []) {
+      for (const m of (e && e.node && e.node.items) || []) {
+        const it = mediaItem(m);
+        if (!it) continue;
+        if (m.ad_id) it.ad = true;
+        items.push(it);
+      }
+    }
+    const info = conn.page_info || {};
+    return { items, after: info.has_next_page ? info.end_cursor : null };
   }
 
   // ---- Likes and comments -------------------------------------------------
@@ -2794,7 +2826,7 @@ const Sinsta = (() => {
   });
 
   return {
-    api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
+    api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, searchPage, reelByCode, feedPage, songFor,
     mark, userIds, lookUpId, userCard, ago, allowBackground, heldBack,
     likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection, follow,
   };

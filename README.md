@@ -19,7 +19,9 @@ If a feed can't be loaded, that view shows Instagram's own page instead, filtere
 
 ## Explore
 
-Explore (Search in Instagram's menu) gets the same list or grid, player and Hide seen, from the grid Instagram's own Explore page loads, without ads. Instagram's search box stays above it: using the box shows Instagram's search results as usual, and its Back button brings the grid back. If the grid can't be loaded, Explore is Instagram's own page.
+Explore (Search in Instagram's menu) gets the same list or grid, player and Hide seen, from the grid Instagram's own Explore page loads, without ads. Instagram's search box stays above it: typing in the box shows Instagram's list of accounts, tags and places as usual, and its Back button brings the grid back. If the grid can't be loaded, Explore is Instagram's own page.
+
+Search results (the posts for a word or a hashtag, which hashtag links lead to as well) get the same list or grid, player and Hide seen, in place of Instagram's grid, under the query; the page scrolls as usual. All searches share one column count. If the results can't be loaded, they're Instagram's own.
 
 ## Profiles
 
@@ -27,7 +29,7 @@ A profile's Posts tab shows the same list or grid, with the player and Hide seen
 
 ## List and grid
 
-The List / Grid switch in the tab bar (or `G`) applies to all four tabs, Explore and profiles.
+The List / Grid switch in the tab bar (or `G`) applies to all four tabs, Explore, search results and profiles.
 
 - **List:** one post under another, showing just the photo or video. The name, buttons (like, comments, a link to the post, which Ctrl/⌘-click or middle-click opens in a new tab, and save), likes and the full caption appear over it while the pointer is on it. Videos play silently while on screen. Clicking a post opens it in the player (below); with the pointer on it, `L` likes, `S` saves and `C` opens its comments. On Reels, List is Instagram's own player.
 - **Grid:** tiles in columns, each post uncropped (within Instagram's 4:5 to 1.91:1) and reels 9:16. Hovering a tile shows its caption, name and likes, and plays a video silently. The − / + buttons beside the switch (or the `-` and `+` keys) set 1 to 8 columns, separately for each tab. Tiles never get taller than the window, so few columns leave margins on wide screens. Ctrl/⌘-click a tile to open it in a new tab.
@@ -44,7 +46,7 @@ The player doesn't report views to Instagram, so watching here doesn't tune its 
 
 ## Hide seen
 
-Following, Favourites, Algo, Explore and profiles share a "Hide seen" toggle (on by default). With it on, posts you saw before this visit are removed from the feed, so it shows only what you haven't seen. Turn it off for the strict, complete timeline, where posts seen before this visit are dimmed.
+Following, Favourites, Algo, Explore, search results and profiles share a "Hide seen" toggle (on by default). With it on, posts you saw before this visit are removed from the feed, so it shows only what you haven't seen. Turn it off for the strict, complete timeline, where posts seen before this visit are dimmed.
 
 - In the list, a post counts as seen once half of it (or half the screen) has shown it for a second, in any of the three views. In the grid, where a screen holds many posts, a post counts as seen once it has been wholly on screen for a second and you scroll past it, or once the pointer has rested on it for a second. Opening a post counts too.
 - A post that counts as seen gets a tick in its corner, so you can see the rule at work; hovering the tick says when. Clicking it marks the post as not seen (it isn't counted again this visit), and clicking a post's empty tick, shown while the pointer is on it, marks it as seen.
