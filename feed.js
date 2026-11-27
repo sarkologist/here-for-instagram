@@ -15,7 +15,7 @@
   'use strict';
 
   const {
-    go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, searchPage, reelByCode, feedPage, songFor, ago,
+    go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, reelsPage, explorePage, profilePage, profileTabPage, complete, searchPage, reelByCode, feedPage, songFor, ago,
     likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection,
   } = Sinsta;
   // content.js: seen posts, favourites, the tab bar.
@@ -57,16 +57,17 @@
 
   let prefs = {
     layout: 'grid',
-    cols: { following: 4, favorites: 3, algo: 3, reels: 4, explore: 4, profile: 4, search: 4 },
+    cols: { following: 4, favorites: 3, algo: 3, reels: 4, explore: 4, profile: 4, 'profile-reels': 4, search: 4 },
     muted: false,
     volume: 1,
     speed: 1,
     comments: true,
   };
 
-  // The view Home, Reels, Explore, search results or a profile's Posts tab
-  // is on, from the address (and, for a profile, its tabs: other pages have
-  // such addresses too). A profile's view is 'profile:<username>'; search
+  // The view Home, Reels, Explore, search results or a profile's tab is on,
+  // from the address (and, for a profile, its tabs: other pages have such
+  // addresses too). A profile's Posts tab is 'profile:<username>', its
+  // others 'profile:<username>/<tab>' (reels, reposts, tagged); search
   // results' 'search:<query>'.
   function viewOf() {
     const { pathname, search } = nav.here(); // under the player's or viewer's own address
@@ -76,8 +77,8 @@
       const q = (new URLSearchParams(search).get('q') || '').trim();
       return q ? `search:${q}` : null;
     }
-    const user = (pathname.match(/^\/([\w.]+)\/?$/) || [])[1];
-    if (user && document.querySelector(`main a[href="/${user}/"][aria-selected="true"]`)) return `profile:${user}`;
+    const [, user, tab] = pathname.match(/^\/([\w.]+)\/(?:(reels|reposts|tagged)\/?)?$/) || [];
+    if (user && document.querySelector(`main a[href="/${user}/${tab ? `${tab}/` : ''}"][aria-selected="true"]`)) return `profile:${user}${tab ? `/${tab}` : ''}`;
     if (pathname !== '/') return null;
     const variant = new URLSearchParams(search).get('variant');
     return variant === 'following' || variant === 'favorites' ? variant : 'algo';
@@ -134,13 +135,20 @@
   more.addEventListener('click', () => setColumns(cols() + 1));
 
   const isProfile = (view) => !!view && view.startsWith('profile:');
+  // A profile view's account and tab ('' for Posts).
+  const profileOf = (view) => {
+    const [user, tab = ''] = view.slice('profile:'.length).split('/');
+    return { user, tab };
+  };
   const isSearch = (view) => !!view && view.startsWith('search:');
   // A profile's grid, and search results', sit in Instagram's page, which
   // scrolls, rather than over it.
   const isInline = (view) => isProfile(view) || isSearch(view);
   const inline = () => isInline(cur);
-  // Profiles share one column count; so do searches.
-  const colsKey = (view) => (isProfile(view) ? 'profile' : isSearch(view) ? 'search' : view);
+  // Profiles share one column count, but for their Reels tabs, which share
+  // another; searches share one too.
+  const colsKey = (view) => (isProfile(view) ? (profileOf(view).tab === 'reels' ? 'profile-reels' : 'profile')
+    : isSearch(view) ? 'search' : view);
   const cols = () => prefs.cols[colsKey(cur)] || 3;
   const isGrid = () => prefs.layout === 'grid';
 
@@ -303,7 +311,7 @@
   // 9:16 in the Reels grid.
   function shape(it, view = cur) {
     const s = it.slides[0];
-    if (view === 'reels') return 9 / 16;
+    if (view === 'reels' || (isProfile(view) && profileOf(view).tab === 'reels')) return 9 / 16;
     return Math.min(1.91, Math.max(it.kind === 'reel' && !isGrid() ? 9 / 16 : 0.8, s.w / s.h));
   }
 
@@ -334,8 +342,8 @@
     a.dataset.pk = it.pk;
     a.style.aspectRatio = String(shape(it));
     a.append(trackOf(it, picture(it.slides[0], tileWidth())));
-    if (cur !== 'reels' && it.slides.some((s) => s.video)) {
-      a.append(el('span', { className: 'sf-badge', hidden: !it.video }, icon(PLAY)));
+    if (cur !== 'reels' && it.slides.some((s) => s.isVideo)) {
+      a.append(el('span', { className: 'sf-badge', hidden: !it.slides[0].isVideo }, icon(PLAY)));
     }
     a.append(...seenMark());
     syncSeen(a, it);
@@ -501,7 +509,7 @@
     node.dataset.slide = i;
     if (node.classList.contains('sf-tile')) {
       const badge = node.querySelector('.sf-badge');
-      if (badge) badge.hidden = !it.slides[i].video;
+      if (badge) badge.hidden = !it.slides[i].isVideo;
       if (previewTile === node) {
         stopPreview();
         startPreview(node);
@@ -1143,7 +1151,10 @@
   function fetchPage(view, after) {
     if (view === 'reels') return reelsPage(after);
     if (view === 'explore') return explorePage(after);
-    if (isProfile(view)) return profilePage(view.slice('profile:'.length), after);
+    if (isProfile(view)) {
+      const { user, tab } = profileOf(view);
+      return tab ? profileTabPage(user, tab, after) : profilePage(user, after);
+    }
     if (isSearch(view)) return searchPage(view.slice('search:'.length), after);
     return feedPage(view === 'algo' ? 'home' : view, after);
   }
@@ -1933,14 +1944,36 @@
       syncSeen(nodeOf(it.pk), it);
     }
 
+    // A post that came without its videos' files or caption (a profile's
+    // Reels, Reposts and Tagged tabs) shows its cover until the rest comes.
+    if (it.partial) complete(it).then((ok) => {
+      if (ok && playerOpen && list()[pi] === it) restage(it);
+    });
+
     const next = list()[pi + 1];
     if (next && next.slides[0].video) preload = { index: pi + 1, video: makeVideo(next.slides[0]) };
     else if (next && next.slides[0].thumbs.length) new Image().src = next.slides[0].thumbs[0].url;
-    if (next && next.song === undefined) songFor(next, { background: true });
+    if (next && next.partial) complete(next, { background: true });
+    else if (next && next.song === undefined) songFor(next, { background: true });
     if (list().length - pi < 6) {
       loadMore();
       grow();
     }
+  }
+
+  // The post on stage again, once the rest of it has come (see show).
+  function restage(it) {
+    if (video) unload(video);
+    video = null;
+    if (strack) strack.remove();
+    strack = trackOf(it, bigPhoto(it.slides[0]));
+    strack.classList.add('sr-track');
+    stage.prepend(strack);
+    strack.scrollLeft = si * strack.clientWidth;
+    showMedia(false);
+    caption.textContent = it.caption;
+    syncFoot();
+    syncActions();
   }
 
   // The player goes on into posts that load while it's open.
@@ -2370,7 +2403,8 @@
       }
       return block;
     }
-    const tab = document.querySelector(`main a[href="/${view.slice('profile:'.length)}/"][aria-selected="true"]`);
+    const { user, tab: which } = profileOf(view);
+    const tab = document.querySelector(`main a[href="/${user}/${which ? `${which}/` : ''}"][aria-selected="true"]`);
     if (!tab) return null;
     const tile = tiles().find((a) => tab.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
     let lca = tile && tab.parentElement;

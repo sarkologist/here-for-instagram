@@ -20,6 +20,16 @@ const Sinsta = (() => {
   const DOC_CLIPS = '29386172244354956'; // PolarisClipsTabDesktopPaginationQuery
   const DOC_PROFILE_POSTS = '39818828461098125'; // PolarisProfilePostsTabContentQuery_connection
   const DOC_SEARCH = '28175842718758182'; // PolarisKeywordSearchExplorePageRelayPaginationQuery
+  const DOC_PROFILE_REELS = '30033462306341888'; // PolarisProfileReelsTabContentQuery
+  const DOC_PROFILE_REELS_MORE = '29174105612283268'; // PolarisProfileReelsTabContentQuery_connection
+  const DOC_PROFILE_REPOSTS = '29526776690267830'; // PolarisProfileRepostsTabContentWWWQuery
+  const DOC_PROFILE_REPOSTS_MORE = '29382351751449718'; // PolarisProfileRepostsTabContentWWWRefetchQuery
+  const DOC_PROFILE_TAGGED = '29179217291735675'; // PolarisProfileTaggedTabContentQuery
+  const DOC_PROFILE_TAGGED_MORE = '28828779876794122'; // PolarisProfileTaggedTabContentQuery_connection
+  const TAB_FLAGS = {
+    __relay_internal__pv__PolarisShortDramaEnabledrelayprovider: true,
+    __relay_internal__pv__PolarisSEOIsCrawlerrelayprovider: false,
+  };
   const DOC_LIKE = '27182485238052618'; // usePolarisLikeMediaXIGLikeMutation
   const DOC_UNLIKE = '27345296031770102'; // usePolarisLikeMediaXIGUnlikeMutation
   const DOC_COMMENT = '30184188691181526'; // usePolarisCommentSubmitMutation
@@ -418,6 +428,8 @@ const Sinsta = (() => {
     return {
       thumbs,
       video: video ? video.url : null,
+      // Whether it's a video, even where the response leaves its files out.
+      isVideo: !!video || o.media_type === 2,
       videos,
       w: o.original_width || big.width || 1,
       h: o.original_height || big.height || 1,
@@ -453,6 +465,7 @@ const Sinsta = (() => {
   // `opts`: as for request() (a song looked up ahead is background).
   function songFor(it, opts) {
     if (it.song !== undefined) return Promise.resolve(it.song);
+    if (it.partial) return complete(it, opts).then(() => (it.song === undefined ? null : it.song));
     if (!songLookups.has(it.pk)) {
       songLookups.set(it.pk, api(`/api/v1/media/${it.pk}/info/`, opts).then((res) => {
         const m = res && res.items && res.items[0];
@@ -496,16 +509,44 @@ const Sinsta = (() => {
       // Whether you follow the author, when the feed says (null when not).
       following: fs && typeof fs.following === 'boolean' ? fs.following : null,
       ad: false,
+      // The response left out a video's files or the caption (a profile's
+      // Reels, Reposts and Tagged tabs do): complete() asks for the rest.
+      partial: slides.some((sl) => sl.isVideo && !sl.video) || m.caption === undefined,
     };
+  }
+
+  // The rest of a partial item (see mediaItem), from the post itself, filled
+  // into it. Resolves to whether it's complete.
+  const completing = new Map(); // pk -> promise
+  // `opts`: as for request() (a post completed ahead is background).
+  function complete(it, opts) {
+    if (!it.partial) return Promise.resolve(true);
+    if (!completing.has(it.pk)) {
+      completing.set(it.pk, api(`/api/v1/media/${it.pk}/info/`, opts).then((res) => {
+        completing.delete(it.pk);
+        const m = res && res.items && res.items[0];
+        const full = m && mediaItem({ ...m, code: m.code || it.code, user: m.user || { username: it.username, profile_pic_url: it.pic } });
+        if (!full) return false;
+        for (const k of ['slides', 'thumbs', 'video', 'caption', 'liked', 'saved', 'likes', 'comments', 'commentsOff', 'token', 'song']) it[k] = full[k];
+        if (it.kind === 'reel') it.thumbs = it.slides[0].thumbs = covers(it.thumbs);
+        it.partial = false; // (asked once, whatever came back)
+        return true;
+      }));
+    }
+    return completing.get(it.pk);
+  }
+
+  // A reel's covers: portrait ones, else the square crops.
+  function covers(thumbs) {
+    const portrait = thumbs.filter((c) => c.height > c.width);
+    return portrait.length ? portrait : thumbs;
   }
 
   // A reel as the Reels grid and player use it.
   function clipItem(m) {
     const it = mediaItem(m);
     if (!it || !it.video) return null;
-    // Covers: portrait ones, else the square crops.
-    const portrait = it.thumbs.filter((c) => c.height > c.width);
-    if (portrait.length) it.thumbs = it.slides[0].thumbs = portrait;
+    it.thumbs = it.slides[0].thumbs = covers(it.thumbs);
     return it;
   }
 
@@ -647,6 +688,59 @@ const Sinsta = (() => {
     }
     const info = conn.page_info || {};
     return { items, after: info.has_next_page ? info.end_cursor : null };
+  }
+
+  // An account's user id, which its Reels, Reposts and Tagged tabs ask by:
+  // as far as known, else from the first page of its posts (whose author it
+  // is), else null.
+  async function profileId(username) {
+    if (!userIds.has(username)) await profilePage(username, null);
+    return userIds.get(username) || null;
+  }
+
+  // One page of a profile's Reels, Reposts or Tagged tab (`tab`), as
+  // { items, after } where `after` is null at the end, or null on failure.
+  // Their posts come without their videos' files (and reels without
+  // captions): complete() fetches those when a post is opened.
+  async function profileTabPage(username, tab, after) {
+    const id = await profileId(username);
+    if (!id) return null;
+    const media = [];
+    let next = null;
+    if (tab === 'reels') {
+      const data = { include_feed_video: true, page_size: 12, target_user_id: id };
+      const res = after
+        ? await gql(DOC_PROFILE_REELS_MORE, { after, data, first: 6, id, ...TAB_FLAGS }, true)
+        : await gql(DOC_PROFILE_REELS, { data, user_id: id, ...TAB_FLAGS }, true);
+      const conn = res && res.data && res.data.fetch__XDTUserDict && res.data.fetch__XDTUserDict.clips_connection;
+      if (!conn) return null;
+      for (const e of conn.edges || []) media.push(e && e.node && e.node.media);
+      next = conn.page_info && conn.page_info.has_next_page ? conn.page_info.end_cursor : null;
+    } else if (tab === 'reposts') {
+      const res = after
+        ? await gql(DOC_PROFILE_REPOSTS_MORE, { max_id: after, id, ...TAB_FLAGS }, true)
+        : await gql(DOC_PROFILE_REPOSTS, { user_id: id, ...TAB_FLAGS }, true);
+      const t = res && res.data && res.data.fetch__XDTUserDict && res.data.fetch__XDTUserDict.user_reposts_timeline;
+      if (!t) return null;
+      for (const g of t.repost_grid_items || []) media.push(g && g.media);
+      next = t.repost_more_available && t.repost_next_max_id ? t.repost_next_max_id : null;
+    } else if (tab === 'tagged') {
+      const res = after
+        ? await gql(DOC_PROFILE_TAGGED_MORE, { after, before: null, count: 12, first: 12, last: null, user_id: id, ...TAB_FLAGS }, true)
+        : await gql(DOC_PROFILE_TAGGED, { count: 12, user_id: id, ...TAB_FLAGS }, true);
+      const conn = res && res.data && res.data.xdt_api__v1__usertags__user_id__feed_connection;
+      if (!conn) return null;
+      for (const e of conn.edges || []) media.push(e && e.node);
+      next = conn.page_info && conn.page_info.has_next_page ? conn.page_info.end_cursor : null;
+    } else return null;
+    const items = [];
+    for (const m of media) {
+      const it = mediaItem(m);
+      if (!it) continue;
+      if (it.kind === 'reel') it.thumbs = it.slides[0].thumbs = covers(it.thumbs);
+      items.push(it);
+    }
+    return { items, after: next };
   }
 
   // ---- Likes and comments -------------------------------------------------
@@ -2826,7 +2920,7 @@ const Sinsta = (() => {
   });
 
   return {
-    api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, searchPage, reelByCode, feedPage, songFor,
+    api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, profileTabPage, complete, searchPage, reelByCode, feedPage, songFor,
     mark, userIds, lookUpId, userCard, ago, allowBackground, heldBack,
     likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection, follow,
   };

@@ -25,7 +25,7 @@ Search results (the posts for a word or a hashtag, which hashtag links lead to a
 
 ## Profiles
 
-A profile's Posts tab shows the same list or grid, with the player and Hide seen, in place of Instagram's grid: the profile's header, highlights and tabs stay above it, and the page scrolls as usual. The grid takes the page's whole width beside the sidebar, not just Instagram's profile column. Looking at a profile doesn't start a new visit. Reels and Tagged are Instagram's own, as is the Posts tab if its posts can't be loaded. All profiles share one column count.
+A profile's Posts tab shows the same list or grid, with the player and Hide seen, in place of Instagram's grid: the profile's header, highlights and tabs stay above it, and the page scrolls as usual. The grid takes the page's whole width beside the sidebar, not just Instagram's profile column. Looking at a profile doesn't start a new visit. Reels, Reposts and Tagged get it too, reels in 9:16 tiles. Their posts come without their videos, so a video tile doesn't play on hover; opening it in the player fetches the video and, for reels, the caption. A tab whose posts can't be loaded is Instagram's own. All profiles share one column count, and their Reels tabs another.
 
 ## List and grid
 
