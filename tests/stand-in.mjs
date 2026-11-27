@@ -271,10 +271,13 @@ export async function freshContext(storage = {}) {
       }));
       return json({ sectional_items: sections, more_available: more, next_max_id: more ? String(n + 1) : null, rank_token: 'r' });
     }
-    // Every query asked, as { path, doc } (`blocked`: the session's queries
-    // all get Instagram's "Page not found" page).
+    // Every query asked, as { path, doc, vars } (`blocked`: the session's
+    // queries all get Instagram's "Page not found" page).
     if (path === '/api/graphql' || path === '/graphql/query') {
-      queryLog.push({ path, doc: new URLSearchParams(req.postData() || '').get('doc_id'), at: Date.now() });
+      const form = new URLSearchParams(req.postData() || '');
+      let vars = null;
+      try { vars = JSON.parse(form.get('variables')); } catch (_) {}
+      queryLog.push({ path, doc: form.get('doc_id'), vars, at: Date.now() });
       if (acc && acc.blocked) return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html><title>Page Not Found • Instagram</title></html>' });
     }
     // Without the CSRF token (`requireCsrf`), Instagram answers queries with
@@ -402,15 +405,18 @@ export async function freshContext(storage = {}) {
         // others need theirs.
         const source = vars.data.pagination_source;
         if (!edges || (vars.variant === 'home' ? source : source !== vars.variant)) return json({ data: null });
-        // Pages of 12, the cursor being the index to start at.
+        // The cursor is the index to start at. As on Instagram, the first
+        // page is as long as asked; later ones come in pages of 12 whatever
+        // is asked.
         const start = Number(vars.after || 0);
-        const page = edges.slice(start, start + 12);
-        const more = start + 12 < edges.length;
+        const size = vars.after ? 12 : vars.first;
+        const page = edges.slice(start, start + size);
+        const more = start + size < edges.length;
         return json({
           data: {
             xdt_api__v1__feed__timeline__connection: {
               edges: page.map((e) => (e.media || e.explore_story ? { node: e } : { node: { media: e } })),
-              page_info: { has_next_page: more, end_cursor: more ? String(start + 12) : null },
+              page_info: { has_next_page: more, end_cursor: more ? String(start + size) : null },
             },
           },
         });

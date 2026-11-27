@@ -34,6 +34,14 @@
   // Instagram restricts accounts whose web feed is paged like a scraper's.
   const PAGE_GAP_MS = 2500; // between pages
   const AUTO_PAGES = 3; // pages fetched to fill the screen before waiting for a scroll
+  // Past a run of seen posts, Following and Favourites (in time order) jump
+  // instead of paging: Instagram's later pages hold 4 to 12 posts, but a
+  // first page as many as asked, so one request from the top again reaches
+  // past the run. It is slow (10 s for 150), so only for long runs.
+  const JUMP_VIEWS = new Set(['following', 'favorites']);
+  const JUMP_AFTER = 12; // seen posts in a row before jumping
+  const JUMP_STEP = 100; // posts a jump reaches past those loaded
+  const JUMP_MAX = 200; // posts one request asks for
   const storage = typeof browser === 'object' && browser.storage && browser.storage.local;
 
   const GRID = ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z'];
@@ -91,7 +99,7 @@
   function feed(view) {
     return feeds[view] || (feeds[view] = {
       items: [], known: new Set(), after: null, ended: false, loading: false, failed: false,
-      unavailable: false, scroll: 0, runLimit: RUN_LIMIT,
+      unavailable: false, scroll: 0, runLimit: RUN_LIMIT, jumpless: false,
     });
   }
 
@@ -1239,6 +1247,17 @@
     return feedPage(view === 'algo' ? 'home' : view, after);
   }
 
+  // How many posts to ask for from the top of the view's feed to jump past
+  // its run of seen posts (see JUMP_VIEWS), or 0 to fetch its next page.
+  // Not past the run's limit, where the feed pauses anyway.
+  function jumpSize(view, f) {
+    if (!JUMP_VIEWS.has(view) || f.jumpless || !f.after || !hidingSeen(view)) return 0;
+    const run = seenRun(view);
+    if (run < JUMP_AFTER) return 0;
+    const size = Math.min(f.items.length + Math.min(f.runLimit - run, JUMP_STEP), JUMP_MAX);
+    return size - f.items.length >= JUMP_AFTER ? size : 0;
+  }
+
   let pageAt = 0; // when the last feed page was asked for
   let pageTimer = 0;
   let autoPages = 0; // pages fetched since the last scroll, keyboard or touch
@@ -1262,12 +1281,31 @@
     // Right after a page load Instagram's session tokens may not be in the
     // page yet; give them a few tries before giving up.
     let page = null;
+    const jump = jumpSize(view, f);
     // Not when Instagram has pushed back: retrying is what gets sessions flagged.
     for (let attempt = 0; attempt < 3 && !page && !(attempt && Sinsta.heldBack()); attempt++) {
       if (attempt) await new Promise((r) => setTimeout(r, 1000 * attempt));
-      page = await fetchPage(view, f.after);
+      page = jump ? await feedPage(view, null, jump) : await fetchPage(view, f.after);
     }
     f.loading = false;
+    // A jump's page starts at the top again: what follows the last post
+    // already loaded is new. (Posts newer than the first wait for a reload,
+    // as they do anyway.) If it shares none, the feed has changed under
+    // us: page from where we were.
+    if (jump && page) {
+      let last = -1;
+      page.items.forEach((it, i) => {
+        if (f.known.has(it.pk)) last = i;
+      });
+      if (last < 0) {
+        f.jumpless = true;
+        loadMore(view, auto);
+        return;
+      }
+      page = { items: page.items.slice(last + 1), after: page.after };
+      // Asking again would get the same answer.
+      if (!page.items.length) f.jumpless = true;
+    }
     if (!page) {
       f.failed = true;
       // A home view that never loaded falls back to Instagram's page.
