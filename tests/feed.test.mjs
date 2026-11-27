@@ -463,6 +463,38 @@ test('Save: the button saves a post and opens your collections; one of them or a
   assert.ok(await page.$('#sinsta-reel-player'));
 });
 
+test('Save: resting on the button opens your collections, saved or not, without unsaving', async () => {
+  await open('following', LIST);
+  await posts();
+  const [first, second] = await page.$$eval('.sf-post', (ns) => ns.map((n) => n.dataset.pk));
+  const calls = saveCalls.length;
+  // A saved post: hovering opens the collections; picking one only adds it.
+  await page.hover('.sf-post');
+  await page.click('.sf-post .sf-save');
+  await page.waitForSelector('.sf-saveto .sf-saveto-row');
+  await page.mouse.move(0, 0);
+  await page.waitForSelector('.sf-saveto', { state: 'detached' });
+  await page.hover('.sf-post');
+  await page.hover('.sf-post .sf-save');
+  await page.waitForSelector('.sf-saveto .sf-saveto-row');
+  await page.click('.sf-saveto-row:has-text("trips")');
+  await page.waitForSelector('.sf-toast:has-text("Saved to \\"trips\\".")');
+  assert.ok(await page.evaluate(() => document.querySelector('.sf-post .sf-save').hasAttribute('data-on')));
+  assert.deepEqual(saveCalls.slice(calls).map((c) => [c.kind, c.input.media_id]), [['save', first], ['add', first]]);
+
+  // An unsaved post: picking a collection saves it first.
+  const art = `.sf-post[data-pk="${second}"]`;
+  await page.$eval(art, (n) => n.scrollIntoView({ block: 'center' }));
+  await page.hover(art);
+  await page.hover(`${art} .sf-save`);
+  await page.waitForSelector('.sf-saveto .sf-saveto-row');
+  await page.click('.sf-saveto-row:has-text("recipes")');
+  await page.waitForSelector('.sf-toast:has-text("Saved to \\"recipes\\".")');
+  assert.ok(await page.$eval(`${art} .sf-save`, (b) => b.hasAttribute('data-on')));
+  assert.deepEqual(saveCalls.slice(calls + 2).map((c) => [c.kind, c.input.media_id, c.input.collection_id]),
+    [['save', second, undefined], ['add', second, 'c2']]);
+});
+
 test('Grid: a saved post\'s tile shows a bookmark beside its likes; S on a tile saves it and adds one', async () => {
   await freshContext(GRID);
   await logIn('111');

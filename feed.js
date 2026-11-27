@@ -398,6 +398,7 @@
     const open = el('a', { className: 'sf-act', href: link(it), title: 'Open post' }, icon(LINK));
     const keep = button('sf-act sf-save', 'Save (S)', BOOKMARK);
     keep.dataset.act = 'save';
+    hoverSave(keep, () => itemOf(art) || it);
     const acts = el('div', { className: 'sf-acts' }, like, cmt, open, keep);
     const likes = el('div', { className: 'sf-likes' });
     const foot = el('div', { className: 'sf-foot' }, acts, likes);
@@ -799,7 +800,9 @@
 
   // As on Instagram: saving puts a post in "All posts" and opens a list of
   // your collections beside the button, to put it in one too or make a new
-  // one; a note at the bottom says where it went.
+  // one; a note at the bottom says where it went. The pointer resting on the
+  // button opens the list too, saved or not, so a saved post can go in
+  // another collection without being unsaved first.
   const saving = new WeakSet(); // posts whose save is on its way
 
   // `from`: the button it was saved with, for the collections to open by.
@@ -812,9 +815,11 @@
     };
     saving.add(it);
     flip(on);
-    closeSaveTo();
+    // Saving with the list already open by the button (from hovering) keeps it.
+    const kept = on && saveTo && saveTo.it === it && saveTo.from === from;
+    if (!kept) closeSaveTo();
     const picking = on && from && from.isConnected;
-    if (picking) openSaveTo(it, from);
+    if (picking && !kept) openSaveTo(it, from);
     const ok = await savePost(it.pk, on);
     saving.delete(it);
     if (!ok) {
@@ -870,6 +875,34 @@
   }
 
   let saveTo = null; // { node, it, from }
+  let hoverTimer = 0; // till the list opens for the button under the pointer
+  let leaveTimer = 0; // till it closes, the pointer having left both
+
+  // The pointer resting on `btn` opens the list for the post `itemFor` gives;
+  // leaving the button and the list closes it (after a moment, to cross the
+  // gap between them).
+  function hoverSave(btn, itemFor) {
+    btn.addEventListener('pointerenter', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      clearTimeout(leaveTimer);
+      clearTimeout(hoverTimer);
+      if (saveTo && saveTo.from === btn) return;
+      hoverTimer = setTimeout(() => {
+        const it = itemFor();
+        if (!it || !btn.isConnected || !btn.matches(':hover') || newCol || (saveTo && saveTo.from === btn)) return;
+        closeSaveTo();
+        openSaveTo(it, btn);
+      }, 300);
+    });
+    btn.addEventListener('pointerleave', () => {
+      clearTimeout(hoverTimer);
+      leaveSave();
+    });
+  }
+  function leaveSave() {
+    clearTimeout(leaveTimer);
+    if (saveTo) leaveTimer = setTimeout(closeSaveTo, 300);
+  }
 
   function openSaveTo(it, from) {
     const listNode = el('div', { className: 'sf-saveto-list' }, el('div', { className: 'sf-saveto-note' }, 'Loading…'));
@@ -877,6 +910,8 @@
     const node = el('div', { className: 'sf-saveto', role: 'dialog', ariaLabel: 'Collections' },
       el('div', { className: 'sf-saveto-head' }, el('span', {}, 'Collections'), add), listNode);
     saveTo = { node, it, from };
+    node.addEventListener('pointerenter', () => clearTimeout(leaveTimer));
+    node.addEventListener('pointerleave', leaveSave);
     onTop(node);
     placeSaveTo();
     add.addEventListener('click', () => {
@@ -924,13 +959,31 @@
   }
 
   function closeSaveTo() {
+    clearTimeout(leaveTimer);
     if (!saveTo) return;
     saveTo.node.remove();
     saveTo = null;
   }
 
+  // As on Instagram, putting a post in a collection saves it too.
+  async function ensureSaved(it) {
+    if (it.saved) return true;
+    saving.add(it);
+    it.saved = true;
+    syncEverywhere(it);
+    const ok = await savePost(it.pk, true);
+    saving.delete(it);
+    if (!ok) {
+      it.saved = false;
+      syncEverywhere(it);
+      toast("Couldn't save the post.");
+    }
+    return ok;
+  }
+
   async function putIn(it, col) {
     closeSaveTo();
+    if (!(await ensureSaved(it))) return;
     const ok = await addToCollection(col.id, it.pk);
     if (ok) toast(`Saved to "${col.name}".`, 'View collection', savedHref(col));
     else toast(`Couldn't save to "${col.name}".`);
@@ -966,7 +1019,7 @@
       ok.dataset.busy = '1';
       ok.disabled = true;
       err.hidden = true;
-      const id = await newCollection(name, it.pk);
+      const id = (await ensureSaved(it)) ? await newCollection(name, it.pk) : null;
       delete ok.dataset.busy;
       if (id === null) {
         ok.disabled = false;
@@ -1489,6 +1542,7 @@
   });
   commentBtn.addEventListener('click', toggleComments);
   saveBtn.addEventListener('click', () => toggleSave(list()[pi], saveBtn));
+  hoverSave(saveBtn, () => list()[pi]);
   cClose.addEventListener('click', toggleComments);
   function syncActions() {
     const it = list()[pi];
