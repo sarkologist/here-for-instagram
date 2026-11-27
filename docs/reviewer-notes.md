@@ -8,7 +8,7 @@ Paste the section below into "Notes to reviewer" when uploading a version.
 
 **What it does.** It changes Instagram's web UI on www.instagram.com only. It splits Home into three non-overlapping views (suggested accounts, accounts you follow, and favourites), draws Home, Explore, Reels and profiles' posts as a list or grid with its own post player, can hide posts you've already seen, and has its own story viewer.
 
-**Network.** The content scripts make same-origin requests to www.instagram.com: Instagram's own web API and GraphQL queries, the same ones its web app sends, using the session the user is already signed in with. Images and videos load from the CDN URLs those responses return, as on Instagram itself. Nothing is sent to the developer or to any third party. There is no remote code, `eval` or dynamically built HTML.
+**Network.** The content scripts make same-origin requests to www.instagram.com: Instagram's own web API and GraphQL queries, the same ones its web app sends, using the session the user is already signed in with. Images and videos load from the CDN URLs those responses return, as on Instagram itself. Requests are paced: feed pages at a scrolling pace, background requests (profile cards, prefetching) capped per minute, and all of those stop for 30 minutes if Instagram answers with an error page or a rate limit. Nothing is sent to the developer or to any third party. There is no remote code, `eval` or dynamically built HTML.
 
 **Data.** `browser.storage.local` holds the IDs of posts and stories the user has seen (kept 60 days) and view settings. It never leaves the browser, so `data_collection_permissions.required` is `["none"]`.
 
