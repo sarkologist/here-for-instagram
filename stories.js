@@ -13,7 +13,10 @@ const Sinsta = (() => {
   const DOC_SEEN = '26234228992942885'; // PolarisStoriesV3SeenMutation
   const DOC_FAV = '27833939016209017'; // usePolarisUpdateFeedFavoritesMutation
   const DOC_BADGE = '26853171684350625'; // usePolarisNotificationsNavItemQuery
-  const DOC_FEED = '29639616438977013'; // PolarisFeedRootPaginationCachedQuery_subscribe
+  // PolarisFeedRootPaginationCachedQuery_subscribe: the id Instagram's web
+  // app sends now, then the one it sent before (since retired for some
+  // sessions), tried in that order.
+  const DOC_FEEDS = ['40856843000596438', '29639616438977013'];
   const DOC_CLIPS = '29386172244354956'; // PolarisClipsTabDesktopPaginationQuery
   const DOC_PROFILE_POSTS = '39818828461098125'; // PolarisProfilePostsTabContentQuery_connection
   const DOC_LIKE = '27182485238052618'; // usePolarisLikeMediaXIGLikeMutation
@@ -41,6 +44,8 @@ const Sinsta = (() => {
     __relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider: false,
     __relay_internal__pv__PolarisAdDebugToolEnabledrelayprovider: false,
     __relay_internal__pv__PolarisSuggestedUserFeedUnitCardsEnabledrelayprovider: true,
+    __relay_internal__pv__PolarisDSA16EntrypointEnabledrelayprovider: false,
+    __relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider: false,
   };
   const PROFILE_FLAGS = {
     __relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider: true,
@@ -62,20 +67,83 @@ const Sinsta = (() => {
 
   // ---- Requests and navigation -------------------------------------------
 
+  // ---- Pacing ---------------------------------------------------------------
+
+  // Instagram flags sessions whose traffic doesn't look like a person's. So
+  // requests nobody asked for this moment (profile cards, prefetching, the
+  // notification checks) share a budget per minute, and as soon as
+  // Instagram pushes back (a "Page not found" page instead of data, 401,
+  // 403, 429, "please wait") they stop for half an hour, and failed loads
+  // aren't retried. What you do yourself (open, like, save, scroll) still
+  // goes through.
+  const BACKGROUND_PER_MIN = 20;
+  const PAUSE_MS = 30 * 60 * 1000;
+  const backgroundAt = []; // when recent background requests were allowed
+  let pausedUntil = 0;
+  const heldBack = () => Date.now() < pausedUntil;
+
+  // Whether background work needing `cost` requests may go now; if so, it
+  // is counted against the budget.
+  function allowBackground(cost = 1) {
+    const now = Date.now();
+    if (heldBack()) return false;
+    while (backgroundAt.length && now - backgroundAt[0] > 60000) backgroundAt.shift();
+    if (backgroundAt.length + cost > BACKGROUND_PER_MIN) return false;
+    for (let i = 0; i < cost; i++) backgroundAt.push(now);
+    return true;
+  }
+
+  function pushback(why) {
+    const was = heldBack();
+    pausedUntil = Date.now() + PAUSE_MS;
+    if (was) return;
+    console.warn(`Here for Instagram: Instagram pushed back (${why}); background requests stop for 30 minutes.`);
+    window.dispatchEvent(new CustomEvent('sinsta-pushback'));
+  }
+
+  let lastFailure = ''; // why the last request failed, for the console
   async function request(path, init) {
     const url = location.origin + path;
+    const where = path.split('?')[0];
+    // Firefox: content.fetch sends the request exactly as the page would;
+    // the page's own fetch only if that can't be used at all.
     const fetchers = [];
-    // Firefox: content.fetch sends the request exactly as the page would.
     if (typeof content === 'object' && content && content.fetch) fetchers.push(content.fetch.bind(content));
     fetchers.push(window.fetch.bind(window));
     for (const f of fetchers) {
+      let res;
+      let text;
       try {
-        const res = await f(url, init);
-        if (res.ok) return JSON.parse(await res.text());
-      } catch (_) {}
+        res = await f(url, init);
+        text = await res.text();
+      } catch (e) {
+        lastFailure = `${where}: ${e}`;
+        continue; // this fetch couldn't be used: try the next
+      }
+      if (!res.ok) {
+        lastFailure = `${where}: HTTP ${res.status}`;
+        if ([401, 403, 429].includes(res.status)) pushback(lastFailure);
+        return null;
+      }
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (_) {
+        lastFailure = `${where}: not JSON: ${text.slice(0, 80)}`;
+        if (/^\s*</.test(text)) pushback(`${where} answered with a page instead of data`);
+        return null;
+      }
+      const said = json && `${json.message || ''} ${json.status || ''}`;
+      if (json && (json.require_login || json.checkpoint_url || /please wait|try again later|checkpoint/i.test(said))) {
+        lastFailure = `${where}: ${said.trim() || 'login required'}`;
+        pushback(lastFailure);
+        return null;
+      }
+      return json;
     }
     return null;
   }
+
 
   function api(path) {
     return request(path, { headers: { 'x-ig-app-id': APP_ID }, credentials: 'include' });
@@ -85,12 +153,27 @@ const Sinsta = (() => {
   // sent there are accepted but silently dropped (the result is null): they
   // need /api/graphql plus the page's session tokens (`mutation` true), as
   // do more and more reads.
+  // The CSRF token Instagram's requests carry: from the csrftoken cookie,
+  // or, where scripts can't read that cookie, from the page's security
+  // config, which is where Instagram's own app reads it. Without it
+  // /graphql/query answers with a "Page not found" page.
+  function csrfToken() {
+    const cookie = (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1];
+    if (cookie) return cookie;
+    for (const s of document.scripts) {
+      const m = !s.src && s.textContent.match(/"InstagramSecurityConfig",\[\],\{"csrf_token":"([^"]+)"/);
+      if (m) return m[1];
+    }
+    return '';
+  }
+
+  // A persisted GraphQL query: reads go to /graphql/query; mutations
+  // (`mutation` true) to /api/graphql with the page's session tokens.
   function gql(docId, variables, mutation) {
-    const csrf = (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1] || '';
     const params = { doc_id: docId, variables: typeof variables === 'string' ? variables : JSON.stringify(variables) };
     const headers = {
       'content-type': 'application/x-www-form-urlencoded',
-      'x-csrftoken': csrf,
+      'x-csrftoken': csrfToken(),
       'x-ig-app-id': APP_ID,
     };
     if (mutation) {
@@ -107,8 +190,11 @@ const Sinsta = (() => {
     });
   }
 
+
+
   // Session tokens Instagram embeds in the page's inline scripts.
   let cachedTokens = null;
+  let tokenProbe = null; // which tokens the last look found, for the console
   function tokens() {
     if (cachedTokens) return cachedTokens;
     const find = (name) => {
@@ -129,6 +215,7 @@ const Sinsta = (() => {
         break;
       }
     }
+    tokenProbe = { dtsg: !!dtsg, lsd: !!lsd, device: !!device, scripts: document.scripts.length };
     if (!dtsg || !lsd) return null;
     // Your account's id as Instagram's own mutations name their actor.
     let actor = null;
@@ -162,10 +249,14 @@ const Sinsta = (() => {
   // One page of one of Instagram's home feeds (`variant`: following,
   // favorites or home), as the query's connection, or null on failure.
   // Reports nothing as viewed.
+  let feedDoc = 0; // index into DOC_FEEDS of the id that last worked
   async function feedConnection(variant, after) {
     const t = tokens();
-    if (!t || !t.device) return null;
-    const res = await gql(DOC_FEED, {
+    if (!t || !t.device) {
+      console.warn('Here for Instagram: no session tokens in the page for the feed', JSON.stringify(tokenProbe));
+      return null;
+    }
+    const variables = {
       after: after || null,
       before: null,
       data: {
@@ -182,9 +273,22 @@ const Sinsta = (() => {
       last: null,
       variant,
       ...FEED_FLAGS,
-    });
-    return (res && res.data && res.data.xdt_api__v1__feed__timeline__connection) || null;
+    };
+    let res = null;
+    for (let n = 0; n < DOC_FEEDS.length && !(n && heldBack()); n++) {
+      const i = (feedDoc + n) % DOC_FEEDS.length;
+      res = await gql(DOC_FEEDS[i], variables);
+      const conn = res && res.data && res.data.xdt_api__v1__feed__timeline__connection;
+      if (conn) {
+        feedDoc = i;
+        return conn;
+      }
+    }
+    console.warn('Here for Instagram: the home feed query failed', variant,
+      res ? JSON.stringify(res.errors || res).slice(0, 300) : lastFailure);
+    return null;
   }
+
 
   // One page of a home feed's posts and reels, as { items, after } where
   // `after` is null at the end, or null on failure.
@@ -2642,7 +2746,7 @@ const Sinsta = (() => {
 
   return {
     api, go, nav, el, shadowVideo, hostOf, icon, seekbar, shiftSpeed, cycleSpeed, setRate, speedLabel, onTop, openViewer, fetchReels, setFavourite, appOnlyNotifications, recentPosts, reelsPage, explorePage, profilePage, reelByCode, feedPage, songFor,
-    mark, userIds, lookUpId, userCard, ago,
+    mark, userIds, lookUpId, userCard, ago, allowBackground, heldBack,
     likeMedia, likeComment, comments, replies, addComment, savePost, collections, addToCollection, newCollection, follow,
   };
 })();

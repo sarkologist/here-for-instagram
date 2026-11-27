@@ -82,6 +82,7 @@ export const songLookups = []; // pks of the posts asked for their song
 // Saving: { doc, input } of each save, unsave, add-to-collection and
 // new-collection mutation, in order.
 export const saveCalls = [];
+export const queryLog = [];
 // Following: { kind: 'follow' | 'unfollow', id } of each mutation, and
 // whom each account follows now, by user id, where that changed.
 export const followCalls = [];
@@ -94,6 +95,7 @@ export const storyViewers = {};
 function reset() {
   songLookups.length = 0;
   saveCalls.length = 0;
+  queryLog.length = 0;
   followCalls.length = 0;
   for (const k of Object.keys(storyViewers)) delete storyViewers[k];
   for (const k of Object.keys(accounts)) delete accounts[k];
@@ -112,7 +114,7 @@ function reset() {
 }
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8">
-<script>window.__tokens = ['"DTSGInitialData",[],{"token":"t-dtsg"}', '"LSD",[],{"token":"t-lsd"}', '"device_id":"t-device"', '"RelayAPIConfigDefaults",[],{"accessToken":"","actorID":"17841400000000001"'];</script>
+<script>window.__tokens = ['"DTSGInitialData",[],{"token":"t-dtsg"}', '"LSD",[],{"token":"t-lsd"}', '"device_id":"t-device"', '"RelayAPIConfigDefaults",[],{"accessToken":"","actorID":"17841400000000001"', '"InstagramSecurityConfig",[],{"csrf_token":"t-csrf"'];</script>
 <link rel="stylesheet" href="/test/ext/content.css">
 <script src="/test/ext/stories.js"></script><script src="/test/ext/content.js"></script><script src="/test/ext/feed.js"></script>
 </head><body><nav><div>${['Home', 'Reels', 'Explore', 'Messages', 'Notifications', 'Create']
@@ -232,6 +234,18 @@ export async function freshContext(storage = {}) {
       }));
       return json({ sectional_items: sections, more_available: more, next_max_id: more ? String(n + 1) : null, rank_token: 'r' });
     }
+    // Every query asked, as { path, doc } (`blocked`: the session's queries
+    // all get Instagram's "Page not found" page).
+    if (path === '/api/graphql' || path === '/graphql/query') {
+      queryLog.push({ path, doc: new URLSearchParams(req.postData() || '').get('doc_id'), at: Date.now() });
+      if (acc && acc.blocked) return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html><title>Page Not Found • Instagram</title></html>' });
+    }
+    // Without the CSRF token (`requireCsrf`), Instagram answers queries with
+    // its "Page not found" page. The page holds the token in its security
+    // config; the cookie scripts can read may be missing.
+    if (path === '/graphql/query' && acc.requireCsrf && (await req.allHeaders())['x-csrftoken'] !== 't-csrf') {
+      return route.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><html><title>Page Not Found • Instagram</title></html>' });
+    }
     if (path === '/api/graphql' || path === '/graphql/query') {
       const form = new URLSearchParams(req.postData() || '');
       const vars = JSON.parse(form.get('variables') || '{}');
@@ -303,6 +317,10 @@ export async function freshContext(storage = {}) {
         });
       }
       if (vars.variant && vars.data) {
+        // The feed query ids this session accepts (`feedDocs`; all if unset).
+        if (acc.feedDocs && !acc.feedDocs.includes(form.get('doc_id'))) {
+          return json({ errors: [{ message: 'execution error', severity: 'CRITICAL' }] });
+        }
         const edges = acc.feeds[vars.variant];
         // As on Instagram: the home feed fails with a pagination source, the
         // others need theirs.
